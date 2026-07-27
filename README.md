@@ -3,7 +3,7 @@
 A setup contract for Claude that builds you a project-knowledge vault in Obsidian: predictable
 structure, a **generated** index, and a set of guards that go red instead of quietly passing.
 
-![Vault Kit](assets/vault-kit-social.png)
+![Vault Kit](assets/vault-kit-social-en.png)
 
 ## Use it
 
