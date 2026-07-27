@@ -674,6 +674,15 @@ time it mattered.
 .obsidian/workspace-mobile.json
 .obsidian/graph.json
 
+# Append-only run log that every tool writes a line to. Tracked, it makes git status dirty after
+# every check, and acceptance fixture 6 permanently noisy. check_freshness.py reads it off disk,
+# not out of git. Leading **/ on purpose: 06_tools/runs.log anchors to the repo root and would
+# never match 00_Global/06_tools/runs.log -- measured twice, on two different setups.
+**/runs.log
+
+# Throwaway fixtures from the acceptance run.
+_acceptance/
+
 **/__pycache__/
 *.pyc
 .trash/
@@ -791,6 +800,14 @@ this file instead of re-deriving the whole thing.
 **The project name in that filename is not decoration.** One file per project all called
 `knowledge-transfer.md` gives the graph four identical nodes and the quick switcher four identical
 rows — see doctrine rule 2. Same for any other page you create once per project.
+
+**Write what differs, link what does not — or the duplicate check will say so.** Filling the same
+outline twice produces two pages that are mostly the same words: measured at 0.93 overlap on one
+setup and flagged on another, both times correctly. Anything true for every project — the frontmatter
+contract, the command sequence, what each guard refuses — belongs once in the global bucket's tooling
+page, with a wikilink from each project page. What stays on the project page is what is only true
+there: where its code lives, its decisions, its edge cases. Do this while writing them; fixing it
+after the guard fires costs a rewrite and a second verification run.
 
 ### Tell the user how to use it from here on
 

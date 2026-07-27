@@ -52,6 +52,11 @@ Measured on Windows 11, Python 3.13, under PowerShell 5.1 **and** Git Bash: 7/7 
 shell. Copy them and that measurement still applies to what you handed the user. Rewrite them and
 it does not.
 
+**Write them as UTF-8 without a byte-order mark.** `Set-Content -Encoding utf8` under PowerShell 5.1
+prepends a BOM, and a BOM in front of `import sys` is an invisible first character that some readers
+choke on. Use your file-writing tool, or Python. This cost a full round on one setup, and the error
+pointed at the wrong line.
+
 After writing them, prove it on this machine before you report anything:
 
 ```

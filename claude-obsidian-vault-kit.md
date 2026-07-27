@@ -1,4 +1,4 @@
-<!-- kit-version: b2e1e895addd -->
+<!-- kit-version: 654079dd318c -->
 
 # Claude × Obsidian — Vault Kit
 
@@ -676,6 +676,15 @@ time it mattered.
 .obsidian/workspace-mobile.json
 .obsidian/graph.json
 
+# Append-only run log that every tool writes a line to. Tracked, it makes git status dirty after
+# every check, and acceptance fixture 6 permanently noisy. check_freshness.py reads it off disk,
+# not out of git. Leading **/ on purpose: 06_tools/runs.log anchors to the repo root and would
+# never match 00_Global/06_tools/runs.log -- measured twice, on two different setups.
+**/runs.log
+
+# Throwaway fixtures from the acceptance run.
+_acceptance/
+
 **/__pycache__/
 *.pyc
 .trash/
@@ -794,6 +803,14 @@ this file instead of re-deriving the whole thing.
 `knowledge-transfer.md` gives the graph four identical nodes and the quick switcher four identical
 rows — see doctrine rule 2. Same for any other page you create once per project.
 
+**Write what differs, link what does not — or the duplicate check will say so.** Filling the same
+outline twice produces two pages that are mostly the same words: measured at 0.93 overlap on one
+setup and flagged on another, both times correctly. Anything true for every project — the frontmatter
+contract, the command sequence, what each guard refuses — belongs once in the global bucket's tooling
+page, with a wikilink from each project page. What stays on the project page is what is only true
+there: where its code lives, its decisions, its edge cases. Do this while writing them; fixing it
+after the guard fires costs a rewrite and a second verification run.
+
 ### Tell the user how to use it from here on
 
 - **New insight with no ticket** → a new file in `00_Notes/`, filename = the insight, frontmatter per
@@ -908,6 +925,11 @@ Measured on Windows 11, Python 3.13, under PowerShell 5.1 **and** Git Bash: 7/7 
 10/10 acceptance checks correct, 10/10 end-to-end setup steps -- ten consecutive runs under each
 shell. Copy them and that measurement still applies to what you handed the user. Rewrite them and
 it does not.
+
+**Write them as UTF-8 without a byte-order mark.** `Set-Content -Encoding utf8` under PowerShell 5.1
+prepends a BOM, and a BOM in front of `import sys` is an invisible first character that some readers
+choke on. Use your file-writing tool, or Python. This cost a full round on one setup, and the error
+pointed at the wrong line.
 
 After writing them, prove it on this machine before you report anything:
 
