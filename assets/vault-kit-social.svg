@@ -134,17 +134,17 @@
       <g transform="translate(32,242)">
         <circle cx="5" cy="-4" r="4" fill="none" stroke="#5FD08A" stroke-width="2"/>
         <text x="22" y="0" fill="#9FE3B8">Index</text>
-        <text x="84" y="0" fill="#6F6690">261 / 23 Kategorien</text>
+        <text x="84" y="0" fill="#6F6690">262 / 23 Kategorien</text>
       </g>
       <g transform="translate(32,270)">
         <circle cx="5" cy="-4" r="4" fill="none" stroke="#5FD08A" stroke-width="2"/>
         <text x="22" y="0" fill="#9FE3B8">Links</text>
-        <text x="84" y="0" fill="#6F6690">441 / 441</text>
+        <text x="84" y="0" fill="#6F6690">444 / 444</text>
       </g>
       <g transform="translate(300,242)">
         <circle cx="5" cy="-4" r="4" fill="none" stroke="#5FD08A" stroke-width="2"/>
         <text x="22" y="0" fill="#9FE3B8">Checks</text>
-        <text x="92" y="0" fill="#6F6690">787 / 787</text>
+        <text x="92" y="0" fill="#6F6690">805 / 805</text>
       </g>
       <g transform="translate(300,270)">
         <path d="M1 -8 L9 0 M9 -8 L1 0" stroke="#E5794F" stroke-width="2" stroke-linecap="round"/>
