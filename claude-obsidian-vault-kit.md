@@ -1,4 +1,4 @@
-<!-- kit-version: 6cd087d9fc96 -->
+<!-- kit-version: 1a123251cf88 -->
 # Claude × Obsidian — Vault Kit
 
 **What this file is:** a setup contract for Claude. Drop it into a Claude conversation and say
@@ -68,7 +68,7 @@ document in order. It is a contract, not a suggestion.
    expensive way. Change a shipped script only when the user's structure genuinely needs it, and
    then rerun the suites and `acceptance.py` before reporting anything.
    **Tell the user how to update later.** The header of this file carries a line like
-   `<!-- kit-version: 435a3a2b532c -->`. It is a hash of the contract and every shipped script, so
+   `<!-- kit-version: … -->` (twelve hex characters). It is a hash of the contract and every shipped script, so
    two copies with the same line are the same kit and a different line means something changed.
    Point them at `upgrade.py`, which is shipped alongside the other tools: given a newer kit file it
    lists what would be overwritten, writes nothing without `--apply`, and reruns the suites and the

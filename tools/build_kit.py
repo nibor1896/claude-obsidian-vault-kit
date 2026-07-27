@@ -161,8 +161,18 @@ def verify():
               f"because one shipped that way.", file=sys.stderr)
         return 1
 
+    # Same class of defect, one level nastier: a real hash quoted in the prose as an example.
+    # The file then carries two kit-version lines, only one of them true, and a reader comparing
+    # copies has no way to tell which. Write the example as an ellipsis.
+    stale_stamps = re.findall(r"kit-version: ([0-9a-f]{12})", prose)
+    if stale_stamps:
+        print(f"{OUT.name}: prose quotes a literal kit-version {stale_stamps}. The stamp on line 1 "
+              f"is the only true one -- a second one goes stale on the next build and reads as if "
+              f"the copy were outdated. Use `<!-- kit-version: … -->`.", file=sys.stderr)
+        return 1
+
     print(f"{OUT.name}: {len(blocks)} blocks extract, match tools/, and run green · "
-          f"every suite count in the text says {suites}")
+          f"every suite count in the text says {suites} · no stale stamp quoted in the prose")
     return 0
 
 
