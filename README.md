@@ -66,9 +66,13 @@ reported as finished until that passes.
 
 ## Maintainer notes
 
-**Not verified on macOS or Linux.** The kit emits per-shell commands and the `brew` / `flatpak` /
-`python3` paths are plausible but have only ever been exercised on Windows with PowerShell and Git
-Bash. Reports from other platforms are the most useful thing you can open an issue about.
+**Not verified on macOS.** The `brew` path is plausible but has never been exercised. Reports from
+a Mac are the most useful thing you can open an issue about.
+
+**Linux is verified once**, on Ubuntu under WSL2 with Python 3.14 and git 2.53: a cold run built the
+vault, 8/8 suites, 10/10 acceptance, 10/10 setup flow, 64/64 links, no drift on the second index
+run. One shell only — WSL ships bash, so the PowerShell/Git-Bash comparison that catches encoding
+defects was not available there. `flatpak` and a desktop Obsidian were not part of that run.
 
 **Before publishing a change, cold-run it.** A throwaway folder, a *fresh* Claude session with none
 of the authoring context, the file dropped in, and naive answers — "don't know", "I don't understand
