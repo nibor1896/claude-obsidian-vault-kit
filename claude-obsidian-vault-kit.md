@@ -325,6 +325,19 @@ navigable at around 150 entries:
 > As of: <YYYY-MM-DD>
 ```
 
+### Two mechanics that produce output depending on how the script was called
+
+Both were found by the acceptance test in SECTION 10, on a first real setup:
+
+- **Derive every name from a resolved absolute path.** `Path(".").name` is the empty string, so
+  `--root .` writes `# — Index` while `--root C:/…/Vault` writes `# Vault — Index`. Two correct
+  invocations then produce a diff against each other, which is exactly the drift SECTION 9 forbids.
+  Resolve first (`Path(p).resolve()`), then take `.name`.
+- **A `[[wikilink]]` inside a code span or fenced block is not a link.** Obsidian does not resolve it,
+  so the checker must not count it. Without this, every page that *documents* the wikilink syntax
+  reports itself as broken — the prose is right and the checker is wrong, which is the worst way round
+  because the instinct is to edit the note.
+
 ### Exit code
 
 `0` only when every entry was clean. Otherwise print each defect as `<filename>: <what is wrong>` on
@@ -354,7 +367,33 @@ only ever sees good input cannot tell you the check still works.
 outcomes explicitly: pass, fail, and *did not run*. A check that cannot tell "working" from "broken"
 is not evidence.
 
-Two mechanics that break this rule quietly, both worth stating because they look like working code:
+### Force UTF-8 on stdout and stderr in every tool — first lines of every script
+
+```python
+import sys
+
+for _stream in (sys.stdout, sys.stderr):
+    try:
+        _stream.reconfigure(encoding="utf-8", errors="replace")
+    except (AttributeError, ValueError):
+        pass
+```
+
+**This is not cosmetic and it is not optional.** A child process inherits the console code page, which
+differs per shell on the same machine — cp1252 under Git Bash, UTF-8 under PowerShell on Windows. A
+defect message containing an umlaut then goes out as cp1252 while the reader decodes UTF-8, and the
+suite dies in the reader thread. Measured on one machine: **the same six suites were 6/6 green under
+PowerShell and 0/6 under Git Bash.** A guard whose verdict depends on which shell launched it is not
+a guard.
+
+**Do not "fix" this by restricting output to ASCII.** That is unreachable by construction: defect
+messages name *filenames*, and filenames legitimately contain umlauts and accents. Forcing the
+encoding is the fix; sanitising the content is a retreat that fails on the first non-ASCII note.
+
+Every tool needs a test that asserts non-ASCII output survives a subprocess round trip — otherwise
+this returns the moment someone adds a tool.
+
+### Two more mechanics that break the rule quietly, both worth stating because they look like working code:
 
 - **A skip that does not count itself.** `except OSError: continue` in a counting loop still prints a
   total — over fewer files than it names. Keep a `skipped` counter, print it, and treat a non-zero
@@ -422,6 +461,23 @@ the workflow file so the next session does not rediscover it.
 
 Set up **both**, and tell the user why neither replaces the other: cloud sync knows file versions but
 has no notion of a coherent state across all notes; git knows states but lives on the same disk.
+
+**Put the vault in its own folder, not in the folder you were started in.** If the agent's own config
+directory (`.claude/`, `.cursor/`, whatever the harness uses) sits next to the notes, it lands in the
+vault's history. A subfolder — `<workdir>/<VaultName>/` — keeps the two apart with no ignore rules to
+maintain.
+
+**A fresh machine usually has no git identity at all**, and `git commit` then fails with *"Author
+identity unknown"* mid-setup. Check before the first commit and set it **repo-locally** — never
+`--global`, which writes outside the folder the user gave you:
+
+```bash
+git -C <VaultRoot> config user.name  "<name the user gives you>"
+git -C <VaultRoot> config user.email "<email the user gives you>"
+```
+
+Ask for both. Do not invent them, and do not copy them from another repo on the machine — an identity
+appears in every commit forever, and if the vault ever gets a remote it becomes public.
 
 ```powershell
 # Windows / PowerShell — one command per line, no chaining
@@ -495,6 +551,11 @@ Two more things to tell the user:
 - **Stage named paths, never `git add -A` or `git add .`** if there is any chance a second session or
   editor is working in the same folder. One working directory has one index; `-A` commits somebody
   else's half-finished work under your message.
+- **The suite is green before you commit, and you say which suite and how many.** Do not rely on the
+  user's own tooling to enforce this — they may have a pre-commit discipline of their own and they may
+  have none at all. This kit carries the rule itself: run every `test_*.py`, report `n/m`, and confirm
+  with `git ls-files` that the suites you just cited are tracked. A number whose suite is not in the
+  repo cannot be re-run by anyone, which makes it an assertion rather than a measurement.
 
 ---
 
@@ -542,6 +603,18 @@ Rules for that report:
 - **`Open:` lists what you did not measure**, not only what is unfinished. Unmeasured and working
   look identical from the outside — that is the entire reason for measuring.
 - If nothing was transferred, write `nothing new`, not an empty success.
+
+**Three items belong under `Open:` on every first setup, because they are always true and always get
+forgotten:**
+
+- **No Obsidian client has opened this vault yet.** Your link checker saying 39/39 is not the client
+  saying 39/39. Whether the indexes render, whether the graph is usable, whether the app resolves the
+  wikilinks: unverified until the user opens it. Say this in exactly those terms — it is the single
+  most misleading gap, because everything measurable already passed.
+- **The duplicate-detection threshold is uncalibrated.** On a vault with a handful of notes the number
+  it reports is arithmetic, not evidence. Name the threshold, say it has never been checked against
+  real volume, and revisit it once the vault has one.
+- **No backup outside this folder, and no remote.** Mishandling is covered by git; disk loss is not.
 
 ### Write the workflow file
 
@@ -591,6 +664,10 @@ python 06_tools/build_index.py --vault <Project>
 git status --porcelain             # must be empty again
 ```
 
+**Run the suites under every shell the user has**, not just the one you happen to be in. On Windows
+that means PowerShell *and* Git Bash. This is where the encoding defect in SECTION 6 shows up, and it
+is invisible from inside a single shell.
+
 Report it like this, one line per check, and **name any check you did not run**:
 
 ```
@@ -601,6 +678,17 @@ Acceptance: 8/8 guards went red on bad input
 If a check does not behave as specified, the generated script is wrong — fix the script, not the
 expectation. A guard that passes bad input is worse than no guard, because it will be cited as
 evidence.
+
+### Write the acceptance run into the vault, and repeat it after every script change
+
+Two rules that make this a check rather than a ceremony:
+
+- **The run belongs in the vault as `03_technical_docs/acceptance-test.md`**, with each fixture, the
+  command, and the required behaviour — not only in the chat where it was performed. A one-off that
+  lives in a conversation cannot be repeated by whoever inherits the vault.
+- **Any change to a guard invalidates the last acceptance result.** Fixed a script after the run?
+  Then the run is over and the number is no longer true — repeat all of it, not the affected check.
+  Saying "8/8" after editing two tools is quoting a measurement of code that no longer exists.
 
 ---
 
