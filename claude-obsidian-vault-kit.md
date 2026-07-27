@@ -890,3 +890,2324 @@ If the user already has a vault (1.1 answered yes):
 ---
 
 *This kit describes structure and rules only. It contains no project data.*
+
+---
+
+## SECTION 11 — The scripts, verbatim
+
+Everything below is the finished implementation. **Write each block to disk exactly as it stands —
+byte for byte, same filename — into the vault's tool folder** (`<VaultRoot>/00_Global/06_tools/`,
+created in SECTION 3). Do not retype them from the contracts above, do not "improve" them while
+copying, and do not skip the suites: they are the only reason the numbers in SECTION 0 mean
+anything.
+
+Measured on Windows 11, Python 3.13, under PowerShell 5.1 **and** Git Bash: 7/7 suites green,
+10/10 acceptance checks correct, 10/10 end-to-end setup steps -- ten consecutive runs under each
+shell. Copy them and that measurement still applies to what you handed the user. Rewrite them and
+it does not.
+
+After writing them, prove it on this machine before you report anything:
+
+```
+python <vault>/00_Global/06_tools/run_suites.py       expect 7/7 suites green
+python <vault>/00_Global/06_tools/acceptance.py       expect 10/10 checks
+python <vault>/00_Global/06_tools/verify_setup.py     expect 10/10 steps
+```
+
+#### Shared
+
+### `vault_paths.py`
+
+```python
+"""Single source of truth for every generated filename and every path rule.
+
+Spelling a generated filename a second time in another tool is how a guard ends up
+reporting the index hub as "missing" while the hub sits right next to it. Every tool
+imports from here instead.
+"""
+
+import sys
+
+for _stream in (sys.stdout, sys.stderr):
+    try:
+        _stream.reconfigure(encoding="utf-8", errors="replace")
+    except (AttributeError, ValueError):
+        pass
+
+import re
+from pathlib import Path
+
+# The category folders every project gets. Numeric prefixes exist for sort order only.
+CATEGORY_FOLDERS = [
+    "00_Notes",
+    "01_Issues",
+    "02_docs",
+    "03_technical_docs",
+    "04_feedback",
+    "05_workflows",
+    "06_tools",
+]
+
+# Directories that are never notes and never walked.
+SKIP_DIRS = {".git", ".obsidian", "__pycache__", ".trash", ".venv", "node_modules"}
+
+# Characters Obsidian cannot carry inside a [[wikilink]] target.
+FORBIDDEN_LINK_CHARS = set("#[]|^")
+
+# Append-only log of every tool run, healthy ones included. Read by check_freshness.py.
+RUN_LOG_RELPATH = Path("00_Global") / "06_tools" / "runs.log"
+
+
+def force_utf8():
+    """Re-export of the stdout/stderr fix so tests can assert it exists."""
+    for stream in (sys.stdout, sys.stderr):
+        try:
+            stream.reconfigure(encoding="utf-8", errors="replace")
+        except (AttributeError, ValueError):
+            pass
+
+
+def category_label(folder_name: str) -> str:
+    """'03_technical_docs' -> 'technical_docs'. The prefix is sort order, not meaning."""
+    return re.sub(r"^\d+_", "", folder_name)
+
+
+def root_index_name(vault_root) -> str:
+    """'INDEX - <VaultName>.md'.
+
+    The name is derived from a RESOLVED path on purpose: Path('.').name is the empty
+    string, so `--root .` would write '# — Index' while `--root C:/.../Vault` writes
+    '# Vault — Index'. Two correct invocations must not produce a diff against each other.
+    """
+    return f"INDEX - {Path(vault_root).resolve().name}.md"
+
+
+def project_index_name(project_dir) -> str:
+    """'INDEX - <ProjectName>.md' — the project hub."""
+    return f"INDEX - {Path(project_dir).resolve().name}.md"
+
+
+def category_index_name(project_name: str, folder_name: str) -> str:
+    """'INDEX - <Project> <Category>.md'.
+
+    Every project has identically named folders. Without the project in the filename the
+    graph shows one node called 'INDEX - Issues' per project and the quick switcher
+    becomes a coin toss.
+    """
+    return f"INDEX - {project_name} {category_label(folder_name)}.md"
+
+
+def is_index_file(path) -> bool:
+    return Path(path).name.startswith("INDEX - ")
+
+
+def project_dirs(vault_root):
+    """Every project directory directly under the vault root, sorted."""
+    root = Path(vault_root).resolve()
+    out = []
+    for child in sorted(root.iterdir()):
+        if not child.is_dir():
+            continue
+        if child.name in SKIP_DIRS or child.name.startswith("."):
+            continue
+        out.append(child)
+    return out
+
+
+def walk_markdown(root):
+    """Every .md file under root, skipping SKIP_DIRS. Sorted, so output is stable."""
+    root = Path(root).resolve()
+    found = []
+    for path in root.rglob("*.md"):
+        if any(part in SKIP_DIRS for part in path.relative_to(root).parts[:-1]):
+            continue
+        found.append(path)
+    return sorted(found)
+
+
+def has_forbidden_chars(name: str) -> bool:
+    return any(ch in FORBIDDEN_LINK_CHARS for ch in name)
+
+
+def log_run(vault_root, job: str, status: str, detail: str = ""):
+    """Append one line per run, healthy ones included.
+
+    Silence must mean 'did not run', never 'ran and was fine'.
+    """
+    from datetime import datetime, timezone
+
+    log_path = Path(vault_root).resolve() / RUN_LOG_RELPATH
+    try:
+        log_path.parent.mkdir(parents=True, exist_ok=True)
+        stamp = datetime.now(timezone.utc).strftime("%Y-%m-%dT%H:%M:%S+00:00")
+        line = f"{stamp}\t{job}\t{status}\t{detail}\n"
+        with open(log_path, "a", encoding="utf-8") as fh:
+            fh.write(line)
+    except OSError as exc:
+        print(f"run log not written: {exc}", file=sys.stderr)
+```
+
+### `_testkit.py`
+
+```python
+"""Shared fixtures for the tool suites.
+
+Deliberately NOT named test_*.py: run_suites.py collects by that glob and a helper module
+with no tests would be counted as a green suite.
+"""
+
+import os
+import subprocess
+import sys
+import tempfile
+from pathlib import Path
+
+TOOLS = Path(__file__).resolve().parent
+
+CATEGORY_FOLDERS = [
+    "00_Notes",
+    "01_Issues",
+    "02_docs",
+    "03_technical_docs",
+    "04_feedback",
+    "05_workflows",
+    "06_tools",
+]
+
+
+def make_vault(projects=("ProjektEins",)):
+    """A throwaway vault with the real folder tree. Caller deletes the returned tempdir."""
+    tmp = Path(tempfile.mkdtemp(prefix="vaultkit_")) / "Vault"
+    for project in projects:
+        for folder in CATEGORY_FOLDERS:
+            (tmp / project / folder).mkdir(parents=True, exist_ok=True)
+    (tmp / "00_Global" / "06_tools").mkdir(parents=True, exist_ok=True)
+    return tmp
+
+
+def write_note(path, title="Ein Titel", summary="Eine Zusammenfassung.", **extra):
+    """Write a note with frontmatter. Pass title=None or summary=None to omit the key."""
+    lines = ["---"]
+    if title is not None:
+        lines.append(f'title: "{title}"')
+    if summary is not None:
+        lines.append(f'summary: "{summary}"')
+    for key, value in extra.items():
+        lines.append(f'{key}: "{value}"')
+    lines += ["---", "", "Body text that the index generator must never read.", ""]
+    path = Path(path)
+    path.parent.mkdir(parents=True, exist_ok=True)
+    path.write_text("\n".join(lines), encoding="utf-8", newline="\n")
+    return path
+
+
+def run_tool(script, *args, strip_io_encoding=True):
+    """Run a tool as a real subprocess. Returns (returncode, stdout, stderr) as UTF-8 text.
+
+    PYTHONIOENCODING is removed on purpose: the tools must force UTF-8 themselves, or the
+    same suite goes green under PowerShell and red under Git Bash on one machine.
+    """
+    env = dict(os.environ)
+    env["PYTHONPATH"] = str(TOOLS) + os.pathsep + env.get("PYTHONPATH", "")
+    if strip_io_encoding:
+        env.pop("PYTHONIOENCODING", None)
+        env.pop("PYTHONUTF8", None)
+    result = subprocess.run(
+        [sys.executable, str(TOOLS / script), *[str(a) for a in args]],
+        cwd=str(TOOLS),
+        env=env,
+        capture_output=True,
+    )
+    return (
+        result.returncode,
+        result.stdout.decode("utf-8", errors="replace"),
+        result.stderr.decode("utf-8", errors="replace"),
+    )
+```
+
+### `jobs.json`
+
+```json
+{
+  "_comment": "Jobs that must show a healthy run in runs.log. Verify with: python check_freshness.py --vault <VaultRoot>",
+  "jobs": ["build_index", "check_links"]
+}
+```
+
+#### Tools
+
+### `build_index.py`
+
+```python
+"""Generate the three-level index tree from note frontmatter.
+
+    <VaultRoot>/INDEX - <VaultName>.md                   one line per project     --root
+    <Project>/INDEX - <Project>.md                       one line per category    --vault <dir>
+    <Project>/<Folder>/INDEX - <Project> <Category>.md   the entries themselves
+
+Reads FRONTMATTER ONLY. There is no code path in this file that opens a note body, which
+is the structural guarantee that prose can never leak into the index.
+
+Exit code is 0 only when every entry was clean. Otherwise each defect is printed as
+"<filename>: <what is wrong>" on stderr and the exit code is non-zero.
+"""
+
+import sys
+
+for _stream in (sys.stdout, sys.stderr):
+    try:
+        _stream.reconfigure(encoding="utf-8", errors="replace")
+    except (AttributeError, ValueError):
+        pass
+
+import argparse
+import re
+from collections import defaultdict
+from datetime import date
+from pathlib import Path
+from urllib.parse import quote
+
+from vault_paths import (
+    CATEGORY_FOLDERS,
+    SKIP_DIRS,
+    category_index_name,
+    category_label,
+    has_forbidden_chars,
+    is_index_file,
+    log_run,
+    project_dirs,
+    project_index_name,
+    root_index_name,
+    walk_markdown,
+)
+
+TITLE_MAX = 90
+SUMMARY_MAX = 150
+
+HEADER = """# {name} — Index
+
+> Generated by `06_tools/build_index.py` from note frontmatter.
+> Do not edit by hand — changes belong in the note itself.
+> As of: {today}
+"""
+
+
+class Defects:
+    """Collects defects. A non-empty instance makes the run red."""
+
+    def __init__(self):
+        self.items = []
+        self.skipped = 0
+
+    def add(self, filename, message):
+        self.items.append((str(filename), message))
+
+    def report(self):
+        for filename, message in self.items:
+            print(f"{filename}: {message}", file=sys.stderr)
+
+    def __len__(self):
+        return len(self.items)
+
+
+# --------------------------------------------------------------------------- frontmatter
+
+
+def read_frontmatter(path, defects):
+    """Return the frontmatter mapping of a note, or None if it has none.
+
+    Stops reading at the closing '---'. Body lines are never collected, never returned.
+    """
+    data = {}
+    try:
+        with open(path, "r", encoding="utf-8", errors="replace") as fh:
+            first = fh.readline()
+            if first.strip() != "---":
+                return None
+            for line in fh:
+                if line.strip() in ("---", "..."):
+                    return data
+                key, sep, value = line.partition(":")
+                if not sep:
+                    continue
+                key = key.strip()
+                if not key or key.startswith("#"):
+                    continue
+                data[key] = _clean_scalar(value)
+    except OSError as exc:
+        # An error branch that continues is a lost denominator: count it, print it.
+        defects.skipped += 1
+        defects.add(Path(path).name, f"unreadable ({exc})")
+        return None
+    # File ended before the closing '---'.
+    defects.add(Path(path).name, "frontmatter block is not closed by '---'")
+    return data
+
+
+def _clean_scalar(value):
+    value = value.strip()
+    if len(value) >= 2 and value[0] == value[-1] and value[0] in "\"'":
+        return value[1:-1].strip()
+    # An unquoted '#' starts a YAML comment. A quoted one (issues: "#12") never reaches here.
+    value = re.split(r"\s+#", value, maxsplit=1)[0]
+    return value.strip()
+
+
+MARKDOWN_DEBRIS = re.compile(r"^\s*(?:>+\s*|#{1,6}\s+|[-*+]\s+|\d+\.\s+)")
+
+
+def clean_summary(raw):
+    """Return (cleaned, was_dirty). Debris in summary renders the index line as garbage."""
+    text = raw
+    dirty = False
+    while True:
+        stripped = MARKDOWN_DEBRIS.sub("", text)
+        if stripped == text:
+            break
+        text = stripped
+        dirty = True
+    for marker in ("**", "__", "`"):
+        if marker in text:
+            text = text.replace(marker, "")
+            dirty = True
+    if "\n" in text or "\r" in text:
+        text = re.sub(r"[\r\n]+", " ", text)
+        dirty = True
+    collapsed = re.sub(r"\s{2,}", " ", text).strip()
+    if collapsed != text.strip():
+        dirty = True
+    return collapsed, dirty
+
+
+def truncate(text, limit):
+    if len(text) <= limit:
+        return text
+    return text[: limit - 1].rstrip() + "…"
+
+
+# --------------------------------------------------------------------------- links
+
+
+def link_to(vault_root, target_path, label, defects):
+    """A [[wikilink]] where Obsidian can resolve one, a markdown link where it cannot.
+
+    The link checker resolves [[...]] and deliberately does not resolve [text](path).
+    So every fallback to a markdown link is a defect in the filename, not a workaround.
+    """
+    rel = Path(target_path).resolve().relative_to(Path(vault_root).resolve()).as_posix()
+    name = Path(target_path).name
+    if has_forbidden_chars(name):
+        defects.add(name, "filename contains one of # [ ] | ^ — cannot be wikilinked")
+        return f"[{label}]({quote(rel)})"
+    if not name.lower().endswith(".md"):
+        # Obsidian does not index these; a [[tool.py]] would be permanently unresolved.
+        return f"[{label}]({quote(rel)})"
+    return f"[[{rel[:-3]}|{label}]]"
+
+
+# --------------------------------------------------------------------------- entries
+
+
+def collect_entries(vault_root, project_dir, folder_name, defects):
+    """One entry dict per note in <project>/<folder>. Frontmatter only."""
+    folder = Path(project_dir) / folder_name
+    entries = []
+    if not folder.is_dir():
+        return entries
+    for path in sorted(folder.glob("*.md")):
+        if is_index_file(path):
+            continue
+        fm = read_frontmatter(path, defects)
+        name = path.name
+        if fm is None:
+            defects.add(name, "no frontmatter block")
+            fm = {}
+
+        title = fm.get("title", "").strip()
+        if not title:
+            defects.add(name, "missing 'title:' — index falls back to the filename")
+            title = path.stem
+
+        summary_raw = fm.get("summary", "").strip()
+        if not summary_raw:
+            defects.add(name, "missing 'summary:'")
+        summary, dirty = clean_summary(summary_raw)
+        if dirty:
+            defects.add(name, "markdown debris in 'summary:' — stripped for the index")
+        if summary and summary.strip().lower() == title.strip().lower():
+            summary = ""
+
+        prefixes = []
+        if fm.get("retired"):
+            prefixes.append(f"[retired: {fm['retired']}]")
+        if fm.get("stale"):
+            prefixes.append(f"[stale since {fm['stale']}]")
+        if prefixes:
+            summary = " ".join(prefixes) + (f" {summary}" if summary else "")
+
+        entries.append(
+            {
+                "path": path,
+                "title": truncate(title, TITLE_MAX),
+                "summary": truncate(summary, SUMMARY_MAX),
+                "date": fm.get("updated") or fm.get("created") or "",
+                "issues": fm.get("issues", ""),
+                "generated": bool(fm.get("generator")),
+            }
+        )
+    return entries
+
+
+def entry_line(vault_root, entry, defects):
+    parts = [f"- {link_to(vault_root, entry['path'], entry['title'], defects)}"]
+    tail = []
+    if entry["summary"]:
+        tail.append(entry["summary"])
+    if entry["date"]:
+        tail.append(str(entry["date"]))
+    if entry["issues"]:
+        tail.append(str(entry["issues"]))
+    if entry["generated"]:
+        tail.append("generated")
+    if tail:
+        parts.append("— " + " · ".join(tail))
+    return " ".join(parts)
+
+
+# --------------------------------------------------------------------------- writing
+
+
+def write_if_changed(path, content):
+    """Write only on a real change, so a rerun leaves `git status` empty."""
+    path = Path(path)
+    try:
+        if path.exists() and path.read_text(encoding="utf-8") == content:
+            return False
+    except OSError:
+        pass
+    path.write_text(content, encoding="utf-8", newline="\n")
+    return True
+
+
+def build_project(vault_root, project_dir, defects):
+    """Write every category index plus the project hub. Returns (entries, categories)."""
+    project_dir = Path(project_dir).resolve()
+    project_name = project_dir.name
+    today = date.today().isoformat()
+    total_entries = 0
+    category_rows = []
+
+    for folder_name in CATEGORY_FOLDERS:
+        folder = project_dir / folder_name
+        if not folder.is_dir():
+            continue
+        entries = collect_entries(vault_root, project_dir, folder_name, defects)
+        total_entries += len(entries)
+
+        lines = [HEADER.format(name=f"{project_name} — {category_label(folder_name)}", today=today)]
+        hub = project_dir / project_index_name(project_dir)
+        lines.append(f"↑ {link_to(vault_root, hub, project_name, defects)}\n")
+        if entries:
+            for entry in entries:
+                lines.append(entry_line(vault_root, entry, defects))
+        else:
+            lines.append("_No notes in this category yet._")
+        lines.append("")
+        lines.append(f"_{len(entries)} entries._")
+        lines.append("")
+        write_if_changed(folder / category_index_name(project_name, folder_name), "\n".join(lines))
+        category_rows.append((folder_name, len(entries)))
+
+    # A folder nobody configured is a folder nobody indexes. Renaming 06_tools in the file pane
+    # once took a real run from 21 categories to 20 with exit 0 and no message -- the notes were
+    # simply gone from every index. Say it instead.
+    known = set(CATEGORY_FOLDERS)
+    for child in sorted(project_dir.iterdir()):
+        if not child.is_dir() or child.name.startswith("."):
+            continue
+        if child.name not in known:
+            defects.add(f"{project_name}/{child.name}",
+                        "folder is not a configured category - nothing in it reaches an index")
+
+    lines = [HEADER.format(name=project_name, today=today)]
+    root_hub = Path(vault_root).resolve() / root_index_name(vault_root)
+    lines.append(f"↑ {link_to(vault_root, root_hub, Path(vault_root).resolve().name, defects)}\n")
+    for folder_name, count in category_rows:
+        target = project_dir / folder_name / category_index_name(project_name, folder_name)
+        label = category_label(folder_name)
+        lines.append(f"- {link_to(vault_root, target, label, defects)} — {count} entries")
+    lines.append("")
+    lines.append(f"_{total_entries} entries in {len(category_rows)} categories._")
+    lines.append("")
+    write_if_changed(project_dir / project_index_name(project_dir), "\n".join(lines))
+    return total_entries, len(category_rows)
+
+
+def build_root(vault_root, defects):
+    vault_root = Path(vault_root).resolve()
+    today = date.today().isoformat()
+    lines = [HEADER.format(name=vault_root.name, today=today)]
+    total_entries = 0
+    total_categories = 0
+    projects = project_dirs(vault_root)
+    for project in projects:
+        entries, categories = build_project(vault_root, project, defects)
+        total_entries += entries
+        total_categories += categories
+        target = project / project_index_name(project)
+        lines.append(
+            f"- {link_to(vault_root, target, project.name, defects)} "
+            f"— {entries} entries in {categories} categories"
+        )
+    lines.append("")
+    lines.append(f"_{len(projects)} projects · {total_entries} entries in {total_categories} categories._")
+    lines.append("")
+    write_if_changed(vault_root / root_index_name(vault_root), "\n".join(lines))
+    return len(projects), total_entries, total_categories
+
+
+# --------------------------------------------------------------------------- uniqueness
+
+
+def check_unique_basenames(vault_root, defects):
+    """Doctrine rule 2 needs code reading it, or it holds only while someone remembers it.
+
+    The generator already walks every note, so it counts basenames while it does.
+    """
+    seen = defaultdict(list)
+    for path in walk_markdown(vault_root):
+        seen[path.name].append(path)
+    for name, paths in sorted(seen.items()):
+        if len(paths) > 1:
+            where = ", ".join(sorted(p.parent.name for p in paths))
+            defects.add(name, f"name used {len(paths)} times ({where})")
+    return len(seen)
+
+
+# --------------------------------------------------------------------------- main
+
+
+def main(argv=None):
+    parser = argparse.ArgumentParser(description=__doc__)
+    group = parser.add_mutually_exclusive_group(required=True)
+    group.add_argument("--root", help="vault root: writes the root index and every project below it")
+    group.add_argument("--vault", help="one project directory: writes its category and hub indexes")
+    args = parser.parse_args(argv)
+
+    defects = Defects()
+
+    if args.root:
+        vault_root = Path(args.root).resolve()
+        if not vault_root.is_dir():
+            print(f"not a directory: {vault_root}", file=sys.stderr)
+            return 2
+        projects, entries, categories = build_root(vault_root, defects)
+        names = check_unique_basenames(vault_root, defects)
+        print(f"{entries} entries in {categories} categories · {projects} projects · {names} distinct filenames")
+    else:
+        project_dir = Path(args.vault).resolve()
+        if not project_dir.is_dir():
+            print(f"not a directory: {project_dir}", file=sys.stderr)
+            return 2
+        vault_root = project_dir.parent
+        entries, categories = build_project(vault_root, project_dir, defects)
+        names = check_unique_basenames(vault_root, defects)
+        print(f"{entries} entries in {categories} categories · {project_dir.name} · {names} distinct filenames")
+
+    if defects.skipped:
+        print(f"skipped {defects.skipped} unreadable files", file=sys.stderr)
+
+    status = "ok" if not defects else "defects"
+    log_run(vault_root, "build_index", status, f"{len(defects)} defects")
+
+    if defects:
+        defects.report()
+        print(f"{len(defects)} defects", file=sys.stderr)
+        return 1
+    return 0
+
+
+if __name__ == "__main__":
+    raise SystemExit(main())
+```
+
+### `check_links.py`
+
+```python
+"""Check that every [[wikilink]] in the vault resolves to a file.
+
+Reports numerator AND denominator, and distinguishes three outcomes: pass, fail, and
+"did not run". A checker that scanned zero files must never report "0 broken".
+"""
+
+import sys
+
+for _stream in (sys.stdout, sys.stderr):
+    try:
+        _stream.reconfigure(encoding="utf-8", errors="replace")
+    except (AttributeError, ValueError):
+        pass
+
+import argparse
+import re
+from collections import defaultdict
+from pathlib import Path
+
+from vault_paths import SKIP_DIRS, log_run, walk_markdown
+
+WIKILINK = re.compile(r"\[\[([^\[\]]+)\]\]")
+FENCE = re.compile(r"^\s*(```|~~~)")
+INLINE_CODE = re.compile(r"`+[^`]*`+")
+
+# Extensions Obsidian resolves in a wikilink besides .md.
+ATTACHMENT_SUFFIXES = {
+    ".png", ".jpg", ".jpeg", ".gif", ".svg", ".webp", ".bmp",
+    ".pdf", ".canvas", ".mp3", ".wav", ".m4a", ".ogg", ".flac",
+    ".mp4", ".webm", ".mov",
+}
+
+
+def linkable_files(vault_root):
+    """basename/relpath (lowercased, with and without .md) -> file, for resolution."""
+    root = Path(vault_root).resolve()
+    table = defaultdict(list)
+    for path in root.rglob("*"):
+        if not path.is_file():
+            continue
+        rel = path.relative_to(root)
+        if any(part in SKIP_DIRS for part in rel.parts[:-1]):
+            continue
+        suffix = path.suffix.lower()
+        if suffix != ".md" and suffix not in ATTACHMENT_SUFFIXES:
+            continue
+        rel_posix = rel.as_posix().lower()
+        table[rel_posix].append(path)
+        table[path.name.lower()].append(path)
+        if suffix == ".md":
+            table[rel_posix[:-3]].append(path)
+            table[path.stem.lower()].append(path)
+    return table
+
+
+def strip_code(text):
+    """Remove fenced blocks and inline code spans.
+
+    A [[wikilink]] inside a code span is not a link — Obsidian does not resolve it, so a
+    page that *documents* the syntax must not report itself as broken.
+    """
+    out = []
+    in_fence = False
+    fence_marker = None
+    for line in text.splitlines():
+        match = FENCE.match(line)
+        if match:
+            if not in_fence:
+                in_fence = True
+                fence_marker = match.group(1)
+            elif line.strip().startswith(fence_marker):
+                in_fence = False
+                fence_marker = None
+            out.append("")
+            continue
+        if in_fence:
+            out.append("")
+            continue
+        out.append(INLINE_CODE.sub("", line))
+    return "\n".join(out)
+
+
+def link_targets(text):
+    """Every wikilink target in the text, alias and anchor stripped."""
+    targets = []
+    for raw in WIKILINK.findall(strip_code(text)):
+        target = raw.split("|", 1)[0]
+        target = target.split("#", 1)[0]
+        target = target.split("^", 1)[0]
+        target = target.strip()
+        if target:
+            targets.append((target, raw))
+    return targets
+
+
+def main(argv=None):
+    parser = argparse.ArgumentParser(description=__doc__)
+    parser.add_argument("--vault", required=True, help="vault root")
+    args = parser.parse_args(argv)
+
+    vault_root = Path(args.vault).resolve()
+    if not vault_root.is_dir():
+        print(f"not a directory: {vault_root}", file=sys.stderr)
+        return 2
+
+    table = linkable_files(vault_root)
+    files = walk_markdown(vault_root)
+    scanned = 0
+    skipped = 0
+    total = 0
+    broken = []
+
+    for path in files:
+        try:
+            text = path.read_text(encoding="utf-8", errors="replace")
+        except OSError as exc:
+            # Count the skip explicitly. A silent skip is a lost denominator.
+            skipped += 1
+            print(f"{path.name}: unreadable ({exc})", file=sys.stderr)
+            continue
+        scanned += 1
+        for target, raw in link_targets(text):
+            total += 1
+            key = target.lower().lstrip("./")
+            if key not in table:
+                broken.append((path, raw))
+
+    if scanned == 0:
+        print(f"did not run: 0 of {len(files)} markdown files scanned", file=sys.stderr)
+        log_run(vault_root, "check_links", "did-not-run", "0 files scanned")
+        return 1
+
+    resolved = total - len(broken)
+    print(f"{resolved}/{total} wikilinks resolve · {scanned} files scanned · {skipped} skipped")
+
+    status = "ok" if not broken and not skipped else "defects"
+    log_run(vault_root, "check_links", status, f"{resolved}/{total} resolve")
+
+    if broken:
+        for path, raw in broken:
+            print(f"{path.name}: [[{raw}]] resolves to nothing", file=sys.stderr)
+        print(f"{len(broken)} broken wikilinks", file=sys.stderr)
+        return 1
+    if skipped:
+        print(f"{skipped} files skipped — denominator incomplete", file=sys.stderr)
+        return 1
+    return 0
+
+
+if __name__ == "__main__":
+    raise SystemExit(main())
+```
+
+### `check_duplicates.py`
+
+```python
+"""Flag notes whose content overlaps, so one insight does not end up living in two files.
+
+Every hit gets a decision: a flagged pair makes the run red. Ignoring it is not an option
+the tool offers.
+
+The threshold is a knob, not a truth. On a vault with a handful of notes the number this
+prints is arithmetic, not evidence — recalibrate once there is real volume:
+
+    python check_duplicates.py --vault <dir> --threshold 0.75
+"""
+
+import sys
+
+for _stream in (sys.stdout, sys.stderr):
+    try:
+        _stream.reconfigure(encoding="utf-8", errors="replace")
+    except (AttributeError, ValueError):
+        pass
+
+import argparse
+import re
+from itertools import combinations
+from pathlib import Path
+
+from vault_paths import is_index_file, log_run, walk_markdown
+
+DEFAULT_THRESHOLD = 0.75
+SHINGLE = 5
+WORD = re.compile(r"[^\W\d_]+", re.UNICODE)
+
+
+def body_shingles(path):
+    """Word 5-grams of the note body. Frontmatter is skipped — it is metadata, not content."""
+    text = path.read_text(encoding="utf-8", errors="replace")
+    if text.startswith("---"):
+        parts = text.split("\n---", 2)
+        if len(parts) >= 2:
+            text = parts[-1]
+    words = [w.lower() for w in WORD.findall(text)]
+    if len(words) < SHINGLE:
+        return {tuple(words)} if words else set()
+    return {tuple(words[i : i + SHINGLE]) for i in range(len(words) - SHINGLE + 1)}
+
+
+def jaccard(a, b):
+    if not a or not b:
+        return 0.0
+    return len(a & b) / len(a | b)
+
+
+def main(argv=None):
+    parser = argparse.ArgumentParser(description=__doc__)
+    parser.add_argument("--vault", required=True, help="vault root or a single project directory")
+    parser.add_argument("--threshold", type=float, default=DEFAULT_THRESHOLD)
+    args = parser.parse_args(argv)
+
+    root = Path(args.vault).resolve()
+    if not root.is_dir():
+        print(f"not a directory: {root}", file=sys.stderr)
+        return 2
+
+    notes = [p for p in walk_markdown(root) if not is_index_file(p)]
+    shingles = {}
+    skipped = 0
+    for path in notes:
+        try:
+            shingles[path] = body_shingles(path)
+        except OSError as exc:
+            skipped += 1
+            print(f"{path.name}: unreadable ({exc})", file=sys.stderr)
+
+    comparable = list(shingles)
+    pairs = list(combinations(comparable, 2))
+    flagged = [
+        (a, b, jaccard(shingles[a], shingles[b]))
+        for a, b in pairs
+        if jaccard(shingles[a], shingles[b]) >= args.threshold
+    ]
+
+    if len(comparable) < 2:
+        print(
+            f"did not run: {len(comparable)} comparable notes — "
+            f"a pair needs two (threshold {args.threshold})"
+        )
+        log_run(root, "check_duplicates", "did-not-run", f"{len(comparable)} notes")
+        return 0
+
+    print(
+        f"{len(flagged)} pairs flagged of {len(pairs)} compared · "
+        f"{len(comparable)} notes · threshold {args.threshold} · {skipped} skipped"
+    )
+    log_run(root, "check_duplicates", "ok" if not flagged else "defects", f"{len(flagged)} flagged")
+
+    if flagged:
+        for a, b, score in sorted(flagged, key=lambda t: -t[2]):
+            print(f"{a.name}: {score:.2f} overlap with {b.name}", file=sys.stderr)
+        print(f"{len(flagged)} duplicate pairs need a decision", file=sys.stderr)
+        return 1
+    if skipped:
+        print(f"{skipped} files skipped — denominator incomplete", file=sys.stderr)
+        return 1
+    return 0
+
+
+if __name__ == "__main__":
+    raise SystemExit(main())
+```
+
+### `check_freshness.py`
+
+```python
+"""Report the age of the last HEALTHY run of each expected job.
+
+Without this, a scheduler that quietly stopped firing looks identical to one that is fine.
+"no log" is reported as "did not run" — never as "fine".
+
+Log format, one line per run, appended by every tool (see vault_paths.log_run):
+
+    2026-07-27T09:15:00+00:00\tbuild_index\tok\t0 defects
+"""
+
+import sys
+
+for _stream in (sys.stdout, sys.stderr):
+    try:
+        _stream.reconfigure(encoding="utf-8", errors="replace")
+    except (AttributeError, ValueError):
+        pass
+
+import argparse
+import json
+from datetime import datetime, timezone
+from pathlib import Path
+
+from vault_paths import RUN_LOG_RELPATH
+
+DEFAULT_MAX_AGE_HOURS = 24.0
+HEALTHY = {"ok"}
+
+
+def expected_jobs(vault_root):
+    """Jobs that must have a healthy run. Configured per vault, defaulted here."""
+    config = Path(vault_root).resolve() / "00_Global" / "06_tools" / "jobs.json"
+    try:
+        data = json.loads(config.read_text(encoding="utf-8"))
+        return list(data["jobs"])
+    except (OSError, ValueError, KeyError):
+        return ["build_index", "check_links"]
+
+
+def parse_log(log_path):
+    """job -> newest healthy datetime. Malformed lines are counted, not swallowed."""
+    healthy = {}
+    malformed = 0
+    lines = 0
+    with open(log_path, "r", encoding="utf-8", errors="replace") as fh:
+        for line in fh:
+            if not line.strip():
+                continue
+            lines += 1
+            parts = line.rstrip("\n").split("\t")
+            if len(parts) < 3:
+                malformed += 1
+                continue
+            stamp, job, status = parts[0], parts[1], parts[2]
+            try:
+                when = datetime.fromisoformat(stamp)
+            except ValueError:
+                malformed += 1
+                continue
+            if when.tzinfo is None:
+                when = when.replace(tzinfo=timezone.utc)
+            if status not in HEALTHY:
+                continue
+            if job not in healthy or when > healthy[job]:
+                healthy[job] = when
+    return healthy, lines, malformed
+
+
+def main(argv=None):
+    parser = argparse.ArgumentParser(description=__doc__)
+    parser.add_argument("--vault", required=True, help="vault root")
+    parser.add_argument("--log", help="run log path (defaults to the vault's own)")
+    parser.add_argument("--max-age-hours", type=float, default=DEFAULT_MAX_AGE_HOURS)
+    parser.add_argument("--jobs", nargs="*", help="override the expected job list")
+    args = parser.parse_args(argv)
+
+    vault_root = Path(args.vault).resolve()
+    log_path = Path(args.log).resolve() if args.log else vault_root / RUN_LOG_RELPATH
+    jobs = args.jobs if args.jobs else expected_jobs(vault_root)
+
+    if not jobs:
+        print("did not run: no expected jobs configured", file=sys.stderr)
+        return 1
+
+    if not log_path.exists() or log_path.stat().st_size == 0:
+        print(f"did not run: no run log at {log_path}", file=sys.stderr)
+        for job in jobs:
+            print(f"{job}: did not run — no log", file=sys.stderr)
+        print(f"0/{len(jobs)} jobs have a healthy run", file=sys.stderr)
+        return 1
+
+    healthy, lines, malformed = parse_log(log_path)
+    now = datetime.now(timezone.utc)
+    fresh = []
+    problems = []
+
+    for job in jobs:
+        when = healthy.get(job)
+        if when is None:
+            problems.append(f"{job}: did not run — no healthy line in {lines} log lines")
+            continue
+        age_h = (now - when).total_seconds() / 3600.0
+        if age_h > args.max_age_hours:
+            problems.append(f"{job}: last healthy run {age_h:.1f}h ago, threshold {args.max_age_hours}h")
+        else:
+            fresh.append((job, age_h))
+
+    print(
+        f"{len(fresh)}/{len(jobs)} jobs fresh · {lines} log lines · "
+        f"{malformed} malformed · threshold {args.max_age_hours}h"
+    )
+    for job, age_h in fresh:
+        print(f"  {job}: {age_h:.1f}h ago")
+
+    if problems or malformed:
+        for problem in problems:
+            print(problem, file=sys.stderr)
+        if malformed:
+            print(f"{malformed} malformed log lines", file=sys.stderr)
+        return 1
+    return 0
+
+
+if __name__ == "__main__":
+    raise SystemExit(main())
+```
+
+### `count_tokens.py`
+
+```python
+"""Report the size of what was read, for cost.
+
+Never invents a precision: every number is labelled `exact` or `estimated`. Without a real
+tokenizer installed the token count is a chars/4 heuristic and says so on every line.
+"""
+
+import sys
+
+for _stream in (sys.stdout, sys.stderr):
+    try:
+        _stream.reconfigure(encoding="utf-8", errors="replace")
+    except (AttributeError, ValueError):
+        pass
+
+import argparse
+from pathlib import Path
+
+from vault_paths import walk_markdown
+
+CHARS_PER_TOKEN = 4.0
+
+
+def tokenizer():
+    """Return (name, callable) if a real tokenizer is importable, else (None, None)."""
+    try:
+        import tiktoken  # type: ignore
+
+        enc = tiktoken.get_encoding("cl100k_base")
+        return "tiktoken/cl100k_base", lambda s: len(enc.encode(s))
+    except Exception:
+        return None, None
+
+
+def main(argv=None):
+    parser = argparse.ArgumentParser(description=__doc__)
+    parser.add_argument("paths", nargs="+", help="files or directories")
+    args = parser.parse_args(argv)
+
+    name, encode = tokenizer()
+    precision = "exact" if encode else "estimated"
+
+    files = []
+    for raw in args.paths:
+        path = Path(raw).resolve()
+        if path.is_dir():
+            files.extend(walk_markdown(path))
+        elif path.is_file():
+            files.append(path)
+        else:
+            print(f"not found: {path}", file=sys.stderr)
+            return 2
+
+    chars = 0
+    tokens = 0
+    skipped = 0
+    for path in files:
+        try:
+            text = path.read_text(encoding="utf-8", errors="replace")
+        except OSError as exc:
+            skipped += 1
+            print(f"{path.name}: unreadable ({exc})", file=sys.stderr)
+            continue
+        chars += len(text)
+        tokens += encode(text) if encode else int(len(text) / CHARS_PER_TOKEN)
+
+    if not files:
+        print("did not run: 0 files matched", file=sys.stderr)
+        return 1
+
+    source = name if name else f"chars/{CHARS_PER_TOKEN:g} heuristic"
+    print(f"{tokens} tokens ({precision}, {source}) · {chars} chars · {len(files) - skipped}/{len(files)} files")
+    if skipped:
+        print(f"{skipped} files skipped — denominator incomplete", file=sys.stderr)
+        return 1
+    return 0
+
+
+if __name__ == "__main__":
+    raise SystemExit(main())
+```
+
+### `run_suites.py`
+
+```python
+"""Discover and run every test_*.py next to the tools.
+
+Reports n/m. Zero suites collected is NOT green — a tool without a suite is invisible to
+the runner, which is worse than red.
+"""
+
+import sys
+
+for _stream in (sys.stdout, sys.stderr):
+    try:
+        _stream.reconfigure(encoding="utf-8", errors="replace")
+    except (AttributeError, ValueError):
+        pass
+
+import argparse
+import os
+import subprocess
+from pathlib import Path
+
+
+def main(argv=None):
+    parser = argparse.ArgumentParser(description=__doc__)
+    parser.add_argument("--tools", default=str(Path(__file__).resolve().parent), help="directory to scan")
+    args = parser.parse_args(argv)
+
+    tools = Path(args.tools).resolve()
+    if not tools.is_dir():
+        print(f"not a directory: {tools}", file=sys.stderr)
+        return 2
+
+    suites = sorted(tools.glob("test_*.py"))
+    if not suites:
+        print(f"0 suites collected in {tools} — not green, nothing ran", file=sys.stderr)
+        return 1
+
+    env = dict(os.environ)
+    env["PYTHONPATH"] = str(tools) + os.pathsep + env.get("PYTHONPATH", "")
+    env["PYTHONIOENCODING"] = "utf-8"
+
+    passed = []
+    failed = []
+    for suite in suites:
+        result = subprocess.run(
+            [sys.executable, str(suite)],
+            cwd=str(tools),
+            env=env,
+            capture_output=True,
+        )
+        out = (result.stdout + result.stderr).decode("utf-8", errors="replace")
+        if result.returncode == 0:
+            passed.append(suite.name)
+        else:
+            failed.append((suite.name, out.strip()))
+
+    print(f"{len(passed)}/{len(suites)} suites green")
+    for name in passed:
+        print(f"  ok   {name}")
+    for name, out in failed:
+        print(f"  FAIL {name}", file=sys.stderr)
+        for line in out.splitlines()[-15:]:
+            print(f"       {line}", file=sys.stderr)
+
+    return 1 if failed else 0
+
+
+if __name__ == "__main__":
+    raise SystemExit(main())
+```
+
+#### Drivers
+
+### `acceptance.py`
+
+```python
+"""Acceptance test: prove every guard goes red on bad input, on this machine.
+
+Nine fixtures, each built in a throwaway vault under the system temp directory. The verdict
+comes from process exit codes and from files on disk -- never from parsing console text, which
+wraps at the terminal width and differs per shell.
+
+    python acceptance.py            one pass
+    python acceptance.py --repeat 10
+
+Exit 0 only when all nine passed in every pass.
+"""
+
+import argparse
+import shutil
+import sys
+import tempfile
+from pathlib import Path
+
+sys.path.insert(0, str(Path(__file__).resolve().parent))
+
+from _testkit import make_vault, run_tool, write_note
+from vault_paths import category_index_name
+
+for _stream in (sys.stdout, sys.stderr):
+    try:
+        _stream.reconfigure(encoding="utf-8", errors="replace")
+    except (AttributeError, ValueError):
+        pass
+
+PROJECT = "ProjektEins"
+
+
+def index_text(project, folder="00_Notes"):
+    path = project / folder / category_index_name(PROJECT, folder)
+    return path.read_text(encoding="utf-8") if path.exists() else ""
+
+
+def note(path, title, summary, created, body):
+    """A note with its own body. The shared helper writes one body for every note, which is
+    itself a duplicate pair once two of them exist."""
+    path.parent.mkdir(parents=True, exist_ok=True)
+    path.write_text(
+        f'---\ntitle: "{title}"\nsummary: "{summary}"\ncreated: "{created}"\n---\n\n{body}\n',
+        encoding="utf-8", newline="\n")
+    return path
+
+
+def build_both(vault, project):
+    """Category and project indexes, then the root hub.
+
+    Both invocations are needed before the link checker means anything: the project hub
+    back-links to the root index, and --vault alone never writes it. Skipping --root leaves
+    exactly one broken link, which makes an unrelated fixture pass for the wrong reason.
+    """
+    run_tool("build_index.py", "--vault", project)
+    run_tool("build_index.py", "--root", vault)
+
+
+def fixture_1_missing_title(vault, project):
+    write_note(project / "00_Notes" / "ohne-titel.md", title=None)
+    code, _, err = run_tool("build_index.py", "--vault", project)
+    return code != 0 and "ohne-titel.md" in err
+
+
+def fixture_2_summary_debris(vault, project):
+    write_note(project / "00_Notes" / "debris.md", summary="> Ein Zitatrest")
+    code, _, err = run_tool("build_index.py", "--vault", project)
+    return code != 0 and "debris.md" in err and "— > Ein Zitatrest" not in index_text(project)
+
+
+def fixture_3_dead_wikilink(vault, project):
+    write_note(project / "00_Notes" / "toter-link.md")
+    (project / "00_Notes" / "toter-link.md").write_text(
+        '---\ntitle: "Toter Link"\nsummary: "Zeigt ins Leere."\n---\n\n'
+        "[[gibt-es-nicht-im-vault]]\n", encoding="utf-8", newline="\n")
+    build_both(vault, project)
+    code, out, err = run_tool("check_links.py", "--vault", vault)
+    scanned = any(ch.isdigit() for ch in out)
+    return code != 0 and scanned and "toter-link.md" in (out + err)
+
+
+def fixture_4_forbidden_filename(vault, project):
+    write_note(project / "00_Notes" / "kaputt#name.md", title="Kaputter Name")
+    code, _, err = run_tool("build_index.py", "--vault", project)
+    text = index_text(project)
+    return code != 0 and "kaputt#name.md" in err and "[Kaputter Name](" in text
+
+
+def fixture_5_non_ascii_filename(vault, project):
+    write_note(project / "00_Notes" / "Übergröße-Ärger.md", title="Umlaut-Notiz")
+    code, out, err = run_tool("build_index.py", "--vault", project)
+    if code != 0:
+        return False
+    if "Übergröße-Ärger" not in index_text(project):
+        return False
+    run_tool("build_index.py", "--root", vault)
+    code2, out2, err2 = run_tool("check_links.py", "--vault", vault)
+    return code2 == 0 and "0 files scanned" not in out2 and "Übergröße-Ärger" not in err2
+
+
+def fixture_6_second_run_is_a_noop(vault, project):
+    write_note(project / "00_Notes" / "stabil.md")
+    run_tool("build_index.py", "--vault", project)
+    before = {p.name: p.read_bytes() for p in project.rglob("INDEX - *.md")}
+    run_tool("build_index.py", "--vault", project)
+    after = {p.name: p.read_bytes() for p in project.rglob("INDEX - *.md")}
+    return bool(before) and before == after
+
+
+def fixture_7_empty_suite_dir(vault, project):
+    empty = Path(tempfile.mkdtemp(prefix="vaultkit_empty_"))
+    try:
+        code, out, err = run_tool("run_suites.py", "--tools", empty)
+        return code != 0 and "0 suites" in (out + err)
+    finally:
+        shutil.rmtree(empty, ignore_errors=True)
+
+
+def fixture_8_freshness_without_log(vault, project):
+    blank = vault / "leeres-protokoll.log"
+    blank.write_text("", encoding="utf-8")
+    code, out, err = run_tool("check_freshness.py", "--vault", vault, "--log", blank)
+    return code != 0 and "did not run" in (out + err)
+
+
+def fixture_9_unknown_folder(vault, project):
+    (project / "99_extra").mkdir(exist_ok=True)
+    write_note(project / "99_extra" / "verlorene-notiz.md", title="Verloren")
+    code, _, err = run_tool("build_index.py", "--vault", project)
+    return code != 0 and "99_extra" in err
+
+
+def control_clean_vault_is_green(vault, project):
+    """The healthy control: a suite that only ever sees bad input is as blind as one that
+    only ever sees good input. Every tool must exit 0 on a clean tree, and say so with a
+    denominator."""
+    # Distinct bodies on purpose: two notes sharing the shared-fixture body are a genuine
+    # duplicate pair, and check_duplicates is right to flag them.
+    note(project / "00_Notes" / "eine-erkenntnis.md", "Eine Erkenntnis", "Genau ein Satz.",
+         "2026-07-01", "Was an diesem Tag gemessen wurde und warum es zaehlt.")
+    note(project / "03_technical_docs" / "ein-subsystem.md", "Ein Subsystem", "Handbuchseite.",
+         "2026-07-02", "Wie das Teilsystem aufgebaut ist, Schnittstellen und Grenzen.")
+    build_both(vault, project)
+
+    for script in ("check_links.py", "check_duplicates.py"):
+        code, out, err = run_tool(script, "--vault", vault)
+        if code != 0 or not any(ch.isdigit() for ch in out + err):
+            return False
+
+    log = vault / "runs.log"
+    log.write_text("", encoding="utf-8")
+    code, out, err = run_tool("check_freshness.py", "--vault", vault, "--log", log)
+    if code == 0:  # an empty log is not a healthy run, and must not read as one
+        return False
+
+    before = {p.name: p.read_bytes() for p in vault.rglob("INDEX - *.md")}
+    build_both(vault, project)
+    after = {p.name: p.read_bytes() for p in vault.rglob("INDEX - *.md")}
+    return bool(before) and before == after
+
+
+FIXTURES = [
+    ("0 healthy control: clean vault is green and stable", control_clean_vault_is_green),
+    ("1 note without title", fixture_1_missing_title),
+    ("2 markdown debris in summary", fixture_2_summary_debris),
+    ("3 dead wikilink", fixture_3_dead_wikilink),
+    ("4 forbidden character in filename", fixture_4_forbidden_filename),
+    ("5 non-ASCII filename stays in the denominator", fixture_5_non_ascii_filename),
+    ("6 second index run changes nothing", fixture_6_second_run_is_a_noop),
+    ("7 suite runner on an empty directory", fixture_7_empty_suite_dir),
+    ("8 freshness check without a run log", fixture_8_freshness_without_log),
+    ("9 folder that is not a configured category", fixture_9_unknown_folder),
+]
+
+
+def one_pass(verbose=True):
+    """Every fixture gets its own vault, so one fixture cannot poison the next."""
+    results = []
+    for label, fn in FIXTURES:
+        vault = make_vault((PROJECT,))
+        try:
+            try:
+                ok = bool(fn(vault, vault / PROJECT))
+            except Exception as exc:  # a crashing fixture is a failing fixture
+                ok = False
+                label = f"{label} [raised {type(exc).__name__}: {exc}]"
+        finally:
+            shutil.rmtree(vault.parent, ignore_errors=True)
+        results.append((label, ok))
+        if verbose:
+            print(f"  {'ok  ' if ok else 'FAIL'} {label}")
+    return results
+
+
+def main(argv=None):
+    parser = argparse.ArgumentParser(description=__doc__)
+    parser.add_argument("--repeat", type=int, default=1, help="number of full passes")
+    args = parser.parse_args(argv)
+
+    failures = []
+    for run in range(1, args.repeat + 1):
+        if args.repeat > 1:
+            print(f"--- pass {run}/{args.repeat} ---")
+        for label, ok in one_pass():
+            if not ok:
+                failures.append((run, label))
+        passed = len(FIXTURES) - sum(1 for r, _ in failures if r == run)
+        print(f"{passed}/{len(FIXTURES)} checks behaved as specified — "
+              f"9 guards red on bad input, 1 healthy control green (pass {run})")
+
+    if failures:
+        print(f"\n{len(failures)} failing fixture runs:", file=sys.stderr)
+        for run, label in failures:
+            print(f"  pass {run}: {label}", file=sys.stderr)
+        return 1
+    print(f"\n{args.repeat} pass(es), {len(FIXTURES)}/{len(FIXTURES)} every time.")
+    return 0
+
+
+if __name__ == "__main__":
+    sys.exit(main())
+```
+
+### `verify_setup.py`
+
+```python
+"""End-to-end verification of a complete setup, from empty folder to committed vault.
+
+acceptance.py proves each guard reacts correctly to one bad input. This proves the whole
+sequence a setup actually performs still works when the steps run in order on one tree:
+folders, tools, notes, git, indexes, every check, the suites, the acceptance run, and a
+second index run that must leave the tree byte-identical and `git status` empty.
+
+    python verify_setup.py
+    python verify_setup.py --repeat 10
+
+Everything happens in a throwaway tree under the system temp directory. Exit 0 only when
+every step passed in every pass.
+"""
+
+import argparse
+import json
+import os
+import shutil
+import subprocess
+import sys
+import tempfile
+from pathlib import Path
+
+TOOLS = Path(__file__).resolve().parent
+sys.path.insert(0, str(TOOLS))
+
+for _stream in (sys.stdout, sys.stderr):
+    try:
+        _stream.reconfigure(encoding="utf-8", errors="replace")
+    except (AttributeError, ValueError):
+        pass
+
+CATEGORY_FOLDERS = ["00_Notes", "01_Issues", "02_docs", "03_technical_docs",
+                    "04_feedback", "05_workflows", "06_tools"]
+PROJECTS = ["ProjektEins", "ProjektZwei"]
+
+NOTES = [
+    ("00_Global", "03_technical_docs", "the-rules-this-vault-runs-on.md", "The rules this vault runs on",
+     "Twelve rules and the frontmatter contract.",
+     "Every note carries frontmatter. The index is generated and never hand written."),
+    ("00_Global", "03_technical_docs", "tooling-00_Global.md", "Tooling",
+     "What each guard refuses to do.",
+     "A check that cannot tell working from broken is not evidence, so each one prints a denominator."),
+    ("ProjektEins", "00_Notes", "knowledge-transfer-ProjektEins.md", "Knowledge transfer ProjektEins",
+     "How to pick this project up.",
+     "Where the code lives, which decisions are settled, and what the next session should read first."),
+    ("ProjektZwei", "00_Notes", "knowledge-transfer-ProjektZwei.md", "Knowledge transfer ProjektZwei",
+     "How to pick that project up.",
+     "Open questions, the last measurement, and the reason the current approach was chosen."),
+]
+
+
+class Failed(Exception):
+    pass
+
+
+def run(cmd, cwd, expect_zero=True, label=""):
+    env = dict(os.environ)
+    env.pop("PYTHONIOENCODING", None)
+    env.pop("PYTHONUTF8", None)
+    result = subprocess.run([str(c) for c in cmd], cwd=str(cwd), env=env, capture_output=True)
+    out = result.stdout.decode("utf-8", errors="replace")
+    err = result.stderr.decode("utf-8", errors="replace")
+    if expect_zero and result.returncode != 0:
+        raise Failed(f"{label or cmd[1]} exited {result.returncode}\n{out}\n{err}")
+    if not expect_zero and result.returncode == 0:
+        raise Failed(f"{label or cmd[1]} exited 0 but had to fail\n{out}\n{err}")
+    return result.returncode, out, err
+
+
+def tool(vault, script, *args, expect_zero=True):
+    return run([sys.executable, str(vault / "00_Global" / "06_tools" / script), *args],
+               cwd=vault, expect_zero=expect_zero, label=script)
+
+
+def write_note(path, title, summary, body):
+    path.parent.mkdir(parents=True, exist_ok=True)
+    path.write_text(f'---\ntitle: "{title}"\nsummary: "{summary}"\ncreated: "2026-07-27"\n---\n\n{body}\n',
+                    encoding="utf-8", newline="\n")
+
+
+def build_vault(root):
+    """Step 1-3: the folder tree, the shipped tools, the starting pages."""
+    for project in ["00_Global"] + PROJECTS:
+        for folder in CATEGORY_FOLDERS:
+            (root / project / folder).mkdir(parents=True, exist_ok=True)
+    dst = root / "00_Global" / "06_tools"
+    for src in list(TOOLS.glob("*.py")) + [TOOLS / "jobs.json"]:
+        shutil.copy2(src, dst / src.name)
+    for project, folder, name, title, summary, body in NOTES:
+        write_note(root / project / folder / name, title, summary, body)
+    (root / ".gitignore").write_text(
+        ".obsidian/plugins/\n.obsidian/workspace.json\n.obsidian/graph.json\n"
+        "**/runs.log\n**/__pycache__/\n*.pyc\n_acceptance/\n",
+        encoding="utf-8", newline="\n")
+
+
+def git_setup(root):
+    run(["git", "init", "-q"], cwd=root, label="git init")
+    run(["git", "config", "user.name", "vaultkit-verify"], cwd=root, label="git config name")
+    run(["git", "config", "user.email", "verify@localhost"], cwd=root, label="git config email")
+
+
+def git_commit_all(root, message):
+    run(["git", "add", "-A"], cwd=root, label="git add")
+    run(["git", "commit", "-q", "-m", message], cwd=root, label="git commit")
+
+
+def index_all(root):
+    for project in ["00_Global"] + PROJECTS:
+        tool(root, "build_index.py", "--vault", str(root / project))
+    tool(root, "build_index.py", "--root", ".")
+
+
+def snapshot(root):
+    return {str(p.relative_to(root)): p.read_bytes() for p in sorted(root.rglob("INDEX - *.md"))}
+
+
+STEPS = []
+
+
+def step(name):
+    def wrap(fn):
+        STEPS.append((name, fn))
+        return fn
+    return wrap
+
+
+@step("1 tree, tools and starting pages exist")
+def _s1(root):
+    build_vault(root)
+    missing = [p for p in (root / "00_Global" / "06_tools" / "build_index.py",
+                           root / "ProjektEins" / "00_Notes",
+                           root / ".gitignore") if not p.exists()]
+    if missing:
+        raise Failed(f"missing after build: {missing}")
+
+
+@step("2 git initialised and the untouched state committed")
+def _s2(root):
+    git_setup(root)
+    git_commit_all(root, "chore: vault skeleton before any generated file")
+
+
+@step("3 index generator writes all three levels")
+def _s3(root):
+    index_all(root)
+    for project in ["00_Global"] + PROJECTS:
+        hub = list((root / project).glob("INDEX - *.md"))
+        if not hub:
+            raise Failed(f"no project hub in {project}")
+    if not list(root.glob("INDEX - *.md")):
+        raise Failed("no root index")
+
+
+@step("4 link checker green with a denominator")
+def _s4(root):
+    _, out, err = tool(root, "check_links.py", "--vault", ".")
+    if "wikilinks resolve" not in out or not any(c.isdigit() for c in out):
+        raise Failed(f"no denominator: {out!r} {err!r}")
+
+
+@step("5 duplicate check green with a denominator")
+def _s5(root):
+    _, out, _ = tool(root, "check_duplicates.py", "--vault", ".")
+    if "compared" not in out:
+        raise Failed(f"no denominator: {out!r}")
+
+
+@step("6 freshness sees the healthy runs the tools just logged")
+def _s6(root):
+    _, out, err = tool(root, "check_freshness.py", "--vault", ".")
+    if "jobs fresh" not in (out + err):
+        raise Failed(f"freshness did not report per-job freshness: {out!r} {err!r}")
+
+
+@step("7 suites green")
+def _s7(root):
+    _, out, _ = tool(root, "run_suites.py")
+    if "suites green" not in out:
+        raise Failed(f"unexpected suite output: {out!r}")
+
+
+@step("8 acceptance run correct")
+def _s8(root):
+    _, out, _ = tool(root, "acceptance.py")
+    if "10/10" not in out:
+        raise Failed(f"acceptance not 10/10: {out!r}")
+
+
+@step("9 second index run is byte-identical")
+def _s9(root):
+    before = snapshot(root)
+    index_all(root)
+    after = snapshot(root)
+    if not before:
+        raise Failed("no index files to compare")
+    changed = [k for k in before if before[k] != after.get(k)]
+    if changed or set(before) != set(after):
+        raise Failed(f"index churn: {changed or set(after) ^ set(before)}")
+
+
+@step("10 working tree clean after committing the generated files")
+def _s10(root):
+    git_commit_all(root, "chore: generated indexes")
+    index_all(root)
+    _, out, _ = run(["git", "status", "--porcelain"], cwd=root, label="git status")
+    if out.strip():
+        raise Failed(f"tree not clean after a rerun:\n{out}")
+
+
+def one_pass(verbose=True):
+    root = Path(tempfile.mkdtemp(prefix="vaultkit_flow_")) / "Vault"
+    root.mkdir(parents=True)
+    failures = []
+    try:
+        for name, fn in STEPS:
+            try:
+                fn(root)
+                ok, detail = True, ""
+            except Failed as exc:
+                ok, detail = False, str(exc)
+            except Exception as exc:
+                ok, detail = False, f"{type(exc).__name__}: {exc}"
+            if verbose:
+                print(f"  {'ok  ' if ok else 'FAIL'} {name}")
+            if not ok:
+                failures.append((name, detail))
+                break  # later steps depend on this one; a cascade hides the cause
+    finally:
+        shutil.rmtree(root.parent, ignore_errors=True)
+    return failures
+
+
+def main(argv=None):
+    parser = argparse.ArgumentParser(description=__doc__)
+    parser.add_argument("--repeat", type=int, default=1)
+    args = parser.parse_args(argv)
+
+    all_failures = []
+    for run_no in range(1, args.repeat + 1):
+        if args.repeat > 1:
+            print(f"--- pass {run_no}/{args.repeat} ---")
+        failures = one_pass()
+        print(f"{len(STEPS) - len(failures)}/{len(STEPS)} steps passed (pass {run_no})")
+        all_failures += [(run_no, n, d) for n, d in failures]
+
+    if all_failures:
+        print(f"\n{len(all_failures)} failing steps:", file=sys.stderr)
+        for run_no, name, detail in all_failures:
+            print(f"  pass {run_no}: {name}\n    {detail}", file=sys.stderr)
+        return 1
+    print(f"\n{args.repeat} pass(es), {len(STEPS)}/{len(STEPS)} steps every time.")
+    return 0
+
+
+if __name__ == "__main__":
+    sys.exit(main())
+```
+
+### `test_build_index.py`
+
+```python
+"""Suite for build_index.py.
+
+Every case here is a failure-mode fixture except test_healthy_control, which is the
+control: a suite that only ever sees good input cannot tell you the check still works.
+"""
+
+import shutil
+import sys
+import unittest
+from pathlib import Path
+
+sys.path.insert(0, str(Path(__file__).resolve().parent))
+
+from _testkit import make_vault, run_tool, write_note
+from vault_paths import category_index_name, project_index_name, root_index_name
+
+
+class BuildIndexTest(unittest.TestCase):
+    def setUp(self):
+        self.vault = make_vault(("ProjektEins",))
+        self.project = self.vault / "ProjektEins"
+
+    def tearDown(self):
+        shutil.rmtree(self.vault.parent, ignore_errors=True)
+
+    def index_text(self, folder="00_Notes"):
+        path = self.project / folder / category_index_name("ProjektEins", folder)
+        return path.read_text(encoding="utf-8")
+
+    # ------------------------------------------------------------------ control
+
+    def test_healthy_control(self):
+        write_note(self.project / "00_Notes" / "eine-erkenntnis.md",
+                   title="Eine Erkenntnis", summary="Genau ein Satz.", created="2026-07-01")
+        code, out, err = run_tool("build_index.py", "--vault", self.project)
+        self.assertEqual(code, 0, err)
+        self.assertIn("1 entries in 7 categories", out)
+        text = self.index_text()
+        self.assertIn("[[ProjektEins/00_Notes/eine-erkenntnis|Eine Erkenntnis]]", text)
+        self.assertIn("Genau ein Satz.", text)
+
+    def test_empty_category_still_gets_an_index(self):
+        code, _, err = run_tool("build_index.py", "--vault", self.project)
+        self.assertEqual(code, 0, err)
+        for folder in ("00_Notes", "01_Issues", "06_tools"):
+            path = self.project / folder / category_index_name("ProjektEins", folder)
+            self.assertTrue(path.exists(), f"{path} missing")
+
+    # ------------------------------------------------------------ failure modes
+
+    def test_missing_title_is_a_defect(self):
+        write_note(self.project / "00_Notes" / "ohne-titel.md", title=None)
+        code, _, err = run_tool("build_index.py", "--vault", self.project)
+        self.assertEqual(code, 1)
+        self.assertIn("ohne-titel.md", err)
+        self.assertIn("title", err)
+
+    def test_markdown_debris_in_summary_is_stripped_and_red(self):
+        write_note(self.project / "00_Notes" / "debris.md", summary="> Ein Zitatrest")
+        code, _, err = run_tool("build_index.py", "--vault", self.project)
+        self.assertEqual(code, 1)
+        self.assertIn("debris.md", err)
+        self.assertNotIn("— > Ein Zitatrest", self.index_text())
+        self.assertIn("Ein Zitatrest", self.index_text())
+
+    def test_forbidden_filename_falls_back_to_markdown_link(self):
+        write_note(self.project / "00_Notes" / "kaputt#name.md", title="Kaputter Name")
+        code, _, err = run_tool("build_index.py", "--vault", self.project)
+        self.assertEqual(code, 1)
+        self.assertIn("kaputt#name.md", err)
+        text = self.index_text()
+        self.assertIn("[Kaputter Name](", text)
+        self.assertNotIn("[[ProjektEins/00_Notes/kaputt#name", text)
+
+    def test_non_ascii_filename_stays_in_the_denominator(self):
+        write_note(self.project / "00_Notes" / "Übergröße-für-Ärger.md", title="Umlaut-Notiz")
+        code, out, err = run_tool("build_index.py", "--vault", self.project)
+        self.assertEqual(code, 0, err)
+        self.assertIn("1 entries", out)
+        self.assertIn("Übergröße-für-Ärger", self.index_text())
+
+    def test_non_ascii_defect_survives_the_subprocess_round_trip(self):
+        write_note(self.project / "00_Notes" / "Ärgernis-ohne-Titel.md", title=None)
+        code, _, err = run_tool("build_index.py", "--vault", self.project)
+        self.assertEqual(code, 1)
+        self.assertIn("Ärgernis-ohne-Titel.md", err)
+
+    def test_duplicate_basenames_are_a_defect(self):
+        vault = make_vault(("ProjektEins", "ProjektZwei"))
+        try:
+            write_note(vault / "ProjektEins" / "00_Notes" / "gleich.md")
+            write_note(vault / "ProjektZwei" / "00_Notes" / "gleich.md")
+            code, _, err = run_tool("build_index.py", "--root", vault)
+            self.assertEqual(code, 1)
+            self.assertIn("gleich.md", err)
+            self.assertIn("name used 2 times", err)
+        finally:
+            shutil.rmtree(vault.parent, ignore_errors=True)
+
+    def test_unknown_folder_is_a_defect(self):
+        """A renamed 06_tools once dropped a real run from 21 categories to 20, silently."""
+        (self.project / "06_werkzeuge").mkdir()
+        write_note(self.project / "06_werkzeuge" / "verlorene-notiz.md", title="Verloren")
+        code, out, err = run_tool("build_index.py", "--vault", self.project)
+        self.assertEqual(code, 1, out)
+        self.assertIn("06_werkzeuge", err)
+
+    def test_healthy_control_has_no_unknown_folder(self):
+        code, out, err = run_tool("build_index.py", "--vault", self.project)
+        self.assertEqual(code, 0, err)
+        self.assertNotIn("not a configured category", err)
+
+    # -------------------------------------------------------------- invariants
+
+    def test_second_run_changes_nothing(self):
+        write_note(self.project / "00_Notes" / "stabil.md")
+        run_tool("build_index.py", "--vault", self.project)
+        before = {p: p.read_bytes() for p in self.project.rglob("INDEX - *.md")}
+        run_tool("build_index.py", "--vault", self.project)
+        after = {p: p.read_bytes() for p in self.project.rglob("INDEX - *.md")}
+        self.assertEqual(before, after)
+
+    def test_category_index_backlinks_to_the_project_hub(self):
+        """The rename that broke 23 of 441 links was a missing assertion, not a missing check."""
+        run_tool("build_index.py", "--vault", self.project)
+        hub_stem = project_index_name(self.project)[:-3]
+        self.assertIn(f"[[ProjektEins/{hub_stem}|ProjektEins]]", self.index_text())
+
+    def test_project_hub_backlinks_to_the_root_index(self):
+        run_tool("build_index.py", "--root", self.vault)
+        hub = self.project / project_index_name(self.project)
+        root_stem = root_index_name(self.vault)[:-3]
+        self.assertIn(f"[[{root_stem}|{self.vault.name}]]", hub.read_text(encoding="utf-8"))
+
+    def test_root_index_is_named_after_the_resolved_vault(self):
+        run_tool("build_index.py", "--root", self.vault)
+        self.assertTrue((self.vault / root_index_name(self.vault)).exists())
+        self.assertIn(f"# {self.vault.name} — Index",
+                      (self.vault / root_index_name(self.vault)).read_text(encoding="utf-8"))
+
+    def test_index_never_reads_the_note_body(self):
+        write_note(self.project / "00_Notes" / "geheim.md", title="Titel", summary="Kurz.")
+        run_tool("build_index.py", "--vault", self.project)
+        self.assertNotIn("Body text that the index generator must never read",
+                         self.index_text())
+
+    def test_retired_and_stale_are_visible_in_the_index(self):
+        write_note(self.project / "00_Notes" / "alt.md", title="Alte Wahrheit",
+                   summary="War mal wahr.", retired="2026-06-01")
+        write_note(self.project / "00_Notes" / "veraltet.md", title="Halbalt",
+                   summary="Quelle ist neuer.", stale="2026-07-01")
+        run_tool("build_index.py", "--vault", self.project)
+        text = self.index_text()
+        self.assertIn("[retired: 2026-06-01]", text)
+        self.assertIn("[stale since 2026-07-01]", text)
+
+
+if __name__ == "__main__":
+    unittest.main(verbosity=1)
+```
+
+### `test_check_duplicates.py`
+
+```python
+"""Suite for check_duplicates.py."""
+
+import shutil
+import sys
+import unittest
+from pathlib import Path
+
+sys.path.insert(0, str(Path(__file__).resolve().parent))
+
+from _testkit import make_vault, run_tool, write_note
+
+SAME_BODY = (
+    "Der Index wird erzeugt und niemals von Hand geschrieben. "
+    "Der Generator liest ausschließlich das Frontmatter und niemals den Fließtext. "
+    "Das ist keine Optimierung sondern die strukturelle Garantie."
+)
+OTHER_BODY = (
+    "Ein Zeitplan der still aufgehört hat sieht genauso aus wie einer der läuft. "
+    "Deshalb schreibt jeder Lauf eine Zeile ins Protokoll, auch der gesunde."
+)
+
+
+def note_with_body(path, body, title="Ein Titel"):
+    write_note(path, title=title)
+    with open(path, "a", encoding="utf-8", newline="\n") as fh:
+        fh.write(body + "\n")
+    return path
+
+
+class CheckDuplicatesTest(unittest.TestCase):
+    def setUp(self):
+        self.vault = make_vault(("ProjektEins",))
+        self.notes = self.vault / "ProjektEins" / "00_Notes"
+
+    def tearDown(self):
+        shutil.rmtree(self.vault.parent, ignore_errors=True)
+
+    # ------------------------------------------------------------------ control
+
+    def test_healthy_control(self):
+        note_with_body(self.notes / "eins.md", SAME_BODY, title="Eins")
+        note_with_body(self.notes / "zwei.md", OTHER_BODY, title="Zwei")
+        code, out, err = run_tool("check_duplicates.py", "--vault", self.vault)
+        self.assertEqual(code, 0, err)
+        self.assertIn("0 pairs flagged of 1 compared", out)
+
+    # ------------------------------------------------------------ failure modes
+
+    def test_overlapping_notes_are_flagged_and_red(self):
+        note_with_body(self.notes / "eins.md", SAME_BODY, title="Eins")
+        note_with_body(self.notes / "kopie.md", SAME_BODY, title="Kopie")
+        code, out, err = run_tool("check_duplicates.py", "--vault", self.vault)
+        self.assertEqual(code, 1)
+        self.assertIn("1 pairs flagged of 1 compared", out)
+        self.assertIn("kopie.md", err)
+
+    def test_one_note_is_did_not_run(self):
+        note_with_body(self.notes / "eins.md", SAME_BODY)
+        code, out, err = run_tool("check_duplicates.py", "--vault", self.vault)
+        self.assertEqual(code, 0, err)
+        self.assertIn("did not run", out)
+        self.assertIn("1 comparable notes", out)
+
+    def test_threshold_is_printed_with_every_result(self):
+        note_with_body(self.notes / "eins.md", SAME_BODY, title="Eins")
+        note_with_body(self.notes / "zwei.md", OTHER_BODY, title="Zwei")
+        _, out, _ = run_tool("check_duplicates.py", "--vault", self.vault, "--threshold", "0.9")
+        self.assertIn("threshold 0.9", out)
+
+    def test_non_ascii_filename_survives_the_subprocess_round_trip(self):
+        note_with_body(self.notes / "Übergröße.md", SAME_BODY, title="Eins")
+        note_with_body(self.notes / "Ärgernis.md", SAME_BODY, title="Zwei")
+        code, _, err = run_tool("check_duplicates.py", "--vault", self.vault)
+        self.assertEqual(code, 1)
+        self.assertIn("Übergröße.md", err + "")
+        self.assertIn("Ärgernis.md", err)
+
+
+if __name__ == "__main__":
+    unittest.main(verbosity=1)
+```
+
+### `test_check_freshness.py`
+
+```python
+"""Suite for check_freshness.py."""
+
+import shutil
+import sys
+import unittest
+from datetime import datetime, timedelta, timezone
+from pathlib import Path
+
+sys.path.insert(0, str(Path(__file__).resolve().parent))
+
+from _testkit import make_vault, run_tool
+
+
+def stamp(hours_ago):
+    return (datetime.now(timezone.utc) - timedelta(hours=hours_ago)).strftime("%Y-%m-%dT%H:%M:%S+00:00")
+
+
+class CheckFreshnessTest(unittest.TestCase):
+    def setUp(self):
+        self.vault = make_vault(("ProjektEins",))
+        self.log = self.vault / "00_Global" / "06_tools" / "runs.log"
+
+    def tearDown(self):
+        shutil.rmtree(self.vault.parent, ignore_errors=True)
+
+    def write_log(self, *lines):
+        self.log.parent.mkdir(parents=True, exist_ok=True)
+        self.log.write_text("\n".join(lines) + ("\n" if lines else ""), encoding="utf-8", newline="\n")
+
+    # ------------------------------------------------------------------ control
+
+    def test_healthy_control(self):
+        self.write_log(f"{stamp(1)}\tbuild_index\tok\t0 defects")
+        code, out, err = run_tool("check_freshness.py", "--vault", self.vault, "--jobs", "build_index")
+        self.assertEqual(code, 0, err)
+        self.assertIn("1/1 jobs fresh", out)
+
+    # ------------------------------------------------------------ failure modes
+
+    def test_missing_log_is_did_not_run_not_fine(self):
+        code, out, err = run_tool("check_freshness.py", "--vault", self.vault, "--jobs", "build_index")
+        self.assertEqual(code, 1)
+        self.assertIn("did not run", err)
+        self.assertNotIn("fresh", out)
+
+    def test_blank_log_is_did_not_run(self):
+        self.write_log()
+        code, _, err = run_tool("check_freshness.py", "--vault", self.vault, "--jobs", "build_index")
+        self.assertEqual(code, 1)
+        self.assertIn("did not run", err)
+
+    def test_stale_healthy_run_is_red(self):
+        self.write_log(f"{stamp(72)}\tbuild_index\tok\t0 defects")
+        code, out, err = run_tool("check_freshness.py", "--vault", self.vault,
+                                  "--jobs", "build_index", "--max-age-hours", "24")
+        self.assertEqual(code, 1)
+        self.assertIn("0/1 jobs fresh", out)
+        self.assertIn("72", err)
+
+    def test_only_failed_runs_count_as_did_not_run(self):
+        self.write_log(f"{stamp(1)}\tbuild_index\tdefects\t3 defects")
+        code, _, err = run_tool("check_freshness.py", "--vault", self.vault, "--jobs", "build_index")
+        self.assertEqual(code, 1)
+        self.assertIn("did not run", err)
+        self.assertIn("no healthy line", err)
+
+    def test_malformed_lines_are_counted_not_swallowed(self):
+        self.write_log(f"{stamp(1)}\tbuild_index\tok\t0 defects", "kaputte zeile ohne tabs")
+        code, out, err = run_tool("check_freshness.py", "--vault", self.vault, "--jobs", "build_index")
+        self.assertEqual(code, 1)
+        self.assertIn("1 malformed", out)
+        self.assertIn("malformed", err)
+
+    def test_non_ascii_job_name_survives_the_subprocess_round_trip(self):
+        self.write_log(f"{stamp(1)}\tbuild_index\tok\t0 defects")
+        code, _, err = run_tool("check_freshness.py", "--vault", self.vault, "--jobs", "Zählung")
+        self.assertEqual(code, 1)
+        self.assertIn("Zählung", err)
+
+
+if __name__ == "__main__":
+    unittest.main(verbosity=1)
+```
+
+### `test_check_links.py`
+
+```python
+"""Suite for check_links.py."""
+
+import shutil
+import sys
+import tempfile
+import unittest
+from pathlib import Path
+
+sys.path.insert(0, str(Path(__file__).resolve().parent))
+
+from _testkit import make_vault, run_tool, write_note
+
+
+class CheckLinksTest(unittest.TestCase):
+    def setUp(self):
+        self.vault = make_vault(("ProjektEins",))
+        self.notes = self.vault / "ProjektEins" / "00_Notes"
+
+    def tearDown(self):
+        shutil.rmtree(self.vault.parent, ignore_errors=True)
+
+    def append(self, path, text):
+        with open(path, "a", encoding="utf-8", newline="\n") as fh:
+            fh.write(text + "\n")
+
+    # ------------------------------------------------------------------ control
+
+    def test_healthy_control(self):
+        target = write_note(self.notes / "ziel.md")
+        source = write_note(self.notes / "quelle.md")
+        self.append(source, "Siehe [[ProjektEins/00_Notes/ziel|Ziel]].")
+        code, out, err = run_tool("check_links.py", "--vault", self.vault)
+        self.assertEqual(code, 0, err)
+        self.assertIn("1/1 wikilinks resolve", out)
+        self.assertTrue(target.exists())
+
+    def test_denominator_is_always_printed(self):
+        write_note(self.notes / "allein.md")
+        code, out, _ = run_tool("check_links.py", "--vault", self.vault)
+        self.assertEqual(code, 0)
+        self.assertIn("0/0 wikilinks resolve", out)
+        self.assertIn("files scanned", out)
+
+    # ------------------------------------------------------------ failure modes
+
+    def test_broken_link_is_red_with_a_denominator(self):
+        source = write_note(self.notes / "quelle.md")
+        self.append(source, "Siehe [[gibt-es-nicht]].")
+        code, out, err = run_tool("check_links.py", "--vault", self.vault)
+        self.assertEqual(code, 1)
+        self.assertIn("gibt-es-nicht", err)
+        self.assertIn("0/1 wikilinks resolve", out)
+
+    def test_scanning_nothing_is_did_not_run_not_zero_broken(self):
+        empty = Path(tempfile.mkdtemp(prefix="vaultkit_empty_"))
+        try:
+            code, out, err = run_tool("check_links.py", "--vault", empty)
+            self.assertEqual(code, 1)
+            self.assertIn("did not run", err)
+            self.assertNotIn("0 broken", out)
+        finally:
+            shutil.rmtree(empty, ignore_errors=True)
+
+    def test_wikilink_inside_code_is_not_a_link(self):
+        source = write_note(self.notes / "syntax-doku.md")
+        self.append(source, "Schreibe `[[Projekt/Ordner/datei|Titel]]` in die Notiz.")
+        self.append(source, "```\n[[auch-das-nicht]]\n```")
+        code, out, err = run_tool("check_links.py", "--vault", self.vault)
+        self.assertEqual(code, 0, err)
+        self.assertIn("0/0 wikilinks resolve", out)
+
+    def test_non_ascii_target_resolves(self):
+        write_note(self.notes / "Übergröße.md")
+        source = write_note(self.notes / "quelle.md")
+        self.append(source, "Siehe [[Übergröße]].")
+        code, out, err = run_tool("check_links.py", "--vault", self.vault)
+        self.assertEqual(code, 0, err)
+        self.assertIn("1/1 wikilinks resolve", out)
+
+    def test_non_ascii_defect_survives_the_subprocess_round_trip(self):
+        source = write_note(self.notes / "Ärgernis.md")
+        self.append(source, "Siehe [[fehlt-natürlich]].")
+        code, _, err = run_tool("check_links.py", "--vault", self.vault)
+        self.assertEqual(code, 1)
+        self.assertIn("Ärgernis.md", err)
+        self.assertIn("fehlt-natürlich", err)
+
+    def test_alias_and_anchor_are_stripped_before_resolving(self):
+        write_note(self.notes / "ziel.md")
+        source = write_note(self.notes / "quelle.md")
+        self.append(source, "Siehe [[ziel#Abschnitt|anderer Text]].")
+        code, out, err = run_tool("check_links.py", "--vault", self.vault)
+        self.assertEqual(code, 0, err)
+        self.assertIn("1/1", out)
+
+
+if __name__ == "__main__":
+    unittest.main(verbosity=1)
+```
+
+### `test_count_tokens.py`
+
+```python
+"""Suite for count_tokens.py — the tool that must never invent a precision."""
+
+import shutil
+import sys
+import unittest
+from pathlib import Path
+
+sys.path.insert(0, str(Path(__file__).resolve().parent))
+
+from _testkit import make_vault, run_tool, write_note
+
+
+class CountTokensTest(unittest.TestCase):
+    def setUp(self):
+        self.vault = make_vault(("ProjektEins",))
+        self.notes = self.vault / "ProjektEins" / "00_Notes"
+
+    def tearDown(self):
+        shutil.rmtree(self.vault.parent, ignore_errors=True)
+
+    def test_healthy_control_labels_its_precision(self):
+        write_note(self.notes / "eins.md")
+        code, out, err = run_tool("count_tokens.py", self.vault)
+        self.assertEqual(code, 0, err)
+        self.assertTrue("estimated" in out or "exact" in out, out)
+        self.assertIn("chars", out)
+        self.assertIn("1/1 files", out)
+
+    def test_missing_path_is_red(self):
+        code, _, err = run_tool("count_tokens.py", self.vault / "gibt-es-nicht")
+        self.assertEqual(code, 2)
+        self.assertIn("not found", err)
+
+    def test_empty_directory_is_did_not_run(self):
+        code, _, err = run_tool("count_tokens.py", self.notes)
+        self.assertEqual(code, 1)
+        self.assertIn("did not run", err)
+
+    def test_non_ascii_file_is_counted(self):
+        write_note(self.notes / "Übergröße.md", title="Umlaut", summary="Ärger.")
+        code, out, err = run_tool("count_tokens.py", self.vault)
+        self.assertEqual(code, 0, err)
+        self.assertIn("1/1 files", out)
+
+
+if __name__ == "__main__":
+    unittest.main(verbosity=1)
+```
+
+### `test_run_suites.py`
+
+```python
+"""Suite for run_suites.py — the runner that must never report green over zero tests."""
+
+import shutil
+import sys
+import tempfile
+import unittest
+from pathlib import Path
+
+sys.path.insert(0, str(Path(__file__).resolve().parent))
+
+from _testkit import run_tool
+
+PASSING = "import sys\nprint('fine')\nsys.exit(0)\n"
+FAILING = "import sys\nsys.stderr.write('kaputt\\n')\nsys.exit(1)\n"
+NON_ASCII = "import sys\nsys.stderr.write('Ärgernis in der Suite\\n')\nsys.exit(1)\n"
+
+
+class RunSuitesTest(unittest.TestCase):
+    def setUp(self):
+        self.dir = Path(tempfile.mkdtemp(prefix="vaultkit_suites_"))
+
+    def tearDown(self):
+        shutil.rmtree(self.dir, ignore_errors=True)
+
+    def suite(self, name, body):
+        path = self.dir / name
+        path.write_text(body, encoding="utf-8", newline="\n")
+        return path
+
+    # ------------------------------------------------------------------ control
+
+    def test_healthy_control(self):
+        self.suite("test_a.py", PASSING)
+        self.suite("test_b.py", PASSING)
+        code, out, err = run_tool("run_suites.py", "--tools", self.dir)
+        self.assertEqual(code, 0, err)
+        self.assertIn("2/2 suites green", out)
+
+    # ------------------------------------------------------------ failure modes
+
+    def test_zero_suites_is_not_green(self):
+        code, out, err = run_tool("run_suites.py", "--tools", self.dir)
+        self.assertEqual(code, 1)
+        self.assertIn("0 suites collected", err)
+        self.assertNotIn("green", out)
+
+    def test_a_failing_suite_makes_the_run_red(self):
+        self.suite("test_a.py", PASSING)
+        self.suite("test_b.py", FAILING)
+        code, out, err = run_tool("run_suites.py", "--tools", self.dir)
+        self.assertEqual(code, 1)
+        self.assertIn("1/2 suites green", out)
+        self.assertIn("test_b.py", err)
+
+    def test_helper_modules_are_not_counted_as_suites(self):
+        self.suite("_testkit.py", PASSING)
+        code, _, err = run_tool("run_suites.py", "--tools", self.dir)
+        self.assertEqual(code, 1)
+        self.assertIn("0 suites collected", err)
+
+    def test_non_ascii_suite_output_survives_the_subprocess_round_trip(self):
+        self.suite("test_umlaut.py", NON_ASCII)
+        code, _, err = run_tool("run_suites.py", "--tools", self.dir)
+        self.assertEqual(code, 1)
+        self.assertIn("Ärgernis in der Suite", err)
+
+
+if __name__ == "__main__":
+    unittest.main(verbosity=1)
+```
+
+### `test_vault_paths.py`
+
+```python
+"""Suite for vault_paths.py — the module every generated filename comes from."""
+
+import shutil
+import sys
+import unittest
+from pathlib import Path
+
+sys.path.insert(0, str(Path(__file__).resolve().parent))
+
+from _testkit import make_vault
+from vault_paths import (
+    RUN_LOG_RELPATH,
+    category_index_name,
+    category_label,
+    has_forbidden_chars,
+    is_index_file,
+    log_run,
+    project_index_name,
+    root_index_name,
+)
+
+
+class VaultPathsTest(unittest.TestCase):
+    def test_root_index_name_resolves_before_taking_the_name(self):
+        """Path('.').name is the empty string — `--root .` must not write '# — Index'."""
+        expected = f"INDEX - {Path('.').resolve().name}.md"
+        self.assertEqual(root_index_name("."), expected)
+        self.assertNotEqual(root_index_name("."), "INDEX - .md")
+
+    def test_every_index_name_carries_what_it_indexes(self):
+        self.assertEqual(category_index_name("ProjektEins", "01_Issues"), "INDEX - ProjektEins Issues.md")
+        self.assertEqual(project_index_name("C:/x/ProjektEins"), "INDEX - ProjektEins.md")
+        self.assertNotEqual(project_index_name("C:/x/ProjektEins"), "INDEX.md")
+
+    def test_category_label_strips_only_the_sort_prefix(self):
+        self.assertEqual(category_label("03_technical_docs"), "technical_docs")
+        self.assertEqual(category_label("00_Notes"), "Notes")
+        self.assertEqual(category_label("Notes"), "Notes")
+
+    def test_forbidden_chars(self):
+        for name in ("a#b.md", "a[b].md", "a|b.md", "a^b.md"):
+            self.assertTrue(has_forbidden_chars(name), name)
+        self.assertFalse(has_forbidden_chars("Übergröße-für-Ärger.md"))
+
+    def test_is_index_file(self):
+        self.assertTrue(is_index_file("INDEX - ProjektEins Notes.md"))
+        self.assertFalse(is_index_file("eine-erkenntnis.md"))
+
+    def test_log_run_appends_a_line_per_run(self):
+        vault = make_vault(("ProjektEins",))
+        try:
+            log_run(vault, "build_index", "ok", "0 defects")
+            log_run(vault, "build_index", "defects", "2 defects")
+            lines = (vault / RUN_LOG_RELPATH).read_text(encoding="utf-8").strip().splitlines()
+            self.assertEqual(len(lines), 2)
+            self.assertIn("\tbuild_index\tok\t", lines[0])
+            self.assertIn("\tbuild_index\tdefects\t", lines[1])
+        finally:
+            shutil.rmtree(vault.parent, ignore_errors=True)
+
+
+if __name__ == "__main__":
+    unittest.main(verbosity=1)
+```
+
+---
+
+*Generated by `tools/build_kit.py`. Edit the sources, never this file.*
