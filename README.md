@@ -84,3 +84,8 @@ MIT — see [LICENSE](LICENSE).
 
 Obsidian and Claude are trademarks of their respective owners. This kit is an independent, unofficial
 template and implies no endorsement by either.
+
+---
+
+Free and MIT — no account, no sign-up, nothing to buy. If it saved you an afternoon, you can throw
+a coffee at it: [ko-fi.com/nibor1896](https://ko-fi.com/nibor1896).
