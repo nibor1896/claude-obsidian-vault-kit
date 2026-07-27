@@ -1,4 +1,4 @@
-<!-- kit-version: 9e9c18788499 -->
+<!-- kit-version: b2e1e895addd -->
 
 # Claude × Obsidian — Vault Kit
 
@@ -120,7 +120,7 @@ loud which questions you skipped and what you measured.
   about whether a vault exists, where it is, or whether the user wants you near it. Inferring "already
   uses Obsidian" from a present installation is how a setup ends up adapting a real vault nobody
   pointed you at.
-- **1.2 — test vault or straight to production.**
+- **1.2 — migration, new production vault, or test vault.**
 - **1.3 — project names, and where their code lives.**
 - **1.4 — whether a tracker gets mirrored, and which repos.** An authenticated `gh` is not consent.
   Finding credentials on the machine tells you the mirror is *possible*, not that it is wanted.
@@ -145,48 +145,49 @@ than the one that matters here.
       obsidian.md
   - If the user prefers manual: give them the download page and wait for them to confirm it is
     installed before continuing.
-- If **yes**: ask for the vault path, then **read the existing structure before proposing anything**.
-  List what is there, name what already matches this kit, and name what conflicts. The user's
-  existing structure wins over this document unless they say otherwise — a folder they already use
-  daily is worth more than a clean scheme they have to relearn.
+- If **yes**: ask for the vault path. Whether that vault gets touched is decided in 1.2, not here —
+  an existing vault plus a new production vault elsewhere is a normal answer. If 1.2 comes back as a
+  migration, **read the existing structure before proposing anything**: list what is there, name what
+  already matches this kit, and name what conflicts. Their existing structure wins over this document
+  unless they say otherwise — a folder they use daily is worth more than a clean scheme they have to
+  relearn.
 
-### 1.2 Test vault first?
+### 1.2 What this setup is for
 
-Ask: **"Do you want a throwaway test vault first?"** Explain the two paths in one line each:
+One question, three answers. Ask it in round one, next to 1.1.
 
-- **Test vault path:** you build the complete structure in a scratch folder. The user opens it in
-  Obsidian, clicks through it, renames folders, drops sections, adds their own. They tell you when
-  they are done. **You then read the resulting structure from disk and adopt it as the real spec** —
-  folder names, order, which categories exist — and build the production vault from that. This is
-  the recommended path for anyone who has not lived in a vault before.
-- **Direct path:** you build straight into the real location.
+```
+What are we setting up?
+  1  Production migration   an existing vault, adopted and brought in line
+  2  New production vault    starts empty, this is the real one
+  3  Test vault              throwaway, to look at and rearrange
+```
 
-If they choose the test vault:
-- **Default to one tree, not two.** The test vault *is* the vault, at the location the user gave in
-  1.5: they rearrange it in place, you re-read it, and production is that same folder promoted. A
-  second tree doubles the paths and the git state and buys nothing.
-- **If they do want a separate scratch tree, its path is asked, never chosen.** Put it in the same
-  question round as a clickable option. Announcing a path you picked is not consent -- operating rule
-  5 covers the scratch tree exactly as it covers the real one. A run that invented
-  `<Chosen>/_testvault/Vault` after the user had already answered `<Chosen>/Vault` produced a tree
-  nobody asked for, and the user read it as the setup ignoring their answer. They were right.
-- **Tell them what Obsidian will ask, before they start rearranging.** The moment they rename or move
-  a folder, Obsidian pops up *"Update internal links? This affects N links in N files."* Say in
-  advance: **choose "Don't update".** The affected links live in generated index files, so letting
-  Obsidian rewrite them would hand-edit generated output — and the generator has to set them
-  correctly on its next run anyway. Declining also makes that a real test instead of an assumption.
-  Warning them afterwards is worthless; the dialog is modal and they will have clicked it.
-- **Also warn about "Always update".** It is not a one-off answer, it writes a persistent setting into
-  that vault's `.obsidian/app.json`. Harmless here — the setting is per-vault, so a production vault
-  elsewhere is untouched — but say so, or they will assume they broke something they did not.
-- When they report back, **read the folders as they now exist** — do not re-propose your original
-  scheme. Diff it against SECTION 3, list every change they made, and confirm your reading with
-  them in one short list before you build production.
-- **Carry a rename through every project, or ask.** If they renamed `00_Notes` to `00_Notizen` in one
-  project only, that is ambiguous: it may mean "everywhere" or "just here". Say which reading you
-  are taking and get a yes. Silently applying it to one project leaves the vault inconsistent; silently
-  applying it to all of them overrides a choice they may have made deliberately.
-- Delete the test vault only after they confirm production is good, and ask first.
+- **1 — migration.** Go to the Appendix. Read what is there before proposing anything, show the user
+  a two-column mapping of their folders to the roles in this kit, and get a yes before a single file
+  moves.
+- **2 and 3 build the same thing.** Same tree, same scripts, same starting pages. The difference is
+  what happens around it: a test vault gets no backup and no remote, and the user is told it is
+  disposable. Nothing is written differently because of this answer, so do not build a second copy of
+  anything.
+- **Whichever they pick, the structure is theirs to change.** After the tree exists, they open it in
+  Obsidian, rename folders, drop categories, add their own. Then you **read the folders as they now
+  are** and carry that through every project and every script config. Do not re-propose your original
+  scheme. If they renamed `00_Notes` in one project only, say which reading you are taking —
+  "everywhere" or "just there" — and get a yes. Silently applying it to one project leaves the vault
+  inconsistent; silently applying it to all of them overrides a choice they may have made on purpose.
+
+**Tell them what Obsidian will ask, before they start rearranging.** The moment they rename or move a
+folder, Obsidian pops up *"Update internal links? This affects N links in N files."* Say in advance:
+choose **"Don't update"**. The affected links live in generated index files, so letting Obsidian
+rewrite them would hand-edit generated output — and the generator sets them correctly on its next run
+anyway. Declining also makes that a real test instead of an assumption. Warning them afterwards is
+worthless; the dialog is modal and they will have clicked it.
+
+**Also warn about "Always update".** It is not a one-off answer, it writes a persistent setting into
+that vault's `.obsidian/app.json`. Harmless here — the setting is per-vault, so a production vault
+elsewhere is untouched — but say so, or they will assume they broke something they did not.
+
 
 ### 1.3 What is being documented
 
