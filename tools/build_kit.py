@@ -34,7 +34,7 @@ for _stream in (sys.stdout, sys.stderr):
 SHARED = ["vault_paths.py", "_testkit.py", "jobs.json"]
 TOOLS_ORDER = ["build_index.py", "check_links.py", "check_duplicates.py",
                "check_freshness.py", "count_tokens.py", "run_suites.py"]
-DRIVERS = ["acceptance.py", "verify_setup.py"]
+DRIVERS = ["acceptance.py", "verify_setup.py", "upgrade.py"]
 
 HEADER = """
 ---
@@ -68,9 +68,25 @@ def block(name):
     return f"### `{name}`\n\n```{lang}\n{text.rstrip()}\n```\n"
 
 
+def source_version():
+    """Twelve hex digits over the contract and every shipped file, in a fixed order.
+
+    A date would answer "how old is this" and nothing else; two people with different files
+    could still read the same date. This changes if and only if the content changes, so
+    comparing it against the published file is an exact answer, not an estimate.
+    """
+    digest = hashlib.sha256()
+    digest.update(CONTRACT.read_bytes())
+    for name in SHARED + TOOLS_ORDER + DRIVERS + sorted(p.name for p in TOOLS.glob("test_*.py")):
+        digest.update(name.encode("utf-8"))
+        digest.update((TOOLS / name).read_bytes())
+    return digest.hexdigest()[:12]
+
+
 def render():
     contract = CONTRACT.read_text(encoding="utf-8").rstrip()
-    parts = [contract, HEADER.rstrip(), ""]
+    stamp = f"<!-- kit-version: {source_version()} -->"
+    parts = [stamp, "", contract, HEADER.rstrip(), ""]
     for group, title in ((SHARED, "Shared"), (TOOLS_ORDER, "Tools"), (DRIVERS, "Drivers")):
         parts.append(f"#### {title}\n")
         for name in group:

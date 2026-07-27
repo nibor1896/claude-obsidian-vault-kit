@@ -13,12 +13,13 @@ structure, a **generated** index, and a set of guards that go red instead of qui
 
 The tools are shipped, not generated: the file carries every script verbatim in SECTION 11, and
 the setup writes them to disk instead of composing its own. Measured on Windows 11, Python 3.13, under PowerShell 5.1 **and** Git Bash —
-**7/7 suites green and 10/10 acceptance checks correct, ten consecutive runs under each shell.**
+**8/8 suites green and 10/10 acceptance checks correct, ten consecutive runs under each shell.**
 Reproduce it yourself before you trust it:
 
 ```
 python tools/run_suites.py            # only if you cloned the repo
 python tools/acceptance.py --repeat 10
+python tools/verify_setup.py --repeat 10
 ```
 
 Claude interviews you first — do you already use Obsidian, install it or will you, do you want a

@@ -1,3 +1,5 @@
+<!-- kit-version: 9e9c18788499 -->
+
 # Claude × Obsidian — Vault Kit
 
 **What this file is:** a setup contract for Claude. Drop it into a Claude conversation and say
@@ -60,12 +62,19 @@ document in order. It is a contract, not a suggestion.
    and waiting for a yes.
 6. **The scripts are inside this file. Write them out; do not rewrite them.** SECTION 11 carries
    every tool, every suite and the three runners verbatim — measured on Windows 11 with Python 3.13
-   under PowerShell 5.1 and Git Bash: **7/7 suites green, 10/10 acceptance checks and 10/10
+   under PowerShell 5.1 and Git Bash: **8/8 suites green, 10/10 acceptance checks and 10/10
    end-to-end setup steps, in ten consecutive runs under each shell.** Write each block to disk
    byte for byte. Retyping them from the contracts in SECTION 5 and SECTION 6 throws that
    measurement away and reintroduces the defects those sections describe — every one was found the
    expensive way. Change a shipped script only when the user's structure genuinely needs it, and
    then rerun the suites and `acceptance.py` before reporting anything.
+   **Tell the user how to update later.** The header of this file carries a line like
+   `<!-- kit-version: 435a3a2b532c -->`. It is a hash of the contract and every shipped script, so
+   two copies with the same line are the same kit and a different line means something changed.
+   Point them at `upgrade.py`, which is shipped alongside the other tools: given a newer kit file it
+   lists what would be overwritten, writes nothing without `--apply`, and reruns the suites and the
+   acceptance driver afterwards. Say this once during setup -- a user who does not know an update
+   path exists will not go looking for one.
 7. **The scripts do the mechanical work.** Do not hand-write an index, do not hand-count entries, do
    not eyeball whether links resolve. If a number can be measured, measure it with code. If it
    cannot, say "not measured".
@@ -2568,6 +2577,125 @@ if __name__ == "__main__":
     sys.exit(main())
 ```
 
+### `upgrade.py`
+
+```python
+"""Update an installed tool folder from a newer kit file.
+
+A vault that was set up months ago carries the scripts as they were that day. This reads a
+newer `claude-obsidian-vault-kit.md`, extracts the scripts embedded in it, and reports what
+would change. Nothing is written without `--apply`.
+
+    python upgrade.py <path-to-kit.md>              show what would change
+    python upgrade.py <path-to-kit.md> --apply      write the changes, then prove them
+
+`--apply` reruns the suites and the acceptance driver afterwards and fails loudly if either
+goes red, because a tool folder that was updated but never re-proven is the state this kit
+exists to prevent.
+
+Local edits are overwritten. They are listed first, by name, so that is a decision and not a
+surprise.
+"""
+
+import argparse
+import re
+import subprocess
+import sys
+from pathlib import Path
+
+TOOLS = Path(__file__).resolve().parent
+
+for _stream in (sys.stdout, sys.stderr):
+    try:
+        _stream.reconfigure(encoding="utf-8", errors="replace")
+    except (AttributeError, ValueError):
+        pass
+
+BLOCK_RE = re.compile(r"^### `([^`]+)`\n\n```(?:python|json)\n(.*?)\n```", re.S | re.M)
+VERSION_RE = re.compile(r"^<!-- kit-version: ([0-9a-f]{12}) -->$", re.M)
+
+
+def read_kit(path):
+    text = Path(path).read_text(encoding="utf-8")
+    blocks = {name: body + "\n" for name, body in BLOCK_RE.findall(text)}
+    if not blocks:
+        raise SystemExit(f"{path}: no script blocks found -- is this a kit file?")
+    version = VERSION_RE.search(text)
+    return blocks, (version.group(1) if version else "unversioned")
+
+
+def installed_version():
+    """The version of the folder we are updating, if the kit that wrote it left one."""
+    stamp = TOOLS / "kit-version.txt"
+    return stamp.read_text(encoding="utf-8").strip() if stamp.exists() else "unknown"
+
+
+def classify(blocks):
+    same, changed, added = [], [], []
+    for name, body in sorted(blocks.items()):
+        target = TOOLS / name
+        if not target.exists():
+            added.append(name)
+        elif target.read_text(encoding="utf-8").replace("\r\n", "\n") == body:
+            same.append(name)
+        else:
+            changed.append(name)
+    return same, changed, added
+
+
+def prove():
+    """Suites and acceptance, from the folder we just wrote."""
+    ok = True
+    for script, want in (("run_suites.py", "suites green"), ("acceptance.py", "10/10")):
+        result = subprocess.run([sys.executable, str(TOOLS / script)],
+                                capture_output=True, cwd=str(TOOLS))
+        out = result.stdout.decode("utf-8", errors="replace")
+        first = next((l for l in out.splitlines() if want.split()[0] in l), out.strip()[:80])
+        state = "ok  " if result.returncode == 0 and want in out else "FAIL"
+        print(f"  {state} {script}: {first}")
+        ok = ok and state == "ok  "
+    return ok
+
+
+def main(argv=None):
+    parser = argparse.ArgumentParser(description=__doc__)
+    parser.add_argument("kit", help="path to a newer claude-obsidian-vault-kit.md")
+    parser.add_argument("--apply", action="store_true", help="write the changes")
+    args = parser.parse_args(argv)
+
+    blocks, new_version = read_kit(args.kit)
+    same, changed, added = classify(blocks)
+
+    print(f"installed: {installed_version()} · kit file: {new_version}")
+    print(f"{len(same)} unchanged · {len(changed)} would be overwritten · {len(added)} new")
+    for name in changed:
+        print(f"  overwrite  {name}")
+    for name in added:
+        print(f"  add        {name}")
+
+    if not changed and not added:
+        print("nothing to do.")
+        return 0
+    if not args.apply:
+        print("\nnothing written. Re-run with --apply to write these files.")
+        return 0
+
+    for name in changed + added:
+        (TOOLS / name).write_text(blocks[name], encoding="utf-8", newline="\n")
+    (TOOLS / "kit-version.txt").write_text(new_version + "\n", encoding="utf-8", newline="\n")
+    print(f"\nwrote {len(changed) + len(added)} files. Proving them:")
+    if not prove():
+        print("the updated folder does not pass its own checks -- restore it from git.",
+              file=sys.stderr)
+        return 1
+    print(f"updated to {new_version}, suites and acceptance green.")
+    return 0
+
+
+if __name__ == "__main__":
+    sys.exit(main())
+```
+
 ### `test_build_index.py`
 
 ```python
@@ -3127,6 +3255,118 @@ class RunSuitesTest(unittest.TestCase):
         code, _, err = run_tool("run_suites.py", "--tools", self.dir)
         self.assertEqual(code, 1)
         self.assertIn("Ärgernis in der Suite", err)
+
+
+if __name__ == "__main__":
+    unittest.main(verbosity=1)
+```
+
+### `test_upgrade.py`
+
+```python
+"""Suite for upgrade.py.
+
+The failure that matters here is silence: an upgrade that reports "nothing to do" over a file
+it could not read, or that writes without saying what it overwrote. Every case below is a
+failure-mode fixture except test_healthy_control.
+"""
+
+import shutil
+import subprocess
+import sys
+import tempfile
+import unittest
+from pathlib import Path
+
+sys.path.insert(0, str(Path(__file__).resolve().parent))
+
+TOOLS = Path(__file__).resolve().parent
+
+
+def kit_file(path, blocks, version="0123456789ab"):
+    """A minimal kit file: a version stamp plus one fenced block per script."""
+    parts = [f"<!-- kit-version: {version} -->", "", "# A kit", ""]
+    for name, body in blocks.items():
+        lang = "json" if name.endswith(".json") else "python"
+        parts.append(f"### `{name}`\n\n```{lang}\n{body}\n```\n")
+    Path(path).write_text("\n".join(parts), encoding="utf-8", newline="\n")
+    return path
+
+
+def run_upgrade(tools_dir, *args):
+    """upgrade.py acts on its own directory, so it is copied into the sandbox and run there."""
+    result = subprocess.run([sys.executable, str(tools_dir / "upgrade.py"), *[str(a) for a in args]],
+                            capture_output=True, cwd=str(tools_dir))
+    return (result.returncode,
+            result.stdout.decode("utf-8", errors="replace"),
+            result.stderr.decode("utf-8", errors="replace"))
+
+
+class UpgradeTest(unittest.TestCase):
+    def setUp(self):
+        self.tmp = Path(tempfile.mkdtemp(prefix="vaultkit_upgrade_"))
+        self.tools = self.tmp / "06_tools"
+        self.tools.mkdir()
+        shutil.copy2(TOOLS / "upgrade.py", self.tools / "upgrade.py")
+        (self.tools / "build_index.py").write_text("print('old')\n", encoding="utf-8", newline="\n")
+
+    def tearDown(self):
+        shutil.rmtree(self.tmp, ignore_errors=True)
+
+    # ------------------------------------------------------------------ control
+
+    def test_healthy_control_reports_no_change(self):
+        kit = kit_file(self.tmp / "kit.md", {"build_index.py": "print('old')"})
+        code, out, err = run_upgrade(self.tools, kit)
+        self.assertEqual(code, 0, err)
+        self.assertIn("1 unchanged", out)
+        self.assertIn("nothing to do", out)
+
+    # ------------------------------------------------------------ failure modes
+
+    def test_a_changed_file_is_named_before_anything_is_written(self):
+        kit = kit_file(self.tmp / "kit.md", {"build_index.py": "print('new')"})
+        code, out, _ = run_upgrade(self.tools, kit)
+        self.assertEqual(code, 0)
+        self.assertIn("overwrite  build_index.py", out)
+        self.assertIn("nothing written", out)
+        self.assertEqual((self.tools / "build_index.py").read_text(encoding="utf-8"),
+                         "print('old')\n", "file changed without --apply")
+
+    def test_apply_writes_and_records_the_version(self):
+        kit = kit_file(self.tmp / "kit.md", {"build_index.py": "print('new')"}, version="abcdef012345")
+        run_upgrade(self.tools, kit, "--apply")
+        self.assertEqual((self.tools / "build_index.py").read_text(encoding="utf-8"), "print('new')\n")
+        self.assertEqual((self.tools / "kit-version.txt").read_text(encoding="utf-8").strip(),
+                         "abcdef012345")
+
+    def test_a_file_only_the_kit_has_is_reported_as_added(self):
+        kit = kit_file(self.tmp / "kit.md",
+                       {"build_index.py": "print('old')", "check_links.py": "print('new tool')"})
+        code, out, _ = run_upgrade(self.tools, kit)
+        self.assertEqual(code, 0)
+        self.assertIn("add        check_links.py", out)
+
+    def test_a_file_without_blocks_is_refused_not_reported_as_clean(self):
+        empty = self.tmp / "not-a-kit.md"
+        empty.write_text("# Just prose, no code blocks.\n", encoding="utf-8", newline="\n")
+        code, out, err = run_upgrade(self.tools, empty)
+        self.assertNotEqual(code, 0, "a file with no blocks must not read as up to date")
+        self.assertIn("no script blocks", out + err)
+
+    def test_an_unversioned_kit_says_so_rather_than_guessing(self):
+        kit = self.tmp / "old-kit.md"
+        kit.write_text("### `build_index.py`\n\n```python\nprint('new')\n```\n",
+                       encoding="utf-8", newline="\n")
+        code, out, _ = run_upgrade(self.tools, kit)
+        self.assertEqual(code, 0)
+        self.assertIn("unversioned", out)
+
+    def test_non_ascii_content_survives_the_round_trip(self):
+        body = "print('Übergröße')"
+        kit = kit_file(self.tmp / "kit.md", {"build_index.py": body})
+        run_upgrade(self.tools, kit, "--apply")
+        self.assertIn("Übergröße", (self.tools / "build_index.py").read_text(encoding="utf-8"))
 
 
 if __name__ == "__main__":

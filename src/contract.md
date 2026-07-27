@@ -60,12 +60,19 @@ document in order. It is a contract, not a suggestion.
    and waiting for a yes.
 6. **The scripts are inside this file. Write them out; do not rewrite them.** SECTION 11 carries
    every tool, every suite and the three runners verbatim — measured on Windows 11 with Python 3.13
-   under PowerShell 5.1 and Git Bash: **7/7 suites green, 10/10 acceptance checks and 10/10
+   under PowerShell 5.1 and Git Bash: **8/8 suites green, 10/10 acceptance checks and 10/10
    end-to-end setup steps, in ten consecutive runs under each shell.** Write each block to disk
    byte for byte. Retyping them from the contracts in SECTION 5 and SECTION 6 throws that
    measurement away and reintroduces the defects those sections describe — every one was found the
    expensive way. Change a shipped script only when the user's structure genuinely needs it, and
    then rerun the suites and `acceptance.py` before reporting anything.
+   **Tell the user how to update later.** The header of this file carries a line like
+   `<!-- kit-version: 435a3a2b532c -->`. It is a hash of the contract and every shipped script, so
+   two copies with the same line are the same kit and a different line means something changed.
+   Point them at `upgrade.py`, which is shipped alongside the other tools: given a newer kit file it
+   lists what would be overwritten, writes nothing without `--apply`, and reruns the suites and the
+   acceptance driver afterwards. Say this once during setup -- a user who does not know an update
+   path exists will not go looking for one.
 7. **The scripts do the mechanical work.** Do not hand-write an index, do not hand-count entries, do
    not eyeball whether links resolve. If a number can be measured, measure it with code. If it
    cannot, say "not measured".
