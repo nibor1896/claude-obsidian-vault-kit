@@ -172,13 +172,11 @@ They are the part that survives; the folder names are cosmetic by comparison.
    clean the title — do not drop it. A title that repeats in another project identifies nothing
    either: four files called `knowledge-transfer.md` are four indistinguishable nodes in the graph and
    a coin toss in the quick switcher. **Any file that exists once per project carries the project name
-   in its filename.** Verify it rather than assume it — count basenames, not paths:
+   in its filename.**
 
-   ```bash
-   git ls-files -z '*.md' | tr '\0' '\n' | xargs -n1 basename | sort | uniq -d
-   ```
-
-   Output should be empty. Anything listed is ambiguous everywhere the path is not shown.
+   **This is enforced by the index generator, not by a command someone has to remember.** It already
+   walks every note, so it counts basenames while it does and reports a repeat as a defect with a
+   non-zero exit (SECTION 5). A one-off check drifts out of use; a check on every run does not.
 3. **The index is generated, never written.** The generator reads *frontmatter only* and has no
    access to note bodies. That is not an optimisation — it is the structural guarantee that prose can
    never leak into the index, because there is no code path by which it could.
@@ -351,6 +349,19 @@ Both were found by the acceptance test in SECTION 10, on a first real setup:
   so the checker must not count it. Without this, every page that *documents* the wikilink syntax
   reports itself as broken — the prose is right and the checker is wrong, which is the worst way round
   because the instinct is to edit the note.
+
+### It also enforces unique filenames, because it is already walking every note
+
+Count basenames while collecting frontmatter, and report any name used twice as a defect:
+
+```
+INDEX.md: name used 6 times (00_Global, ProjectA, ProjectB, …)
+```
+
+Doctrine rule 2 requires vault-wide unique filenames. That rule needs code reading it, or it holds
+only as long as whoever is working remembers it. Read the paths as **bytes** from `git ls-files -z`
+or by walking the tree — not from a shell pipeline, which differs per platform and breaks on names
+containing non-ASCII (SECTION 6).
 
 ### Exit code
 
