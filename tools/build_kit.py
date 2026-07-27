@@ -47,7 +47,7 @@ created in SECTION 3). Do not retype them from the contracts above, do not "impr
 copying, and do not skip the suites: they are the only reason the numbers in SECTION 0 mean
 anything.
 
-Measured on Windows 11, Python 3.13, under PowerShell 5.1 **and** Git Bash: 7/7 suites green,
+Measured on Windows 11, Python 3.13, under PowerShell 5.1 **and** Git Bash: 8/8 suites green,
 10/10 acceptance checks correct, 10/10 end-to-end setup steps -- ten consecutive runs under each
 shell. Copy them and that measurement still applies to what you handed the user. Rewrite them and
 it does not.
@@ -60,7 +60,7 @@ pointed at the wrong line.
 After writing them, prove it on this machine before you report anything:
 
 ```
-python <vault>/00_Global/06_tools/run_suites.py       expect 7/7 suites green
+python <vault>/00_Global/06_tools/run_suites.py       expect 8/8 suites green
 python <vault>/00_Global/06_tools/acceptance.py       expect 10/10 checks
 python <vault>/00_Global/06_tools/verify_setup.py     expect 10/10 steps
 ```
@@ -150,7 +150,20 @@ def verify():
             print(f"  ok   {script} runs from the deliverable")
     finally:
         shutil.rmtree(work.parent, ignore_errors=True)
-    print(f"{OUT.name}: {len(blocks)} blocks extract, match tools/, and run green")
+    # Prose only. The embedded suites contain strings like "0/2 suites" as test data, and
+    # counting those as claims makes the guard cry wolf on its own fixtures.
+    suites = len(list(TOOLS.glob("test_*.py")))
+    prose = CONTRACT.read_text(encoding="utf-8") + HEADER
+    claimed = set(re.findall(r"(\d+)/\d+ suites", prose))
+    wrong = sorted(n for n in claimed if int(n) != suites)
+    if wrong:
+        print(f"{OUT.name}: text claims {'/'.join(wrong)} suites, {suites} exist. "
+              f"A number in prose goes stale the moment a suite is added -- this check exists "
+              f"because one shipped that way.", file=sys.stderr)
+        return 1
+
+    print(f"{OUT.name}: {len(blocks)} blocks extract, match tools/, and run green · "
+          f"every suite count in the text says {suites}")
     return 0
 
 

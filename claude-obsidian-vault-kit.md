@@ -921,7 +921,7 @@ created in SECTION 3). Do not retype them from the contracts above, do not "impr
 copying, and do not skip the suites: they are the only reason the numbers in SECTION 0 mean
 anything.
 
-Measured on Windows 11, Python 3.13, under PowerShell 5.1 **and** Git Bash: 7/7 suites green,
+Measured on Windows 11, Python 3.13, under PowerShell 5.1 **and** Git Bash: 8/8 suites green,
 10/10 acceptance checks correct, 10/10 end-to-end setup steps -- ten consecutive runs under each
 shell. Copy them and that measurement still applies to what you handed the user. Rewrite them and
 it does not.
@@ -934,7 +934,7 @@ pointed at the wrong line.
 After writing them, prove it on this machine before you report anything:
 
 ```
-python <vault>/00_Global/06_tools/run_suites.py       expect 7/7 suites green
+python <vault>/00_Global/06_tools/run_suites.py       expect 8/8 suites green
 python <vault>/00_Global/06_tools/acceptance.py       expect 10/10 checks
 python <vault>/00_Global/06_tools/verify_setup.py     expect 10/10 steps
 ```
