@@ -1,4 +1,4 @@
-<!-- kit-version: 1a123251cf88 -->
+<!-- kit-version: f6b78acee0e4 -->
 # Claude × Obsidian — Vault Kit
 
 **What this file is:** a setup contract for Claude. Drop it into a Claude conversation and say
@@ -1719,7 +1719,10 @@ def main(argv=None):
 
     if broken:
         for path, raw in broken:
-            print(f"{path.name}: [[{raw}]] resolves to nothing", file=sys.stderr)
+            # Path relative to the vault, not the bare filename: every project has an
+            # INDEX and a knowledge-transfer page, so a name alone does not say which one.
+            print(f"{path.relative_to(vault_root).as_posix()}: [[{raw}]] resolves to nothing",
+                  file=sys.stderr)
         print(f"{len(broken)} broken wikilinks", file=sys.stderr)
         return 1
     if skipped:

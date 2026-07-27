@@ -141,7 +141,10 @@ def main(argv=None):
 
     if broken:
         for path, raw in broken:
-            print(f"{path.name}: [[{raw}]] resolves to nothing", file=sys.stderr)
+            # Path relative to the vault, not the bare filename: every project has an
+            # INDEX and a knowledge-transfer page, so a name alone does not say which one.
+            print(f"{path.relative_to(vault_root).as_posix()}: [[{raw}]] resolves to nothing",
+                  file=sys.stderr)
         print(f"{len(broken)} broken wikilinks", file=sys.stderr)
         return 1
     if skipped:
