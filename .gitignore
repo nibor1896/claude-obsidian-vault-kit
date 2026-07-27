@@ -1,0 +1,11 @@
+# Render leftovers from producing the social image with headless Chrome.
+wrap*.html
+chrome-profile/
+cp/
+
+# Local experiments and cold-run scratch. Nothing here is part of the kit.
+_scratch/
+*.tmp
+
+.DS_Store
+Thumbs.db
