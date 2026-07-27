@@ -93,7 +93,7 @@
     <!-- Baseline 46.3, not 40: the star's middle horizontal stroke sits at y=40, and centring the
          CAP height (≈0.70em = 12.6px at 18px) on it puts the baseline half a cap-height below. -->
     <text x="60" y="46.3" fill="#F2E7E0" font-size="18" font-weight="650">Claude</text>
-    <text x="20" y="70" fill="#A2938A" font-size="13.5">fragt erst, baut dann</text>
+    <text x="75" y="70" fill="#A2938A" font-size="13.5" text-anchor="middle">fragt erst, baut dann</text>
 
     <path d="M150 47 H206" stroke="url(#rule)" stroke-width="3" stroke-linecap="round"/>
     <path d="M200 38 l12 9 -12 9" fill="none" stroke="#8B5CF6" stroke-width="3" stroke-linecap="round" stroke-linejoin="round"/>
