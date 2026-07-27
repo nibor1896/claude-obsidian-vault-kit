@@ -7,18 +7,17 @@ structure, a **generated** index, and a set of guards that go red instead of qui
 
 ## Use it
 
-1. Clone this repo, or download [`claude-obsidian-vault-kit.md`](claude-obsidian-vault-kit.md)
-   **together with the [`tools/`](tools/) folder** next to it.
-2. Drop the `.md` into a Claude conversation.
+1. Download [`claude-obsidian-vault-kit.md`](claude-obsidian-vault-kit.md) — one file, nothing else.
+2. Drop it into a Claude conversation.
 3. Say **"set this up for me"**.
 
-The tools are shipped, not generated: `tools/` holds the finished scripts, their suites, and
-`acceptance.py`. Measured on Windows 11, Python 3.13, under PowerShell 5.1 **and** Git Bash —
+The tools are shipped, not generated: the file carries every script verbatim in SECTION 11, and
+the setup writes them to disk instead of composing its own. Measured on Windows 11, Python 3.13, under PowerShell 5.1 **and** Git Bash —
 **7/7 suites green and 10/10 acceptance checks correct, ten consecutive runs under each shell.**
 Reproduce it yourself before you trust it:
 
 ```
-python tools/run_suites.py
+python tools/run_suites.py            # only if you cloned the repo
 python tools/acceptance.py --repeat 10
 ```
 

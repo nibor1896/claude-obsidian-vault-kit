@@ -12,7 +12,11 @@ The generated file is derived output. Edit the contract or the scripts, never th
 
 import argparse
 import hashlib
+import re
+import shutil
+import subprocess
 import sys
+import tempfile
 from pathlib import Path
 
 REPO = Path(__file__).resolve().parent.parent
@@ -77,11 +81,68 @@ def render():
     return "\n".join(parts)
 
 
+BLOCK_RE = re.compile(r"^### `([^`]+)`\n\n```(?:python|json)\n(.*?)\n```", re.S | re.M)
+
+
+def verify():
+    """Extract the scripts back out of the deliverable and run them.
+
+    Everything else in this repo tests the sources. This tests the artefact the user actually
+    receives -- a fence that swallowed a line, a block that never made it in, an embedded copy
+    that drifted from tools/. None of those are visible from the source side.
+    """
+    if not OUT.exists():
+        print(f"{OUT.name}: missing -- run build_kit.py", file=sys.stderr)
+        return 1
+    blocks = BLOCK_RE.findall(OUT.read_text(encoding="utf-8"))
+    expected = SHARED + TOOLS_ORDER + DRIVERS + sorted(p.name for p in TOOLS.glob("test_*.py"))
+    names = [n for n, _ in blocks]
+    if names != expected:
+        print(f"{OUT.name}: embedded {len(names)} blocks, expected {len(expected)}\n"
+              f"  missing: {sorted(set(expected) - set(names))}\n"
+              f"  extra:   {sorted(set(names) - set(expected))}", file=sys.stderr)
+        return 1
+
+    work = Path(tempfile.mkdtemp(prefix="vaultkit_roundtrip_")) / "06_tools"
+    work.mkdir(parents=True)
+    try:
+        drifted = []
+        for name, body in blocks:
+            (work / name).write_text(body + "\n", encoding="utf-8", newline="\n")
+            source = (TOOLS / name).read_text(encoding="utf-8").replace("\r\n", "\n").rstrip() + "\n"
+            if source != (work / name).read_text(encoding="utf-8"):
+                drifted.append(name)
+        if drifted:
+            print(f"{OUT.name}: embedded copy differs from tools/: {drifted}", file=sys.stderr)
+            return 1
+
+        for script, want in (("run_suites.py", "suites green"),
+                             ("acceptance.py", "10/10"),
+                             ("verify_setup.py", "10/10 steps")):
+            result = subprocess.run([sys.executable, str(work / script)],
+                                    capture_output=True, cwd=str(work))
+            out = result.stdout.decode("utf-8", errors="replace")
+            if result.returncode != 0 or want not in out:
+                print(f"{script} from the deliverable: exit {result.returncode}\n{out}\n"
+                      f"{result.stderr.decode('utf-8', errors='replace')}", file=sys.stderr)
+                return 1
+            print(f"  ok   {script} runs from the deliverable")
+    finally:
+        shutil.rmtree(work.parent, ignore_errors=True)
+    print(f"{OUT.name}: {len(blocks)} blocks extract, match tools/, and run green")
+    return 0
+
+
 def main(argv=None):
     parser = argparse.ArgumentParser(description=__doc__)
     parser.add_argument("--check", action="store_true",
                         help="exit 1 when the standalone file does not match the sources")
+    parser.add_argument("--verify", action="store_true",
+                        help="extract the scripts back out of the deliverable and run them")
     args = parser.parse_args(argv)
+
+    if args.verify:
+        return verify()
 
     rendered = render()
     if args.check:

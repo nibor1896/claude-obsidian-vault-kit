@@ -58,14 +58,14 @@ document in order. It is a contract, not a suggestion.
    costs the user a failed round trip every time.
 5. **Never touch a path outside the vault and the tool folder** without saying which path and why,
    and waiting for a yes.
-6. **The scripts ship with this kit. Copy them; do not rewrite them.** `tools/` next to this file
-   holds the finished tools, their suites, and the acceptance driver — measured on Windows 11 with
-   Python 3.13 under PowerShell 5.1 and Git Bash: **7/7 suites green and 10/10 acceptance checks
-   correct, in ten consecutive runs under each shell.** Copy the whole folder into the vault's tool
-   directory and run it. Writing your own version throws that measurement away and reintroduces the
-   defects listed in SECTION 5 and SECTION 6 — every one of those was found the expensive way.
-   Change a shipped script only when the user's structure genuinely needs it, and then rerun both the
-   suites and `acceptance.py` before reporting anything.
+6. **The scripts are inside this file. Write them out; do not rewrite them.** SECTION 11 carries
+   every tool, every suite and the three runners verbatim — measured on Windows 11 with Python 3.13
+   under PowerShell 5.1 and Git Bash: **7/7 suites green, 10/10 acceptance checks and 10/10
+   end-to-end setup steps, in ten consecutive runs under each shell.** Write each block to disk
+   byte for byte. Retyping them from the contracts in SECTION 5 and SECTION 6 throws that
+   measurement away and reintroduces the defects those sections describe — every one was found the
+   expensive way. Change a shipped script only when the user's structure genuinely needs it, and
+   then rerun the suites and `acceptance.py` before reporting anything.
 7. **The scripts do the mechanical work.** Do not hand-write an index, do not hand-count entries, do
    not eyeball whether links resolve. If a number can be measured, measure it with code. If it
    cannot, say "not measured".
@@ -116,9 +116,6 @@ loud which questions you skipped and what you measured.
 - **1.4 — whether a tracker gets mirrored, and which repos.** An authenticated `gh` is not consent.
   Finding credentials on the machine tells you the mirror is *possible*, not that it is wanted.
 - **1.5 — the vault path, the backup, git, and whether a remote may be added.**
-- **1.7 — where the kit folder is on disk.** This file may have arrived as pasted text, in which
-  case you have its content and not its location, and `tools/` beside it is unreachable. Ask for the
-  folder path in round one; do not guess and do not fall back to writing the scripts yourself.
 
 The rule behind the list: **anything that decides what you write, or where, comes from the user's
 mouth.** Reading the environment is measurement; deciding the destination is not.
@@ -217,28 +214,6 @@ Four questions, one call:
 - **Do you have agent memory / notes elsewhere** that should be imported (a `memory/` directory,
   scattered markdown, a Notion export)? If yes, ask for the path — but treat import as a *later*
   step, after the structure verifies clean.
-### 1.7 Where the kit folder is
-
-Ask in round one, as an option the user clicks:
-
-> **Where did you put the kit folder?** — the folder holding this file and `tools/` beside it.
-> Propose the likely candidates (`~/Downloads/claude-obsidian-vault-kit`, `~/Desktop/…`, the current
-> working directory) and let the free-text field take anything else.
-
-Then verify before you rely on it:
-
-```
-<kit>/tools/build_index.py      must exist
-<kit>/tools/acceptance.py       must exist
-```
-
-If the folder is not there — the user only pasted the text, or downloaded the single file — say so
-and offer the two ways out: they clone or download the repo and give you the path, or you proceed
-without the shipped tools. **Name the price of the second option out loud:** the scripts get written
-from the contracts in SECTION 5 and SECTION 6, which is how every earlier setup produced its own
-fresh defects. It is a fallback, never the default, and never something you slide into silently.
-
-
 ---
 
 ## SECTION 2 — The doctrine (why the structure is shaped this way)
