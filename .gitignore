@@ -9,3 +9,7 @@ _scratch/
 
 .DS_Store
 Thumbs.db
+
+# Python bytecode from running the shipped tools/suites.
+__pycache__/
+*.pyc

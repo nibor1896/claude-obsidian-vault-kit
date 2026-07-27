@@ -7,9 +7,20 @@ structure, a **generated** index, and a set of guards that go red instead of qui
 
 ## Use it
 
-1. Download [`claude-obsidian-vault-kit.md`](claude-obsidian-vault-kit.md).
-2. Drop it into a Claude conversation.
+1. Clone this repo, or download [`claude-obsidian-vault-kit.md`](claude-obsidian-vault-kit.md)
+   **together with the [`tools/`](tools/) folder** next to it.
+2. Drop the `.md` into a Claude conversation.
 3. Say **"set this up for me"**.
+
+The tools are shipped, not generated: `tools/` holds the finished scripts, their suites, and
+`acceptance.py`. Measured on Windows 11, Python 3.13, under PowerShell 5.1 **and** Git Bash —
+**7/7 suites green and 10/10 acceptance checks correct, ten consecutive runs under each shell.**
+Reproduce it yourself before you trust it:
+
+```
+python tools/run_suites.py
+python tools/acceptance.py --repeat 10
+```
 
 Claude interviews you first — do you already use Obsidian, install it or will you, do you want a
 throwaway test vault to rearrange before it becomes real, which projects, which repos, which backup,

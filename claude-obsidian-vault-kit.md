@@ -58,19 +58,27 @@ document in order. It is a contract, not a suggestion.
    costs the user a failed round trip every time.
 5. **Never touch a path outside the vault and the tool folder** without saying which path and why,
    and waiting for a yes.
-6. **You write scripts; the scripts do the mechanical work.** Do not hand-write an index, do not
-   hand-count entries, do not eyeball whether links resolve. If a number can be measured, measure it
-   with code. If it cannot, say "not measured".
-7. **State every number's origin.** "12 of 14 links resolve, measured by `check_links.py`" — or
+6. **The scripts ship with this kit. Copy them; do not rewrite them.** `tools/` next to this file
+   holds the finished tools, their suites, and the acceptance driver — measured on Windows 11 with
+   Python 3.13 under PowerShell 5.1 and Git Bash: **7/7 suites green and 10/10 acceptance checks
+   correct, in ten consecutive runs under each shell.** Copy the whole folder into the vault's tool
+   directory and run it. Writing your own version throws that measurement away and reintroduces the
+   defects listed in SECTION 5 and SECTION 6 — every one of those was found the expensive way.
+   Change a shipped script only when the user's structure genuinely needs it, and then rerun both the
+   suites and `acceptance.py` before reporting anything.
+7. **The scripts do the mechanical work.** Do not hand-write an index, do not hand-count entries, do
+   not eyeball whether links resolve. If a number can be measured, measure it with code. If it
+   cannot, say "not measured".
+8. **State every number's origin.** "12 of 14 links resolve, measured by `check_links.py`" — or
    nothing. Never present an estimate as a measurement.
-8. **One task at a time, verified.** Finish and verify a step before starting the next. A half-built
+9. **One task at a time, verified.** Finish and verify a step before starting the next. A half-built
    vault that reports success is worse than no vault.
 
 ### Deliverables at the end of setup
 
 - The folder tree from SECTION 3, with real folders on disk.
 - A generated index tree (SECTION 5) — root, project, category.
-- Guard scripts from SECTION 6, each with a matching `test_*.py` in the same commit.
+- The shipped `tools/` folder copied into the vault, suites and all.
 - Optional: the GitHub issue mirror from SECTION 7.
 - The four starting pages named in SECTION 9 — and **no other notes**. Nothing invented.
 - Backup and git set up per SECTION 8.
@@ -779,11 +787,25 @@ proves the scripts run on clean input. That is the half that cannot fail. A guar
 having if it goes red on bad input, and the only way to know is to hand it bad input on *this*
 machine — not to reason about the code you just wrote.
 
-Create the fixtures in a throwaway folder inside the vault, run the checks, then delete the folder
-and confirm the tree is clean again. Show the user the result of every line.
+**Run the shipped driver. Do not write your own.**
 
-| # | Fixture you create | Required behaviour | Fails how, if broken |
+```
+python <vault>/00_Global/06_tools/acceptance.py
+```
+
+It builds a throwaway vault per fixture under the system temp directory, so it never touches the
+user's notes, and it takes its verdict from process exit codes and files on disk — never from
+parsing console output, which wraps at the terminal width and differs per shell. Expect
+`10/10 checks behaved as specified`. Anything less is a defect in a script, not in the expectation.
+`--repeat 10` runs ten full passes; use it after any change to a guard.
+
+The table below is what the driver checks, and it is the specification a changed script must still
+meet. Fixture 0 is the healthy control: a suite that only ever sees bad input is exactly as blind as
+one that only ever sees good input.
+
+| # | Fixture | Required behaviour | Fails how, if broken |
 |---|---|---|---|
+| 0 | a clean vault with two notes | every tool exits 0 with a denominator, and a second index run is byte-identical | a guard that is red on everything looks careful and proves nothing |
 | 1 | note with no `title:` | index run exits **non-zero** and names the file on stderr | exits 0, filename appears as the entry title, nobody notices for months |
 | 2 | note whose `summary:` starts with `>` or `#` | debris stripped, file named, exit non-zero | index line renders as `— > Living inventory …` |
 | 3 | `[[wikilink]]` to a note that does not exist | link checker reports it, exit non-zero, **denominator > 0** | reports "0 broken" because it scanned nothing |
@@ -794,12 +816,9 @@ and confirm the tree is clean again. Show the user the result of every line.
 | 8 | remove or blank a scheduled job's run log | freshness check says **"did not run"**, not "fine" | a scheduler that stopped is indistinguishable from a healthy one |
 | 9 | a folder the config does not know — `<Project>/99_extra/` with one note in it | index run names the folder and exits **non-zero** | exit 0 and the folder is in no index; measured on a real setup, a renamed `06_tools` took the count from 21 categories to 20 without a word |
 
-```bash
-# after the run, in this order
-rm -r <vault>/_acceptance          # or the platform equivalent
-python 06_tools/build_index.py --vault <Project>
-git status --porcelain             # must be empty again
-```
+The driver leaves nothing behind — every fixture vault lives under the system temp directory and is
+deleted in a `finally` block. After the run, `git status --porcelain` in the real vault must still be
+empty; if it is not, something wrote outside the throwaway tree and that is the finding.
 
 **Run the suites under every shell the user has**, not just the one you happen to be in. On Windows
 that means PowerShell *and* Git Bash. This is where the encoding defect in SECTION 6 shows up, and it
@@ -808,8 +827,8 @@ is invisible from inside a single shell.
 Report it like this, one line per check, and **name any check you did not run**:
 
 ```
-Acceptance: 9/9 guards went red on bad input
-            (or) 7/9 — #5 non-ASCII filename NOT caught, #9 not run
+Acceptance: 10/10 checks behaved as specified (9 red on bad input, 1 healthy control green)
+            (or) 8/10 — #5 non-ASCII filename NOT caught, #9 not run
 ```
 
 If a check does not behave as specified, the generated script is wrong — fix the script, not the
@@ -825,7 +844,7 @@ Two rules that make this a check rather than a ceremony:
   lives in a conversation cannot be repeated by whoever inherits the vault.
 - **Any change to a guard invalidates the last acceptance result.** Fixed a script after the run?
   Then the run is over and the number is no longer true — repeat all of it, not the affected check.
-  Saying "9/9" after editing two tools is quoting a measurement of code that no longer exists.
+  Saying "10/10" after editing two tools is quoting a measurement of code that no longer exists.
 
 ---
 
