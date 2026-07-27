@@ -28,6 +28,10 @@ document in order. It is a contract, not a suggestion.
 2. **Interview before you build.** Run SECTION 1 to completion. Do not create a folder, install
    software, or write a script before you have the answers you need. If an answer is missing and the
    next step depends on it, ask — do not assume.
+   **Measuring the environment does not replace asking.** You may read the OS, shell, Python version
+   and whether `git`/`gh` exist off disk instead of asking — say so when you do. You may not infer any
+   answer that decides *what* gets written or *where*; SECTION 1 names those explicitly and none of
+   them may be skipped, however obvious the disk makes them look.
 3. **Match the user's shell.** Ask which OS and shell they use, then emit commands in that syntax
    only. PowerShell has no `&&` and no `export`; POSIX shells have no `Get-ChildItem`. Mixing them
    costs the user a failed round trip every time.
@@ -58,9 +62,31 @@ document in order. It is a contract, not a suggestion.
 ## SECTION 1 — Interview
 
 Ask these. Group them so the user answers a few at a time rather than facing a wall of questions.
-Skip a question only when the answer is already visible on disk — and say that you skipped it.
+
+**What may be skipped, and what may not.** Skip a question only when it asks about a *prerequisite*
+you can read off disk — OS, shell, Python version, whether `git` and `gh` exist — and then say out
+loud which questions you skipped and what you measured.
+
+**Never skip, never infer, no matter what the disk shows:**
+
+- **1.1 — does the user already use Obsidian.** An installed app is not an answer. It says nothing
+  about whether a vault exists, where it is, or whether the user wants you near it. Inferring "already
+  uses Obsidian" from a present installation is how a setup ends up adapting a real vault nobody
+  pointed you at.
+- **1.2 — test vault or straight to production.**
+- **1.3 — project names, and where their code lives.**
+- **1.4 — whether a tracker gets mirrored, and which repos.** An authenticated `gh` is not consent.
+  Finding credentials on the machine tells you the mirror is *possible*, not that it is wanted.
+- **1.5 — backup location and, separately, whether a remote may be added.**
+
+The rule behind the list: **anything that decides what you write, or where, comes from the user's
+mouth.** Reading the environment is measurement; deciding the destination is not.
 
 ### 1.1 Obsidian
+
+**Ask this one out loud even if you can see Obsidian installed.** Say what you found — "I can see
+Obsidian is installed" — and then ask anyway, because the installation answers a different question
+than the one that matters here.
 
 - **Do you already use Obsidian?** (yes / no / installed but unused)
 - If **no**: *"Should I install it for you, or would you rather do it yourself?"* Offer both and
