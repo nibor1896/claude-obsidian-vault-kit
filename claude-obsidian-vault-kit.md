@@ -116,6 +116,9 @@ loud which questions you skipped and what you measured.
 - **1.4 — whether a tracker gets mirrored, and which repos.** An authenticated `gh` is not consent.
   Finding credentials on the machine tells you the mirror is *possible*, not that it is wanted.
 - **1.5 — the vault path, the backup, git, and whether a remote may be added.**
+- **1.7 — where the kit folder is on disk.** This file may have arrived as pasted text, in which
+  case you have its content and not its location, and `tools/` beside it is unreachable. Ask for the
+  folder path in round one; do not guess and do not fall back to writing the scripts yourself.
 
 The rule behind the list: **anything that decides what you write, or where, comes from the user's
 mouth.** Reading the environment is measurement; deciding the destination is not.
@@ -214,6 +217,27 @@ Four questions, one call:
 - **Do you have agent memory / notes elsewhere** that should be imported (a `memory/` directory,
   scattered markdown, a Notion export)? If yes, ask for the path — but treat import as a *later*
   step, after the structure verifies clean.
+### 1.7 Where the kit folder is
+
+Ask in round one, as an option the user clicks:
+
+> **Where did you put the kit folder?** — the folder holding this file and `tools/` beside it.
+> Propose the likely candidates (`~/Downloads/claude-obsidian-vault-kit`, `~/Desktop/…`, the current
+> working directory) and let the free-text field take anything else.
+
+Then verify before you rely on it:
+
+```
+<kit>/tools/build_index.py      must exist
+<kit>/tools/acceptance.py       must exist
+```
+
+If the folder is not there — the user only pasted the text, or downloaded the single file — say so
+and offer the two ways out: they clone or download the repo and give you the path, or you proceed
+without the shipped tools. **Name the price of the second option out loud:** the scripts get written
+from the contracts in SECTION 5 and SECTION 6, which is how every earlier setup produced its own
+fresh defects. It is a fallback, never the default, and never something you slide into silently.
+
 
 ---
 
