@@ -628,6 +628,12 @@ git commit -m "chore: initialise vault"
 Without it, a checkout on another machine rewrites line endings on notes nobody touched, and the
 first diff is hundreds of files wide.
 
+**Obsidian itself is the most frequent trigger, and it does not need you to edit anything.** Opening
+a note can be enough: measured on 2026-07-27, two notes that were only read came out as 56 and 105
+fully rewritten lines with zero content change. Tell the user this before it happens, because
+`git status` then shows notes as modified that nobody wrote, and a session that trusts that signal
+commits someone else's file under its own message.
+
 **The diagnostic to remember:** a note that shows as fully rewritten — same line count out and in,
 e.g. `@@ -233,233 +233,233 @@` — has almost certainly only changed its line endings. Confirm before
 concluding anything:
@@ -636,7 +642,12 @@ concluding anything:
 git diff --ignore-cr-at-eol -- path/to/note.md
 ```
 
-Empty output means the content is byte-identical and only CR moved. Then decide deliberately: commit
+Empty output means the content is byte-identical and only CR moved. Across the whole tree, the same
+question is one command:
+
+```bash
+git diff --ignore-cr-at-eol --name-only     # empty = nothing but line endings moved
+``` Then decide deliberately: commit
 the flip (ends the churn if a tool keeps writing that way) or restore the previous endings (right if
 it was a one-off and the repo has a dominant convention). Find out which before choosing — grep the
 tools for a writer of that file. "A tool must be rewriting it" is a guess, and it was wrong the one
