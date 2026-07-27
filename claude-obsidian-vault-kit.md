@@ -51,7 +51,7 @@ document in order. It is a contract, not a suggestion.
 - A generated index tree (SECTION 5) — root, project, category.
 - Guard scripts from SECTION 6, each with a matching `test_*.py` in the same commit.
 - Optional: the GitHub issue mirror from SECTION 7.
-- `<Project>/05_workflows/knowledge-transfer-<Project>.md` — the workflow, in the user's own words.
+- The four starting pages named in SECTION 9 — and **no other notes**. Nothing invented.
 - Backup and git set up per SECTION 8.
 - A verification run per SECTION 9, with its output shown to the user.
 - **The acceptance test from SECTION 10, passed.** The setup is not finished until every guard has
@@ -61,7 +61,20 @@ document in order. It is a contract, not a suggestion.
 
 ## SECTION 1 — Interview
 
-Ask these. Group them so the user answers a few at a time rather than facing a wall of questions.
+**At most three questions per round. Hard limit, not a style note.**
+
+- One round covers **one** numbered subsection below. Never bundle 1.3 with 1.5 and 1.6 because they
+  happen to be next to each other.
+- A subsection holding more than three items is **split into two rounds**. 1.5 has four; ask the vault
+  location and the backup first, then git and the git identity.
+- Never write "please answer all of these at once". Measured: a round of eight numbered items across
+  three subsections came back answered for the first three and silent on the rest, so the round had to
+  be repeated — which costs more than the two rounds it was trying to save.
+- Where the harness offers a choice UI, use it. A question with three labelled options gets answered;
+  a numbered list in prose gets skimmed.
+
+After each round, restate what you now know in one line before asking the next. That is what lets the
+user notice a wrong answer while it is still cheap.
 
 **What may be skipped, and what may not.** Skip a question only when it asks about a *prerequisite*
 you can read off disk — OS, shell, Python version, whether `git` and `gh` exist — and then say out
@@ -77,7 +90,7 @@ loud which questions you skipped and what you measured.
 - **1.3 — project names, and where their code lives.**
 - **1.4 — whether a tracker gets mirrored, and which repos.** An authenticated `gh` is not consent.
   Finding credentials on the machine tells you the mirror is *possible*, not that it is wanted.
-- **1.5 — backup location and, separately, whether a remote may be added.**
+- **1.5a / 1.5b — the vault path and backup, then git and whether a remote may be added.**
 
 The rule behind the list: **anything that decides what you write, or where, comes from the user's
 mouth.** Reading the environment is measurement; deciding the destination is not.
@@ -152,15 +165,22 @@ If they choose the test vault:
 - **Private repos?** Then the mirror on disk contains private content — confirm the user knows that
   before you write it anywhere synced or committed.
 
-### 1.5 Where the vault lives, and how it survives
+### 1.5a Where the vault lives (round of its own)
 
+- **The vault path.** Propose one and have it confirmed. It must sit inside the folder you were given.
 - **Backup location.** Recommend a cloud-synced folder (OneDrive, Dropbox, iCloud Drive, Syncthing).
-  Ask which one they use.
+  Ask which one they use — and if a cloud folder exists on the machine but is out of bounds, say so
+  rather than proposing it.
+
+### 1.5b Git, and separately a remote (round of its own)
+
 - **Git as well?** Recommend yes: cloud sync knows file versions, git knows *states across all
   notes*. Neither replaces the other.
 - If they want git: **public or private remote?** If the vault will hold anything private —
   and a mirrored issue tracker usually does — the remote must be private. Say this explicitly and
-  get a yes before you add any remote.
+  get a yes before you add any remote. "Yes to git" is not "yes to a remote".
+- **`user.name` and `user.email`** — ask for both, set them repo-locally, never `--global` (SECTION 8).
+  Do not invent them and do not copy them from another repo on the machine.
 
 ### 1.6 Environment
 
@@ -667,6 +687,30 @@ forgotten:**
   it reports is arithmetic, not evidence. Name the threshold, say it has never been checked against
   real volume, and revisit it once the vault has one.
 - **No backup outside this folder, and no remote.** Mishandling is covered by git; disk loss is not.
+
+### The starting content is this list, and nothing else
+
+Left unspecified, a setup invents notes: one run produced eight, including demo notes and restatements
+of these rules under names of its own choosing. Each of them was reasonable and no two runs would
+produce the same set — which makes the vault's starting state a coin toss and the doctrine
+unquotable, because nobody can say which page holds it.
+
+**Create exactly these, in the user's language:**
+
+| Page | Where | Holds |
+|---|---|---|
+| `the-rules-this-vault-runs-on.md` | global bucket, `03_technical_docs` | the doctrine from SECTION 2, in the user's own words |
+| `tooling-<Bucket>.md` | global bucket, `03_technical_docs` | the tools table: what each guard does and what it refuses |
+| `acceptance-test.md` | global bucket, `03_technical_docs` | the fixtures and required behaviour from SECTION 10, repeatable |
+| `knowledge-transfer-<Project>.md` | each project, `05_workflows` | the workflow below, one per project |
+
+If there is no global bucket, they go in the first project instead — and say so, so nobody hunts for
+them later.
+
+**Create no other notes.** No example notes, no demo content, no page restating a rule that already
+has one. An empty category is correct on day one: it still gets its index file, which is what proves
+the structure works. Acceptance fixtures live in the throwaway folder from SECTION 10 and are deleted
+with it.
 
 ### Write the workflow file
 
