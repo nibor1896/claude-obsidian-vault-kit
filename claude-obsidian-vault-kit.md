@@ -51,7 +51,7 @@ document in order. It is a contract, not a suggestion.
 - A generated index tree (SECTION 5) — root, project, category.
 - Guard scripts from SECTION 6, each with a matching `test_*.py` in the same commit.
 - Optional: the GitHub issue mirror from SECTION 7.
-- `05_workflows/knowledge-transfer.md` — the workflow, written in the user's own words.
+- `<Project>/05_workflows/knowledge-transfer-<Project>.md` — the workflow, in the user's own words.
 - Backup and git set up per SECTION 8.
 - A verification run per SECTION 9, with its output shown to the user.
 - **The acceptance test from SECTION 10, passed.** The setup is not finished until every guard has
@@ -167,8 +167,18 @@ They are the part that survives; the folder names are cosmetic by comparison.
 
 1. **One insight, one file.** A note holds a single thing that is true. If a note needs the word
    "and" in its title, it is two notes.
-2. **The filename carries the title, never just a number.** `ISSUE-42.md` tells nobody anything six
-   weeks later. If a character is not legal in a filename, clean the title — do not drop it.
+2. **The filename carries the title, never just a number — and it is unique across the whole vault.**
+   `ISSUE-42.md` tells nobody anything six weeks later. If a character is not legal in a filename,
+   clean the title — do not drop it. A title that repeats in another project identifies nothing
+   either: four files called `knowledge-transfer.md` are four indistinguishable nodes in the graph and
+   a coin toss in the quick switcher. **Any file that exists once per project carries the project name
+   in its filename.** Verify it rather than assume it — count basenames, not paths:
+
+   ```bash
+   git ls-files -z '*.md' | tr '\0' '\n' | xargs -n1 basename | sort | uniq -d
+   ```
+
+   Output should be empty. Anything listed is ambiguous everywhere the path is not shown.
 3. **The index is generated, never written.** The generator reads *frontmatter only* and has no
    access to note bodies. That is not an optimisation — it is the structural guarantee that prose can
    never leak into the index, because there is no code path by which it could.
@@ -208,11 +218,11 @@ without looking.
 
 ```
 <VaultRoot>/
-├── INDEX.md                         generated — one line per project
+├── INDEX - <VaultName>.md           generated — one line per project
 ├── 00_Global/                       optional: things belonging to no single project
 │   └── (same subfolders as a project)
 └── <ProjectName>/
-    ├── INDEX.md                     generated — one line per category
+    ├── INDEX - <ProjectName>.md     generated — one line per category
     ├── 00_Notes/                    insights with no ticket attached
     ├── 01_Issues/                   GENERATED mirror of the tracker (SECTION 7) — never hand-edit
     ├── 02_docs/                     product, project and decision documentation
@@ -283,14 +293,18 @@ Three levels, because a single flat index becomes a star with hundreds of spokes
 navigable at around 150 entries:
 
 ```
-<VaultRoot>/INDEX.md                                 one line per project        --root
-<Project>/INDEX.md                                   one line per category       --vault <dir>
+<VaultRoot>/INDEX - <VaultName>.md                   one line per project        --root
+<Project>/INDEX - <Project>.md                       one line per category       --vault <dir>
 <Project>/<Folder>/INDEX - <Project> <Category>.md   the entries themselves
 ```
 
-- **The category index filename carries the project name.** Every project has identically named
-  folders; without the project in the filename the graph shows five nodes called `INDEX - Issues`
-  and the quick switcher becomes a coin toss.
+- **Every index filename carries the name of what it indexes — at all three levels.** Every project
+  has identically named folders, so without the project in the filename the graph shows five nodes
+  called `INDEX - Issues` and the quick switcher becomes a coin toss.
+- **This applies to the project and root hubs too, and that is easy to miss.** Naming them all
+  `INDEX.md` produces one `INDEX` node per project plus one for the root — measured on a real vault:
+  six files called `INDEX.md`, indistinguishable in the graph. The reasoning that forced the project
+  name into the category filename does not stop one level up.
 - **Read frontmatter only.** Never open a note body. This is the guarantee from SECTION 2.3.
 
 ### Entry line format
@@ -483,7 +497,7 @@ appears in every commit forever, and if the vault ever gets a remote it becomes 
 # Windows / PowerShell — one command per line, no chaining
 cd <VaultRoot>
 git init
-git add .gitattributes .gitignore INDEX.md
+git add .gitattributes .gitignore "INDEX - <VaultName>.md"
 git commit -m "chore: initialise vault"
 ```
 
@@ -491,7 +505,7 @@ git commit -m "chore: initialise vault"
 # macOS / Linux
 cd <VaultRoot>
 git init
-git add .gitattributes .gitignore INDEX.md
+git add .gitattributes .gitignore "INDEX - <VaultName>.md"
 git commit -m "chore: initialise vault"
 ```
 
@@ -618,10 +632,14 @@ forgotten:**
 
 ### Write the workflow file
 
-Create `<Project>/05_workflows/knowledge-transfer.md` containing: the goal in one sentence, the
-inputs, the tools table, the command sequence for *this user's* shell, the expected output, and the
+Create `<Project>/05_workflows/knowledge-transfer-<Project>.md` containing: the goal in one sentence,
+the inputs, the tools table, the command sequence for *this user's* shell, the expected output, and the
 edge cases you hit during setup. This is what makes the vault survive you — the next session reads
 this file instead of re-deriving the whole thing.
+
+**The project name in that filename is not decoration.** One file per project all called
+`knowledge-transfer.md` gives the graph four identical nodes and the quick switcher four identical
+rows — see doctrine rule 2. Same for any other page you create once per project.
 
 ### Tell the user how to use it from here on
 
