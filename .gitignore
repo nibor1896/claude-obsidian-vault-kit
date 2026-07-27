@@ -13,3 +13,6 @@ Thumbs.db
 # Python bytecode from running the shipped tools/suites.
 __pycache__/
 *.pyc
+
+# Marketing drafts live outside the repo: ../vault-kit-promo
+promo/
