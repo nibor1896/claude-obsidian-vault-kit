@@ -1,4 +1,4 @@
-<!-- kit-version: 7affeaa14e83 -->
+<!-- kit-version: 6cd087d9fc96 -->
 # Claude × Obsidian — Vault Kit
 
 **What this file is:** a setup contract for Claude. Drop it into a Claude conversation and say
@@ -124,6 +124,13 @@ loud which questions you skipped and what you measured.
 - **1.4 — whether a tracker gets mirrored, and which repos.** An authenticated `gh` is not consent.
   Finding credentials on the machine tells you the mirror is *possible*, not that it is wanted.
 - **1.5 — the vault path, the backup, git, and whether a remote may be added.**
+- **`user.email` — ask, even when an address is sitting right in front of you.** Your session
+  context, another repo on the machine, a shell variable, a git credential store: **an address that
+  is visible in your environment is not consent to publish it.** It goes into every commit forever,
+  and the user may make that repo public later. One cold run took the operator's private mail address
+  out of session context and set it without a word. Offer
+  `<handle>@users.noreply.github.com` as the **first** clickable option, so the private-by-default
+  answer is the cheap one.
 
 The rule behind the list: **anything that decides what you write, or where, comes from the user's
 mouth.** Reading the environment is measurement; deciding the destination is not.
@@ -421,6 +428,12 @@ Both were found by the acceptance test in SECTION 10, on a first real setup:
   so the checker must not count it. Without this, every page that *documents* the wikilink syntax
   reports itself as broken — the prose is right and the checker is wrong, which is the worst way round
   because the instinct is to edit the note.
+- **An escaped alias pipe, `[[note\|Title]]`, is a link.** In a Markdown table the pipe *must* be
+  written `\|` or it ends the cell — that is Obsidian's own documented syntax, not a defect. A checker
+  that splits on a bare `|` keeps the backslash in the target, resolves nothing, and reports a
+  perfectly good link as broken: measured once as `61/62`, which then took `check_freshness` down with
+  it. Unescape before splitting. Same failure mode as the code span above, same reason it costs so
+  much: the note is right and the guard is wrong.
 
 ### Every generated filename comes from one function, and renaming one is not a one-line change
 
@@ -809,6 +822,11 @@ contract, the command sequence, what each guard refuses — belongs once in the 
 page, with a wikilink from each project page. What stays on the project page is what is only true
 there: where its code lives, its decisions, its edge cases. Do this while writing them; fixing it
 after the guard fires costs a rewrite and a second verification run.
+
+**A wikilink in a table cell needs its pipe escaped: `[[note\|Title]]`.** These pages carry tables —
+the tools table, the fixture table — and an unescaped alias pipe silently ends the cell, so the row
+renders short and the link is gone. Obsidian documents `\|` as the way to write it; the link checker
+resolves it (SECTION 5). Write it escaped, do not dodge the table.
 
 ### Tell the user how to use it from here on
 
@@ -1644,7 +1662,10 @@ def link_targets(text):
     """Every wikilink target in the text, alias and anchor stripped."""
     targets = []
     for raw in WIKILINK.findall(strip_code(text)):
-        target = raw.split("|", 1)[0]
+        # Inside a Markdown table the alias pipe must be written `\|` — that is Obsidian's
+        # own documented syntax, not a defect. Unescape before splitting, or a link the app
+        # resolves fine is reported broken and the writer edits a correct note.
+        target = raw.replace("\\|", "|").split("|", 1)[0]
         target = target.split("#", 1)[0]
         target = target.split("^", 1)[0]
         target = target.strip()
@@ -3143,6 +3164,22 @@ class CheckLinksTest(unittest.TestCase):
         self.assertEqual(code, 1)
         self.assertIn("Ärgernis.md", err)
         self.assertIn("fehlt-natürlich", err)
+
+    def test_escaped_alias_pipe_in_a_table_still_resolves(self):
+        write_note(self.notes / "ziel.md")
+        source = write_note(self.notes / "tabelle.md")
+        self.append(source, "| Was | Wo |\n|---|---|\n| Ziel | [[ziel\\|Titel]] |")
+        code, out, err = run_tool("check_links.py", "--vault", self.vault)
+        self.assertEqual(code, 0, err)
+        self.assertIn("1/1 wikilinks resolve", out)
+
+    def test_escaped_pipe_does_not_hide_a_broken_target(self):
+        source = write_note(self.notes / "tabelle.md")
+        self.append(source, "| Was | Wo |\n|---|---|\n| Ziel | [[gibt-es-nicht\\|Titel]] |")
+        code, out, err = run_tool("check_links.py", "--vault", self.vault)
+        self.assertEqual(code, 1)
+        self.assertIn("gibt-es-nicht", err)
+        self.assertIn("0/1 wikilinks resolve", out)
 
     def test_alias_and_anchor_are_stripped_before_resolving(self):
         write_note(self.notes / "ziel.md")

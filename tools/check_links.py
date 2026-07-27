@@ -84,7 +84,10 @@ def link_targets(text):
     """Every wikilink target in the text, alias and anchor stripped."""
     targets = []
     for raw in WIKILINK.findall(strip_code(text)):
-        target = raw.split("|", 1)[0]
+        # Inside a Markdown table the alias pipe must be written `\|` — that is Obsidian's
+        # own documented syntax, not a defect. Unescape before splitting, or a link the app
+        # resolves fine is reported broken and the writer edits a correct note.
+        target = raw.replace("\\|", "|").split("|", 1)[0]
         target = target.split("#", 1)[0]
         target = target.split("^", 1)[0]
         target = target.strip()

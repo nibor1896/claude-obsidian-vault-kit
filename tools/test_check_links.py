@@ -85,6 +85,22 @@ class CheckLinksTest(unittest.TestCase):
         self.assertIn("Ärgernis.md", err)
         self.assertIn("fehlt-natürlich", err)
 
+    def test_escaped_alias_pipe_in_a_table_still_resolves(self):
+        write_note(self.notes / "ziel.md")
+        source = write_note(self.notes / "tabelle.md")
+        self.append(source, "| Was | Wo |\n|---|---|\n| Ziel | [[ziel\\|Titel]] |")
+        code, out, err = run_tool("check_links.py", "--vault", self.vault)
+        self.assertEqual(code, 0, err)
+        self.assertIn("1/1 wikilinks resolve", out)
+
+    def test_escaped_pipe_does_not_hide_a_broken_target(self):
+        source = write_note(self.notes / "tabelle.md")
+        self.append(source, "| Was | Wo |\n|---|---|\n| Ziel | [[gibt-es-nicht\\|Titel]] |")
+        code, out, err = run_tool("check_links.py", "--vault", self.vault)
+        self.assertEqual(code, 1)
+        self.assertIn("gibt-es-nicht", err)
+        self.assertIn("0/1 wikilinks resolve", out)
+
     def test_alias_and_anchor_are_stripped_before_resolving(self):
         write_note(self.notes / "ziel.md")
         source = write_note(self.notes / "quelle.md")
