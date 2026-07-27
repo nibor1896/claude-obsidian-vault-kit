@@ -116,9 +116,22 @@ Ask: **"Do you want a throwaway test vault first?"** Explain the two paths in on
 
 If they choose the test vault:
 - Put it somewhere obviously temporary and say the path out loud.
+- **Tell them what Obsidian will ask, before they start rearranging.** The moment they rename or move
+  a folder, Obsidian pops up *"Update internal links? This affects N links in N files."* Say in
+  advance: **choose "Don't update".** The affected links live in generated index files, so letting
+  Obsidian rewrite them would hand-edit generated output — and the generator has to set them
+  correctly on its next run anyway. Declining also makes that a real test instead of an assumption.
+  Warning them afterwards is worthless; the dialog is modal and they will have clicked it.
+- **Also warn about "Always update".** It is not a one-off answer, it writes a persistent setting into
+  that vault's `.obsidian/app.json`. Harmless here — the setting is per-vault, so a production vault
+  elsewhere is untouched — but say so, or they will assume they broke something they did not.
 - When they report back, **read the folders as they now exist** — do not re-propose your original
   scheme. Diff it against SECTION 3, list every change they made, and confirm your reading with
   them in one short list before you build production.
+- **Carry a rename through every project, or ask.** If they renamed `00_Notes` to `00_Notizen` in one
+  project only, that is ambiguous: it may mean "everywhere" or "just here". Say which reading you
+  are taking and get a yes. Silently applying it to one project leaves the vault inconsistent; silently
+  applying it to all of them overrides a choice they may have made deliberately.
 - Delete the test vault only after they confirm production is good, and ask first.
 
 ### 1.3 What is being documented
@@ -349,6 +362,20 @@ Both were found by the acceptance test in SECTION 10, on a first real setup:
   so the checker must not count it. Without this, every page that *documents* the wikilink syntax
   reports itself as broken — the prose is right and the checker is wrong, which is the worst way round
   because the instinct is to edit the note.
+
+### Every generated filename comes from one function, and renaming one is not a one-line change
+
+Two failures from doing this on a real vault, both cheap to avoid and expensive to find:
+
+- **A filename used by more than one tool is computed in one place and imported.** Spelling it a
+  second time in a freshness or hygiene check means that check reports the hub as *missing* for every
+  project while the hub sits right next to it — a guard that fails loudly about the wrong thing is
+  barely better than one that fails silently.
+- **A generated file is linked to from other generated files, including backwards.** Each category
+  index carries a back-link to its hub. Renaming the hub without following that link left 23 of 441
+  wikilinks pointing nowhere. The link checker caught it; the test suite did not, because no test
+  asserted the back-link. After any rename: grep the generator for every place it emits the old name,
+  regenerate, **run the link checker**, and add the assertion the suite was missing.
 
 ### It also enforces unique filenames, because it is already walking every note
 
