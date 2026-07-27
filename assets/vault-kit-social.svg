@@ -77,7 +77,7 @@
   <text x="80" y="508" fill="#8B82A8" font-size="15" font-weight="600">sie verschwinden leise.</text>
 
   <!-- ── MIDDLE: Claude does the transformation ───────────────── -->
-  <g transform="translate(352,268)">
+  <g transform="translate(382,268)">
     <rect x="0" y="0" width="150" height="94" rx="16" fill="#2a1f24" fill-opacity="0.95" stroke="#E5794F" stroke-opacity="0.5" stroke-width="1.5"/>
     <!-- Claude mark. Solid stroke, not a gradient: a vertical path has a zero-width bounding
          box, so an objectBoundingBox gradient degenerates and never paints. -->
@@ -95,8 +95,8 @@
     <text x="64" y="46.3" fill="#F2E7E0" font-size="18" font-weight="650">Claude</text>
     <text x="75" y="70.5" fill="#A2938A" font-size="12" text-anchor="middle">fragt erst, baut dann</text>
 
-    <path d="M150 47 H206" stroke="url(#rule)" stroke-width="3" stroke-linecap="round"/>
-    <path d="M200 38 l12 9 -12 9" fill="none" stroke="#8B5CF6" stroke-width="3" stroke-linecap="round" stroke-linejoin="round"/>
+    <path d="M150 47 H178" stroke="url(#rule)" stroke-width="3" stroke-linecap="round"/>
+    <path d="M172 38 l12 9 -12 9" fill="none" stroke="#8B5CF6" stroke-width="3" stroke-linecap="round" stroke-linejoin="round"/>
   </g>
 
   <!-- ── RIGHT: the generated index ──────────────────────────── -->
