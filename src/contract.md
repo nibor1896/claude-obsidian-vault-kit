@@ -153,7 +153,14 @@ Ask: **"Do you want a throwaway test vault first?"** Explain the two paths in on
 - **Direct path:** you build straight into the real location.
 
 If they choose the test vault:
-- Put it somewhere obviously temporary and say the path out loud.
+- **Default to one tree, not two.** The test vault *is* the vault, at the location the user gave in
+  1.5: they rearrange it in place, you re-read it, and production is that same folder promoted. A
+  second tree doubles the paths and the git state and buys nothing.
+- **If they do want a separate scratch tree, its path is asked, never chosen.** Put it in the same
+  question round as a clickable option. Announcing a path you picked is not consent -- operating rule
+  5 covers the scratch tree exactly as it covers the real one. A run that invented
+  `<Chosen>/_testvault/Vault` after the user had already answered `<Chosen>/Vault` produced a tree
+  nobody asked for, and the user read it as the setup ignoring their answer. They were right.
 - **Tell them what Obsidian will ask, before they start rearranging.** The moment they rename or move
   a folder, Obsidian pops up *"Update internal links? This affects N links in N files."* Say in
   advance: **choose "Don't update".** The affected links live in generated index files, so letting
