@@ -426,6 +426,26 @@ only as long as whoever is working remembers it. Read the paths as **bytes** fro
 or by walking the tree — not from a shell pipeline, which differs per platform and breaks on names
 containing non-ASCII (SECTION 6).
 
+### It also reports a folder it walked past
+
+The category list is configuration, and configuration goes stale the moment someone renames a folder
+in the file pane. Walk the project's actual subfolders, compare them against the configured
+categories, and report any folder that is not in the list as a defect with a non-zero exit:
+
+```
+ProjectB/06_werkzeuge: folder is not a configured category — nothing in it reaches an index
+```
+
+Measured on a first cold setup: renaming `06_tools` to `06_werkzeuge` in Obsidian took the run from
+21 categories to 20 — **exit 0, no message on stderr, and the folder simply absent from every
+index.** The index generator, the link checker and the duplicate check all reported green over it,
+because none of them was asked what *should* have been there. SECTION 3 explicitly lets the user name
+their own folders, which is exactly why the generator has to notice when they do.
+
+The reverse case is the same defect: a configured category whose folder does not exist returns an
+empty list today. Say so — `03_technical_docs: configured category has no folder` — rather than
+counting it as zero clean entries.
+
 ### Exit code
 
 `0` only when every entry was clean. Otherwise print each defect as `<filename>: <what is wrong>` on
@@ -772,6 +792,7 @@ and confirm the tree is clean again. Show the user the result of every line.
 | 6 | nothing — run the index generator twice | second run leaves `git status` empty | every later `git status` is noise |
 | 7 | point the suite runner at an empty directory | reports **"0 suites collected"** and does **not** say green | "all green" over zero tests |
 | 8 | remove or blank a scheduled job's run log | freshness check says **"did not run"**, not "fine" | a scheduler that stopped is indistinguishable from a healthy one |
+| 9 | a folder the config does not know — `<Project>/99_extra/` with one note in it | index run names the folder and exits **non-zero** | exit 0 and the folder is in no index; measured on a real setup, a renamed `06_tools` took the count from 21 categories to 20 without a word |
 
 ```bash
 # after the run, in this order
@@ -787,8 +808,8 @@ is invisible from inside a single shell.
 Report it like this, one line per check, and **name any check you did not run**:
 
 ```
-Acceptance: 8/8 guards went red on bad input
-            (or) 6/8 — #5 non-ASCII filename NOT caught, #8 not run
+Acceptance: 9/9 guards went red on bad input
+            (or) 7/9 — #5 non-ASCII filename NOT caught, #9 not run
 ```
 
 If a check does not behave as specified, the generated script is wrong — fix the script, not the
@@ -804,7 +825,7 @@ Two rules that make this a check rather than a ceremony:
   lives in a conversation cannot be repeated by whoever inherits the vault.
 - **Any change to a guard invalidates the last acceptance result.** Fixed a script after the run?
   Then the run is over and the number is no longer true — repeat all of it, not the affected check.
-  Saying "8/8" after editing two tools is quoting a measurement of code that no longer exists.
+  Saying "9/9" after editing two tools is quoting a measurement of code that no longer exists.
 
 ---
 
