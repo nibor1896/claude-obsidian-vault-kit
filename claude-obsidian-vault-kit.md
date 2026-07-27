@@ -32,17 +32,38 @@ document in order. It is a contract, not a suggestion.
    and whether `git`/`gh` exist off disk instead of asking — say so when you do. You may not infer any
    answer that decides *what* gets written or *where*; SECTION 1 names those explicitly and none of
    them may be skipped, however obvious the disk makes them look.
-3. **Match the user's shell.** Ask which OS and shell they use, then emit commands in that syntax
+3. **EVERY question goes through the structured question UI. Never as prose. No exceptions.**
+   If your harness has a tool for asking the user questions with selectable options, that tool is the
+   only way you are allowed to ask anything in SECTION 1 — not for one question, not for two, not for
+   "just this quick one". A numbered list of questions inside a message is a violation even when it is
+   short and even when it is polite.
+   - **Fill the tool up.** Put as many of the round's questions into one call as the tool accepts
+     (commonly four). Batching them is the behaviour that works — do not split a round into smaller
+     pieces, and above all do not let a leftover question fall out into prose. There is no question
+     count to stay under; the only limit is what the tool takes per call.
+   - **Open-ended answers are asked the same way.** Project names, folder paths, an email address:
+     put a concrete proposal as the first option, add the plausible alternatives, and let the free-text
+     field take anything else. A path you propose is answered with one click. A path you request in
+     prose costs a round trip and gets a partial answer.
+   - **Never write "please answer all of these at once"**, and never continue a UI question with a
+     prose follow-up in the same breath.
+   - **If and only if your harness has no such tool**: ask exactly ONE question per message, and put
+     nothing else in that message.
+   Measured across three cold runs: rounds asked through the UI — four questions in a single call —
+   were answered completely and immediately. The two runs that dropped into numbered prose questions
+   were both abandoned by the user mid-setup. This is the most fragile part of the whole setup, which
+   is why it is a rule and not a preference.
+4. **Match the user's shell.** Ask which OS and shell they use, then emit commands in that syntax
    only. PowerShell has no `&&` and no `export`; POSIX shells have no `Get-ChildItem`. Mixing them
    costs the user a failed round trip every time.
-4. **Never touch a path outside the vault and the tool folder** without saying which path and why,
+5. **Never touch a path outside the vault and the tool folder** without saying which path and why,
    and waiting for a yes.
-5. **You write scripts; the scripts do the mechanical work.** Do not hand-write an index, do not
+6. **You write scripts; the scripts do the mechanical work.** Do not hand-write an index, do not
    hand-count entries, do not eyeball whether links resolve. If a number can be measured, measure it
    with code. If it cannot, say "not measured".
-6. **State every number's origin.** "12 of 14 links resolve, measured by `check_links.py`" — or
+7. **State every number's origin.** "12 of 14 links resolve, measured by `check_links.py`" — or
    nothing. Never present an estimate as a measurement.
-7. **One task at a time, verified.** Finish and verify a step before starting the next. A half-built
+8. **One task at a time, verified.** Finish and verify a step before starting the next. A half-built
    vault that reports success is worse than no vault.
 
 ### Deliverables at the end of setup
@@ -61,20 +82,16 @@ document in order. It is a contract, not a suggestion.
 
 ## SECTION 1 — Interview
 
-**At most three questions per round. Hard limit, not a style note.**
+**Read operating rule 3 again before you ask anything.** Every question below is asked through the
+structured question UI, with options. Prose questions are not allowed here — not one, not two, not
+"quickly". If you catch yourself typing "1." and "2." into a message, stop and use the tool.
 
-- One round covers **one** numbered subsection below. Never bundle 1.3 with 1.5 and 1.6 because they
-  happen to be next to each other.
-- A subsection holding more than three items is **split into two rounds**. 1.5 has four; ask the vault
-  location and the backup first, then git and the git identity.
-- Never write "please answer all of these at once". Measured: a round of eight numbered items across
-  three subsections came back answered for the first three and silent on the rest, so the round had to
-  be repeated — which costs more than the two rounds it was trying to save.
-- Where the harness offers a choice UI, use it. A question with three labelled options gets answered;
-  a numbered list in prose gets skimmed.
+**Batch each round into one call, as full as the tool allows.** There is no question count to stay
+under. The failure mode is not "too many questions in one dialog" — it is a question that ends up
+outside the dialog. Two cold runs died exactly there.
 
-After each round, restate what you now know in one line before asking the next. That is what lets the
-user notice a wrong answer while it is still cheap.
+After each round, restate in **one line** what you now know, then ask the next. That is what lets the
+user catch a wrong answer while it is still cheap to fix.
 
 **What may be skipped, and what may not.** Skip a question only when it asks about a *prerequisite*
 you can read off disk — OS, shell, Python version, whether `git` and `gh` exist — and then say out
@@ -90,7 +107,7 @@ loud which questions you skipped and what you measured.
 - **1.3 — project names, and where their code lives.**
 - **1.4 — whether a tracker gets mirrored, and which repos.** An authenticated `gh` is not consent.
   Finding credentials on the machine tells you the mirror is *possible*, not that it is wanted.
-- **1.5a / 1.5b — the vault path and backup, then git and whether a remote may be added.**
+- **1.5 — the vault path, the backup, git, and whether a remote may be added.**
 
 The rule behind the list: **anything that decides what you write, or where, comes from the user's
 mouth.** Reading the environment is measurement; deciding the destination is not.
@@ -165,22 +182,21 @@ If they choose the test vault:
 - **Private repos?** Then the mirror on disk contains private content — confirm the user knows that
   before you write it anywhere synced or committed.
 
-### 1.5a Where the vault lives (round of its own)
+### 1.5 Where the vault lives, and how it survives
+
+Four questions, one call:
 
 - **The vault path.** Propose one and have it confirmed. It must sit inside the folder you were given.
 - **Backup location.** Recommend a cloud-synced folder (OneDrive, Dropbox, iCloud Drive, Syncthing).
   Ask which one they use — and if a cloud folder exists on the machine but is out of bounds, say so
   rather than proposing it.
-
-### 1.5b Git, and separately a remote (round of its own)
-
-- **Git as well?** Recommend yes: cloud sync knows file versions, git knows *states across all
-  notes*. Neither replaces the other.
-- If they want git: **public or private remote?** If the vault will hold anything private —
-  and a mirrored issue tracker usually does — the remote must be private. Say this explicitly and
-  get a yes before you add any remote. "Yes to git" is not "yes to a remote".
+- **Git as well, and may a remote be added?** Recommend git: cloud sync knows file versions, git knows
+  *states across all notes*. Neither replaces the other. "Yes to git" is not "yes to a remote" — if the
+  vault will hold anything private, and a mirrored issue tracker usually does, the remote must be
+  private, and that needs its own yes.
 - **`user.name` and `user.email`** — ask for both, set them repo-locally, never `--global` (SECTION 8).
-  Do not invent them and do not copy them from another repo on the machine.
+  Do not invent them and do not copy them from another repo on the machine. Offer a sensible default as
+  the first option so it is one click.
 
 ### 1.6 Environment
 
