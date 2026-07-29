@@ -21,12 +21,22 @@ filled in. It is a convenience for Claude Code and nothing depends on it: the wo
 
 CREATED WHEN MISSING, NEVER OVERWRITTEN, same as the note templates. A command file is there to
 be edited -- the user adds their own steps -- and a tool that rewrites it every run eats that
-edit without saying so. The second run therefore prints nothing at all: there is no news, and
-`runs.log` carries the run either way, so silence here never means "did not run".
+edit without saying so.
 
-Undo recipe for that guard, measured on this machine 2026-07-29: copy tools/ somewhere, delete
-the `if target.exists():` block in main(), and run the three drivers there --
-test_write_command 8/10, acceptance 11/12, verify_setup 13/14.
+TWO KINDS OF "IT IS ALREADY THERE", AND THEY GET OPPOSITE ANSWERS. A file this tool wrote before
+is not news: nothing is printed, exit 0, exactly like the note templates. A file it did NOT write
+is a stranger holding the name -- most likely in `~/.claude/commands/`, where a `/vaultkit` of the
+user's own may already live. That case is named on stderr and exits non-zero, because a silent
+zero would let the setup report `/vaultkit` as ready while the user's own command still owns the
+name. A quiet non-write that looks like success is the most expensive failure class this kit has
+on record.
+
+The two are told apart by the marker line the generated file carries, never by mtime and never by
+a state file beside it: both of those answer "when", and the question is "whose".
+
+Undo recipe for that guard, re-measured on this machine 2026-07-29 after the stranger case was
+added: copy tools/ somewhere, make the `if target.exists():` block in main() unreachable, and run
+the three drivers there -- test_write_command 8/12, acceptance 11/12, verify_setup 13/14.
 """
 
 import argparse
@@ -48,6 +58,28 @@ COMMAND_NAME = "vaultkit"
 
 DESCRIPTION = ("Rebuild this vault's index and run every guard, in the order that leaves "
                "nothing stale")
+
+# How a run tells its own file from a stranger's with the same name. Deliberately not a state
+# file and not an mtime heuristic: both answer "when", and the question is "whose".
+#
+# It sits on the first line of the BODY, not of the file. YAML frontmatter has to start at byte
+# zero -- a comment in front of it and `description:` is either lost or the command does not load
+# at all. That was not measured here, and a marker that breaks the thing it marks is not a marker.
+MARKER_PREFIX = "<!-- vaultkit:"
+
+
+def marker(vault_root):
+    return f"{MARKER_PREFIX} {Path(vault_root).resolve().as_posix()} -->"
+
+
+def written_by_us(path):
+    """True when this file came out of this tool. The vault path inside is informative only --
+    a vault that moved is still our file, and re-checking the path would call it a stranger."""
+    try:
+        head = path.read_text(encoding="utf-8-sig")[:2000]
+    except OSError:
+        return False
+    return MARKER_PREFIX in head
 
 
 def show(path, shell):
@@ -73,6 +105,8 @@ def command_text(vault_root, projects, shell):
         "---",
         f"description: {DESCRIPTION}",
         "---",
+        "",
+        marker(vault_root),
         "",
         f"Synchronise the Obsidian vault at {root} completely. Its tools are in "
         f"{show(tools, shell)} — the full path, because `06_tools/` alone resolves only from the "
@@ -123,12 +157,21 @@ def command_text(vault_root, projects, shell):
         "",
         "## 6 · Prove the second run changes nothing",
         "",
-        "Repeat step 2, then the working tree must be clean. A generator that drifts on every "
-        "run is indistinguishable from a clean one after a single pass, and it turns every later "
-        "`git status` into noise nobody reads.",
+        "A generator that drifts on every run is indistinguishable from a clean one after a "
+        "single pass, and it turns every later `git status` into noise nobody reads.",
         "",
         f"- `python {tool('build_index.py')} --root {root}`",
-        f"- `git -C {root} status --porcelain`  — must print nothing",
+    ]
+    # The git line is written only into a vault that has a repository. SECTION 7 recommends git
+    # and step 2 of verify_setup requires it, but a user may still have declined -- and a command
+    # that ends in a line failing every single time teaches them to skip the last step.
+    if (vault_root / ".git").is_dir():
+        lines.append(f"- `git -C {root} status --porcelain`  — must print nothing")
+    else:
+        lines.append("- Compare the index files before and after by hand: this vault has no git "
+                     "repository, so there is nothing that can answer the question for you. "
+                     "Setting one up (see the workflow page) makes this one command.")
+    lines += [
         "",
         "## Report",
         "",
@@ -168,8 +211,22 @@ def main(argv=None):
         return 1
 
     if target.exists():
-        log_run(vault_root, "write_command", "ok", f"{target} already there · nothing written")
-        return 0
+        if written_by_us(target):
+            # Ours from a previous run, possibly hand-edited since. Nothing to say.
+            log_run(vault_root, "write_command", "ok", f"{target} already ours · nothing written")
+            return 0
+        # Someone else's file under the name we wanted. Nothing is overwritten and nothing is
+        # written either -- and a silent zero here is the most expensive answer in this kit,
+        # because the setup would report /vaultkit as ready while the user's own command still
+        # holds the name.
+        print(f"{target} already exists and was not written by this kit — nothing written.\n"
+              f"  It carries no `{MARKER_PREFIX} … -->` line, so it is your own command of the "
+              f"same name, and it keeps the name.\n"
+              f"  Rename or remove it and run this again, or choose "
+              f"{'the vault' if args.target == 'home' else 'your home'} folder instead.",
+              file=sys.stderr)
+        log_run(vault_root, "write_command", "blocked", f"{target} held by a foreign command")
+        return 1
 
     target.parent.mkdir(parents=True, exist_ok=True)
     target.write_text(command_text(vault_root, projects, args.shell),

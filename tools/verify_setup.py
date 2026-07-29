@@ -124,6 +124,7 @@ def build_vault(root):
         write_note(root / project / folder / name, title, summary, body)
     (root / ".gitignore").write_text(
         ".obsidian/plugins/\n.obsidian/workspace.json\n.obsidian/graph.json\n"
+        ".claude/*\n!.claude/commands/\n"
         "**/runs.log\n**/__pycache__/\n*.pyc\n",
         encoding="utf-8", newline="\n")
 
@@ -358,12 +359,12 @@ def _s14(root):
 
     Undo recipes, both measured on this machine 2026-07-29 against a copy of tools/:
 
-      - Delete the `if target.exists():` block in write_command.py's main(): the hand edit is
-        eaten and the second run reports work. verify_setup 13/14, acceptance 11/12,
-        test_write_command 8/10.
+      - Make the `if target.exists():` block in write_command.py's main() unreachable: the hand
+        edit is eaten and the second run reports work. verify_setup 13/14, acceptance 11/12,
+        test_write_command 8/12.
       - Remove `.claude` from SKIP_DIRS in vault_paths.py: the last half here fails instead,
         with the link checker scanning one file more after the command was written than before.
-        verify_setup 13/14, test_write_command 9/10 -- and acceptance stays 12/12, because
+        verify_setup 13/14, test_write_command 11/12 -- and acceptance stays 12/12, because
         fixture 11 checks the file and the message, not the denominators. That gap is the
         reason this step carries the denominator half at all.
     """
@@ -400,6 +401,22 @@ def _s14(root):
     if links_before != links_after:
         raise Failed(f"the command file entered the note denominators:\n"
                      f"  before: {links_before.strip()}\n  after:  {links_after.strip()}")
+
+    # The .gitignore promise, asked of git rather than read off the file: commands/ is versioned
+    # because it is part of the setup, everything else under .claude/ is the agent's own state.
+    # `.claude/*` plus `!.claude/commands/` only works because the negation re-includes the
+    # DIRECTORY -- drop the trailing slash and git never looks inside it again.
+    (root / ".claude" / "settings.json").write_text("{}\n", encoding="utf-8", newline="\n")
+    code, _, _ = run(["git", "check-ignore", "-q", ".claude/commands/vaultkit.md"],
+                     cwd=root, expect_zero=False, label="git check-ignore command")
+    if code == 0:
+        raise Failed("the /vaultkit command is gitignored -- it is part of the setup and has to "
+                     "travel with the backup and the history")
+    code, _, _ = run(["git", "check-ignore", "-q", ".claude/settings.json"],
+                     cwd=root, label="git check-ignore settings")
+    if code != 0:
+        raise Failed("the agent's own settings are versioned -- .claude/* must stay ignored "
+                     "apart from commands/")
 
 
 def one_pass(verbose=True):

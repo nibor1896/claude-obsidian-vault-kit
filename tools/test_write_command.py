@@ -46,12 +46,18 @@ class WriteCommandTest(unittest.TestCase):
 
     def test_the_frontmatter_carries_a_description_and_nothing_else(self):
         """All five documented fields are optional. Every one that is set is one more thing to
-        keep true, and a command needs exactly one of them to be findable."""
+        keep true, and a command needs exactly one of them to be findable.
+
+        The marker lives on the first line of the BODY for this reason: YAML frontmatter has to
+        start at byte zero, and a comment in front of it takes `description:` with it.
+        """
         self.write()
         text = self.target.read_text(encoding="utf-8")
+        self.assertTrue(text.startswith("---\n"), "something got in front of the frontmatter")
         block = text.split("---")[1]
         keys = [line.split(":")[0] for line in block.strip().splitlines() if ":" in line]
         self.assertEqual(keys, ["description"])
+        self.assertNotIn(write_command.MARKER_PREFIX, block, "the marker is inside the frontmatter")
 
     # -------------------------------------------------------------- the traps
 
@@ -110,6 +116,37 @@ class WriteCommandTest(unittest.TestCase):
         self.assertEqual(code, 0, err)
         self.assertEqual(out.strip(), "", "the second run reported work it did not do")
         self.assertEqual(self.target.read_bytes(), before)
+
+    def test_a_foreign_command_of_the_same_name_is_named_and_goes_red(self):
+        """The other half of "already there", and the half that must not be silent.
+
+        In ~/.claude/commands/ the user may already have a /vaultkit of their own. Nothing is
+        overwritten -- but nothing is written either, and a zero exit there would let the setup
+        report the command as ready while the stranger keeps the name. Both directions are
+        checked here, because the guard is only worth having if it can tell them apart.
+        """
+        self.target.parent.mkdir(parents=True, exist_ok=True)
+        self.target.write_text("---\ndescription: My own command\n---\n\nDo my thing.\n",
+                               encoding="utf-8", newline="\n")
+        mine = self.target.read_bytes()
+
+        code, out, err = self.write()
+        self.assertNotEqual(code, 0, "a foreign command was passed over silently")
+        self.assertIn(str(self.target), out + err, "the path holding the name was not shown")
+        self.assertEqual(self.target.read_bytes(), mine, "a foreign command was overwritten")
+
+    def test_our_own_file_is_recognised_by_its_marker_not_by_its_path(self):
+        """A vault that moved is still our file. Re-checking the path inside would call it a
+        stranger and turn a working setup red for having been relocated."""
+        self.write()
+        text = self.target.read_text(encoding="utf-8")
+        self.assertIn(write_command.MARKER_PREFIX, text)
+        moved = text.replace(self.vault.as_posix(), "/somewhere/else/Vault")
+        self.target.write_text(moved, encoding="utf-8", newline="\n")
+        code, out, err = self.write()
+        self.assertEqual(code, 0, err)
+        self.assertEqual(out.strip(), "")
+        self.assertEqual(self.target.read_text(encoding="utf-8"), moved)
 
     def test_a_hand_edited_command_survives_the_next_run(self):
         """One that comes back unchanged proves nothing unless it went in changed."""

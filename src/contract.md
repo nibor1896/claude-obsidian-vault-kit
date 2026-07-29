@@ -241,15 +241,18 @@ Claude Code can run the whole verification chain as one command, /vaultkit.
 Where should it live?
   1  In the vault           <VaultRoot>/.claude/commands/ — fires only when you start Claude
                             in this folder, and travels with your backup and your git history
-  2  For every project      ~/.claude/commands/ — works everywhere, but SILENTLY replaces a
-                            command of the same name if you already have one
+  2  For every project      ~/.claude/commands/ — works everywhere, but if you already have a
+                            /vaultkit there, YOURS keeps the name and this one is not written
   3  Don't create one       the chain stays in the workflow page, as prose
 ```
 
 - **Option 1 first, and it is the recommendation.** The command holds this vault's absolute paths,
   so it is about this vault; keeping it inside means a restored backup restores it too.
-- **Option 2 needs the collision said out loud before they pick it**, not after. Nothing warns
-  them, and a replaced command is not something they will connect to this setup weeks later.
+- **Option 2 collides with the user's own commands, and the collision is not resolved in their
+  favour by accident.** `write_command.py` never overwrites: it refuses, names the file, and exits
+  non-zero. Say that before they pick it — not "it will be replaced", which is the opposite of what
+  happens. If it refuses, the command was **not** created; do not report `/vaultkit` as ready, and
+  offer option 1 or a different name.
 - **Option 3 is a real answer.** Do not re-offer it later, and do not build it anyway.
 - **This is a Claude Code feature.** If the user works with Claude in a browser, say so and expect
   option 3 — the workflow page carries the same chain either way, so nothing is lost.
@@ -690,6 +693,12 @@ directory (`.claude/`, `.cursor/`, whatever the harness uses) sits next to the n
 vault's history. A subfolder — `<workdir>/<VaultName>/` — keeps the two apart with no ignore rules to
 maintain.
 
+**That warning is about a vault that landed inside a working folder, not about the one file this
+setup writes on purpose.** If 1.6 chose the in-vault location, `<VaultRoot>/.claude/commands/vaultkit.md`
+is part of the vault's setup and belongs in its history — travelling with the backup is the reason
+that option exists. What must not be versioned is everything else under `.claude/`: sessions,
+settings and caches. The `.gitignore` below handles both, the same way it handles `.obsidian/`.
+
 **A fresh machine usually has no git identity at all**, and `git commit` then fails with *"Author
 identity unknown"* mid-setup. Check before the first commit and set it **repo-locally** — never
 `--global`, which writes outside the folder the user gave you:
@@ -767,6 +776,12 @@ time it mattered.
 .obsidian/workspace-mobile.json
 .obsidian/graph.json
 
+# Same shape as .obsidian above, for the agent's own folder: the /vaultkit command is part of
+# this vault's setup and belongs in its history; sessions, settings and caches do not. The
+# negation needs the directory itself re-included, which is why it ends in a slash.
+.claude/*
+!.claude/commands/
+
 # Append-only run log that every tool writes a line to. Tracked, it makes git status dirty after
 # every check, and acceptance fixture 6 permanently noisy. check_freshness.py reads it off disk,
 # not out of git. Leading **/ on purpose: 06_tools/runs.log anchors to the repo root and would
@@ -841,11 +856,18 @@ python <VaultRoot>/00_Global/06_tools/write_command.py --vault <VaultRoot> \
        --target vault|home --shell powershell|posix
 ```
 
-It writes `<location>/.claude/commands/vaultkit.md` with this vault's real paths already in it,
-prints the path it wrote, and **never overwrites** — a second run says nothing because there is
-nothing to say. Show the user the line it printed; with `--target home` the file lands **outside
+It writes `<location>/.claude/commands/vaultkit.md` with this vault's real paths already in it and
+prints the path it wrote. Show the user that line; with `--target home` the file lands **outside
 the vault**, and operating rule 5 applies. If they chose "none", skip this and say so; nothing
 downstream depends on it.
+
+**Three outcomes, and only one of them is "done".** It prints a path and exits 0 — written. It
+prints nothing and exits 0 — the file was already there and this kit wrote it, so it was left
+alone, which is correct and is also *not* a fresh install. It prints a refusal and exits
+**non-zero** — a command of that name exists that this kit did not write, most likely the user's
+own; nothing was written and nothing was overwritten. **In that third case `/vaultkit` does not
+exist for this vault. Say so plainly, offer the other location, and do not list it as delivered.**
+A quiet non-write reported as success is the failure this kit has paid for most often.
 
 The command exists because the chain below has three traps in it, and a chain typed from memory
 hits them: `--vault` means one project after `build_index.py` and the vault root after
@@ -1040,7 +1062,7 @@ the summary with it.
 | 8 | remove or blank a scheduled job's run log | freshness check says **"did not run"**, not "fine" | a scheduler that stopped is indistinguishable from a healthy one |
 | 9 | a folder made by hand — `<Project>/99_extra/` with one note in it | folder survives, gets its own index containing the note, run exits **0** and **names it on stdout** | either half alone is the failure: red on a folder the structure allows, or green while the note reaches no index — measured on a real setup, a renamed `06_tools` took the count from 21 categories to 20 without a word |
 | 10 | note with `project:` naming a different project than its folder, then the agreeing and the absent case | index run exits **non-zero** on the contradiction and names both values; **exit 0 and silent** when the field agrees or is missing | the field reads as if it placed the note, places nothing, and says nothing either way — measured on a real vault before the guard existed: 339 notes, 204 of them carrying `project:`, no run had ever compared one against its folder |
-| 11 | run `write_command.py` twice against a vault, hand-editing the command in between | the file appears, spells `--root` and `--vault` as the two different things they are, the run **names it on stdout**, and the second run writes nothing and **says nothing** | a tool that writes a file into a config folder without naming it — the destination can be outside the vault, which is the one place operating rule 5 forbids anything quiet |
+| 11 | run `write_command.py` twice against a vault, hand-editing the command in between, then once more against a file of the same name it did not write | the file appears, spells `--root` and `--vault` as the two different things they are, the run **names it on stdout**; the second run writes nothing and **says nothing**; the foreign file is **named on stderr with a non-zero exit** and is not touched | a tool that writes into a config folder without naming it — the destination can be outside the vault, which is the one place operating rule 5 forbids anything quiet — or, worse, one that returns 0 over a command it never wrote, so the setup reports `/vaultkit` ready while someone else's file holds the name |
 
 The driver leaves nothing behind — every fixture vault lives under the system temp directory and is
 deleted in a `finally` block. After the run, `git status --porcelain` in the real vault must still be

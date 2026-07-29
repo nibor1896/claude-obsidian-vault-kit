@@ -21,6 +21,11 @@ python tools/acceptance.py --repeat 10
 python tools/verify_setup.py --repeat 10
 ```
 
+**A clone counts ten suites, not nine, and that is not a disagreement.** The tenth guards
+`build_kit.py`, the generator that assembles the single file — a vault has no generator, so it
+gets neither. `build_kit.delivered_suites()` is the rule: a `test_X.py` ships only when `X.py`
+does. The numbers above describe what you receive; `10/10` here describes the workshop.
+
 Claude interviews you first — do you already use Obsidian, install it or will you, do you want a
 throwaway test vault to rearrange before it becomes real, which projects, which backup, which shell
 — and only then writes anything to disk.
@@ -62,7 +67,11 @@ reported as finished until that passes.
 - Claude with file access to the folder you want the vault in
 - Obsidian ([obsidian.md](https://obsidian.md)) — the kit offers to install it if you have not
 - Python 3.10+ for the guard scripts
-- Optional: `git` for history, a cloud-synced folder for backup
+- `git` — **recommended, not decorative.** Section 7 of the kit sets it up, `verify_setup.py`
+  needs it, and the second half of every check is "the tree is still clean afterwards", which
+  nothing else can answer. **GitHub is the optional part**, and a remote needs its own yes.
+- Optional: a cloud-synced folder for backup — it knows file versions, git knows states across
+  all notes, and neither replaces the other
 
 ## Maintainer notes
 

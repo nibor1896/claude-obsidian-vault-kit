@@ -177,7 +177,17 @@ def fixture_11_command_is_written_named_and_left_alone(vault, project):
     target.write_text(edited, encoding="utf-8", newline="\n")
     _, second, _ = run_tool("write_command.py", "--vault", vault, "--target", "vault",
                             "--shell", "posix")
-    return not second.strip() and target.read_text(encoding="utf-8") == edited
+    if second.strip() or target.read_text(encoding="utf-8") != edited:
+        return False
+
+    # A file of the same name this kit did NOT write: refused, named, non-zero -- never a quiet
+    # zero, which would let a setup report /vaultkit ready while a stranger holds the name.
+    foreign = "---\ndescription: A command the user already had\n---\n\nMine.\n"
+    target.write_text(foreign, encoding="utf-8", newline="\n")
+    code, out, err = run_tool("write_command.py", "--vault", vault, "--target", "vault",
+                              "--shell", "posix")
+    return (code != 0 and target.name in (out + err)
+            and target.read_text(encoding="utf-8") == foreign)
 
 
 def fixture_10_project_disagrees_with_folder(vault, project):
