@@ -1,4 +1,4 @@
-<!-- kit-version: 9d1f2db8d6ed -->
+<!-- kit-version: 048e770a799e -->
 # Claude × Obsidian — Vault Kit
 
 **What this file is:** a setup contract for Claude. Drop it into a Claude conversation and say
@@ -318,6 +318,11 @@ Rules for the tree:
   the category folders and a hub index on the next run. Say this before the user parks an
   `attachments/` or a `_scratch/` next to their projects: it is not wrong, but they will get six
   folders inside it and the run will tell them it made them.
+- **`_templates/` is the one exception, and it is the generator's own.** It sits at the vault root,
+  holds one note template per project, and is never a project: no category folders, no hub index,
+  and its files are not notes. That exemption is a line in `SKIP_DIRS`, not a special case in the
+  index code — without it the folder gets six subfolders and the templates go red for having no
+  `summary:`. See SECTION 5 for what is written and SECTION 8 for the one Obsidian setting.
 
 ---
 
@@ -496,8 +501,43 @@ warning a *mistyped* folder name will ever get — `00_Nots` is indistinguishabl
 new category except that the user reads the line and says "I did not mean that".
 
 **Skip what is not a category.** `.git`, `.obsidian`, `__pycache__`, `.trash`, `.venv`,
-`node_modules` and anything starting with a dot are never adopted. One `node_modules` at project
-level would otherwise become a permanent category with an index file inside it.
+`node_modules`, `_templates` and anything starting with a dot are never adopted. One `node_modules`
+at project level would otherwise become a permanent category with an index file inside it.
+
+### It also writes one note template per project, once
+
+The `--root` run writes `<VaultRoot>/_templates/TEMPLATE - <Project>.md` for every project that has
+none. The file is the frontmatter contract of SECTION 4 with everything a person fills in left
+empty:
+
+```
+---
+title: "{{title}}"
+summary:
+project: "<Project>"
+created: {{date}}
+updated:
+issues:
+generator:
+retired:
+stale:
+---
+```
+
+- **`{{title}}` and `{{date}}` are Obsidian's**, two of the three variables its core Templates
+  plugin knows (the third, `{{time}}`, has no field here). The title therefore comes from the
+  filename, which is where the title belongs anyway, and the date fills itself.
+- **`project:` is written in, per file.** It is the one value a template can get right that a person
+  retyping the block gets wrong — and getting it wrong is exactly what the guard in SECTION 4
+  reports. One file per project is not redundancy; it is the only way to carry the project name,
+  because Obsidian has no folder variable.
+- **The four trailing fields stand empty and that is safe** — every reader tests the value, not the
+  presence of the key, so an empty `generator:`, `retired:` or `stale:` marks nothing.
+- **Created when missing, never overwritten.** A template is there to be edited. A tool that rewrites
+  it on every run eats the user's change silently, and the doctrine rule about not hand-editing
+  generated files covers the index tree, not this folder.
+- **Say what was written**, one line per template, like `created` and `adopted` above. A run that
+  puts a file in the user's vault without a word is the defect this whole section exists to avoid.
 
 A folder that cannot be created — permissions, a file of that name in the way — **is** a defect,
 with the OS error attached. That is the one case here where the run goes red.
@@ -842,6 +882,14 @@ resolves it (SECTION 5). Write it escaped, do not dodge the table.
   one note that way left the root index reading `5 entries` against a vault holding 6.
 - **New subsystem or feature** → a page in `03_technical_docs/` in the same commit as the code.
   Numbers on that page are either measured or explicitly marked unmeasured.
+- **Point them at the templates, and name the one setting that switches them on.** The generator
+  writes `_templates/TEMPLATE - <Project>.md` per project (SECTION 5), but Obsidian does not find
+  that folder by itself. Tell the user, once, in these words: *Settings → Core plugins → Templates →
+  Template folder location* = `_templates`. After that, `Ctrl+P → Insert template` in a new note
+  fills the whole frontmatter block, with the project name already correct.
+  **Do not write `.obsidian/templates.json` for them.** The JSON key for that setting is not
+  measured, and a wrong key does nothing quietly — the same failure class as a frontmatter field
+  nobody reads. Name the setting; let them make it.
 - **Stuck on something?** Search `00_Notes/` first. A past procedure that already fits beats a new
   one you invent now.
 
@@ -1000,8 +1048,15 @@ CATEGORY_FOLDERS = [
     "06_tools",
 ]
 
-# Directories that are never notes and never walked.
-SKIP_DIRS = {".git", ".obsidian", "__pycache__", ".trash", ".venv", "node_modules"}
+# The one directory at the vault root that is written by a tool and is still not a project: it
+# holds one note template per project. Named with a leading underscore so it sorts above the
+# projects in Obsidian's file pane.
+TEMPLATES_DIR = "_templates"
+
+# Directories that are never notes and never walked. _templates belongs here for two reasons at
+# once: without it the folder becomes a project with six category folders of its own, and the
+# templates inside would be read as notes and go red for having no summary.
+SKIP_DIRS = {".git", ".obsidian", "__pycache__", ".trash", ".venv", "node_modules", TEMPLATES_DIR}
 
 # Characters Obsidian cannot carry inside a [[wikilink]] target.
 FORBIDDEN_LINK_CHARS = set("#[]|^")
@@ -1047,6 +1102,42 @@ def category_index_name(project_name: str, folder_name: str) -> str:
     becomes a coin toss.
     """
     return f"INDEX - {project_name} {category_label(folder_name)}.md"
+
+
+def template_name(project_name: str) -> str:
+    """'TEMPLATE - <Project>.md' — one note template per project.
+
+    Same shape as the index filenames on purpose: they sort together in the file pane, and
+    the name says which project the template writes into its `project:` line.
+    """
+    return f"TEMPLATE - {project_name}.md"
+
+
+def template_text(project_name: str) -> str:
+    """The full frontmatter contract, with everything a person fills in left empty.
+
+    `{{title}}` and `{{date}}` are two of the three variables Obsidian's core Templates plugin
+    knows -- the third is `{{time}}` and has no field here. So the title comes from the filename
+    (the convention is that the filename carries the title) and the date fills itself. Only
+    `project:` is written in, which is the one value a template can get right that a person
+    retyping the block gets wrong.
+
+    Empty is safe for the trailing four: every reader tests the VALUE, not the presence of the
+    key, so `generator:`, `retired:` and `stale:` standing empty mark nothing.
+    """
+    return (
+        "---\n"
+        'title: "{{title}}"\n'
+        "summary:\n"
+        f'project: "{project_name}"\n'
+        "created: {{date}}\n"
+        "updated:\n"
+        "issues:\n"
+        "generator:\n"
+        "retired:\n"
+        "stale:\n"
+        "---\n"
+    )
 
 
 def is_index_file(path) -> bool:
@@ -1227,6 +1318,7 @@ from urllib.parse import quote
 from vault_paths import (
     CATEGORY_FOLDERS,
     SKIP_DIRS,
+    TEMPLATES_DIR,
     category_index_name,
     category_label,
     has_forbidden_chars,
@@ -1235,6 +1327,8 @@ from vault_paths import (
     project_dirs,
     project_index_name,
     root_index_name,
+    template_name,
+    template_text,
     walk_markdown,
 )
 
@@ -1560,6 +1654,27 @@ def build_project(vault_root, project_dir, defects):
     return total_entries, len(category_rows), created, adopted
 
 
+def write_templates(vault_root, projects):
+    """One note template per project under <VaultRoot>/_templates/. Returns what it created.
+
+    CREATED WHEN MISSING, NEVER OVERWRITTEN. A template exists to be edited -- a user adds the
+    fields their vault actually uses -- and a tool that rewrites it on every run eats that edit
+    without saying so. The doctrine rule that generated files are not hand-edited covers the
+    index tree; _templates is deliberately not part of it, which is why it is written once and
+    then left alone.
+    """
+    folder = Path(vault_root).resolve() / TEMPLATES_DIR
+    written = []
+    for project in projects:
+        target = folder / template_name(project.name)
+        if target.exists():
+            continue
+        folder.mkdir(parents=True, exist_ok=True)
+        target.write_text(template_text(project.name), encoding="utf-8", newline="\n")
+        written.append(target.name)
+    return written
+
+
 def build_root(vault_root, defects):
     vault_root = Path(vault_root).resolve()
     today = date.today().isoformat()
@@ -1584,7 +1699,8 @@ def build_root(vault_root, defects):
     lines.append(f"_{len(projects)} projects · {total_entries} entries in {total_categories} categories._")
     lines.append("")
     write_if_changed(vault_root / root_index_name(vault_root), "\n".join(lines))
-    return len(projects), total_entries, total_categories, created_all, adopted_all
+    templates = write_templates(vault_root, projects)
+    return len(projects), total_entries, total_categories, created_all, adopted_all, templates
 
 
 # --------------------------------------------------------------------------- uniqueness
@@ -1622,7 +1738,7 @@ def main(argv=None):
         if not vault_root.is_dir():
             print(f"not a directory: {vault_root}", file=sys.stderr)
             return 2
-        projects, entries, categories, created, adopted = build_root(vault_root, defects)
+        projects, entries, categories, created, adopted, templates = build_root(vault_root, defects)
         names = check_unique_basenames(vault_root, defects)
         print(f"{entries} entries in {categories} categories · {projects} projects · {names} distinct filenames")
     else:
@@ -1634,6 +1750,9 @@ def main(argv=None):
         entries, categories, created_names, adopted_names = build_project(vault_root, project_dir, defects)
         created = [f"{project_dir.name}/{n}" for n in created_names]
         adopted = [f"{project_dir.name}/{n}" for n in adopted_names]
+        # Templates are written by the root run only: it is the one invocation that knows every
+        # project, and _templates sits at the vault root, not inside a project.
+        templates = []
         names = check_unique_basenames(vault_root, defects)
         print(f"{entries} entries in {categories} categories · {project_dir.name} · {names} distinct filenames")
 
@@ -1644,13 +1763,17 @@ def main(argv=None):
         print(f"  created  {name} — category folder was missing")
     for name in adopted:
         print(f"  adopted  {name} — folder made by hand, indexed as a category")
+    for name in templates:
+        print(f"  template {TEMPLATES_DIR}/{name} — note template written once; edit it freely, "
+              f"no run overwrites it")
 
     if defects.skipped:
         print(f"skipped {defects.skipped} unreadable files", file=sys.stderr)
 
     status = "ok" if not defects else "defects"
     log_run(vault_root, "build_index", status,
-            f"{len(defects)} defects · {len(created)} created · {len(adopted)} adopted")
+            f"{len(defects)} defects · {len(created)} created · {len(adopted)} adopted · "
+            f"{len(templates)} templates")
 
     if defects:
         defects.report()
@@ -2957,9 +3080,11 @@ from _testkit import make_vault, run_tool, write_note
 from vault_paths import (
     CATEGORY_FOLDERS,
     RUN_LOG_RELPATH,
+    TEMPLATES_DIR,
     category_index_name,
     project_index_name,
     root_index_name,
+    template_name,
 )
 
 
@@ -3185,6 +3310,93 @@ class BuildIndexTest(unittest.TestCase):
         self.assertEqual(before, after)
         self.assertNotIn("created", out)   # nothing was missing the second time
         self.assertIn("adopted", out)      # but the folder is still worth naming
+
+    # ------------------------------------------------------ note templates (#16)
+
+    def test_a_template_is_written_for_every_project(self):
+        """The other half of #15: the guard catches a wrong `project:`, the template prevents one.
+
+        Nothing in Obsidian can fill this in by itself -- core Templates knows {{title}},
+        {{date}} and {{time}}, and no folder variable at all. So the project name has to be in
+        the file, and that means one file per project.
+        """
+        code, out, err = run_tool("build_index.py", "--root", self.vault)
+        self.assertEqual(code, 0, err)
+        template = self.vault / TEMPLATES_DIR / template_name("ProjektEins")
+        self.assertTrue(template.exists(), f"{template} missing")
+        text = template.read_text(encoding="utf-8")
+        self.assertIn('project: "ProjektEins"', text)
+        self.assertIn("{{title}}", text)
+        self.assertIn("{{date}}", text)
+        for field in ("summary:", "updated:", "issues:", "generator:", "retired:", "stale:"):
+            self.assertIn(field, text)
+        self.assertIn("template", out)
+        self.assertIn(template.name, out)
+
+    def test_a_hand_edited_template_survives_the_next_run(self):
+        """A template is there to be edited. A tool that resets it every run eats the edit."""
+        run_tool("build_index.py", "--root", self.vault)
+        template = self.vault / TEMPLATES_DIR / template_name("ProjektEins")
+        mine = template.read_text(encoding="utf-8").replace("stale:\n", "stale:\nowner:\n")
+        template.write_text(mine, encoding="utf-8", newline="\n")
+        code, out, err = run_tool("build_index.py", "--root", self.vault)
+        self.assertEqual(code, 0, err)
+        self.assertEqual(template.read_text(encoding="utf-8"), mine)
+        self.assertNotIn("template", out)   # nothing was missing the second time
+
+    def test_templates_are_neither_a_project_nor_a_category(self):
+        """_templates sits at the vault root, and a directory at the vault root is a project.
+
+        Recipe for the failure without the exemption: drop TEMPLATES_DIR from SKIP_DIRS in
+        vault_paths.py and rerun. Measured that way on this machine -- 28/30 here, 10/11 in
+        acceptance.py and 10/11 in verify_setup.py. The run then reports six `created
+        _templates/<category>` lines and writes a `TEMPLATE - _templates.md` for the folder it
+        just mistook for a project.
+        """
+        run_tool("build_index.py", "--root", self.vault)
+        code, out, err = run_tool("build_index.py", "--root", self.vault)
+        self.assertEqual(code, 0, err)
+        folder = self.vault / TEMPLATES_DIR
+        self.assertTrue(folder.is_dir())
+        # One per project and nothing else -- no category folders, no index of its own.
+        self.assertEqual(sorted(p.name for p in folder.iterdir()),
+                         [template_name("00_Global"), template_name("ProjektEins")])
+        root_index = (self.vault / root_index_name(self.vault)).read_text(encoding="utf-8")
+        self.assertNotIn(TEMPLATES_DIR, root_index)
+        self.assertIn("2 projects", out)
+
+    def test_a_note_made_from_the_template_passes_every_guard(self):
+        """The template is only worth having if what it produces is accepted.
+
+        Obsidian substitutes {{title}} and {{date}}; everything else goes in as it stands, so
+        this fills those two the way Obsidian would and leaves the four empty fields alone.
+        """
+        run_tool("build_index.py", "--root", self.vault)
+        text = (self.vault / TEMPLATES_DIR / template_name("ProjektEins")).read_text(
+            encoding="utf-8")
+        text = text.replace("{{title}}", "Eine Erkenntnis").replace("{{date}}", "2026-07-29")
+        text = text.replace("summary:\n", 'summary: "Genau ein Satz."\n')
+        note = self.project / "00_Notes" / "eine-erkenntnis.md"
+        note.write_text(text + "\nRumpf.\n", encoding="utf-8", newline="\n")
+        code, out, err = run_tool("build_index.py", "--vault", self.project)
+        self.assertEqual(code, 0, err)
+        text = self.index_text()
+        self.assertIn("[[ProjektEins/00_Notes/eine-erkenntnis|Eine Erkenntnis]]", text)
+        self.assertNotIn("generated", text)   # an empty generator: marks nothing
+        self.assertNotIn("[retired", text)
+        self.assertNotIn("[stale", text)
+
+    def test_a_new_project_gets_its_template_on_the_next_root_run(self):
+        """Projects arrive later. A template set that only matches the first run is a trap."""
+        run_tool("build_index.py", "--root", self.vault)
+        (self.vault / "ProjektSpaeter").mkdir()
+        code, out, err = run_tool("build_index.py", "--root", self.vault)
+        self.assertEqual(code, 0, err)
+        later = self.vault / TEMPLATES_DIR / template_name("ProjektSpaeter")
+        self.assertTrue(later.exists(), f"{later} missing")
+        self.assertIn('project: "ProjektSpaeter"', later.read_text(encoding="utf-8"))
+        self.assertIn(later.name, out)
+        self.assertNotIn(template_name("ProjektEins"), out)   # the existing one is not touched
 
     # -------------------------------------------------------------- invariants
 

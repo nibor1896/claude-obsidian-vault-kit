@@ -15,9 +15,11 @@ from _testkit import make_vault, run_tool, write_note
 from vault_paths import (
     CATEGORY_FOLDERS,
     RUN_LOG_RELPATH,
+    TEMPLATES_DIR,
     category_index_name,
     project_index_name,
     root_index_name,
+    template_name,
 )
 
 
@@ -243,6 +245,93 @@ class BuildIndexTest(unittest.TestCase):
         self.assertEqual(before, after)
         self.assertNotIn("created", out)   # nothing was missing the second time
         self.assertIn("adopted", out)      # but the folder is still worth naming
+
+    # ------------------------------------------------------ note templates (#16)
+
+    def test_a_template_is_written_for_every_project(self):
+        """The other half of #15: the guard catches a wrong `project:`, the template prevents one.
+
+        Nothing in Obsidian can fill this in by itself -- core Templates knows {{title}},
+        {{date}} and {{time}}, and no folder variable at all. So the project name has to be in
+        the file, and that means one file per project.
+        """
+        code, out, err = run_tool("build_index.py", "--root", self.vault)
+        self.assertEqual(code, 0, err)
+        template = self.vault / TEMPLATES_DIR / template_name("ProjektEins")
+        self.assertTrue(template.exists(), f"{template} missing")
+        text = template.read_text(encoding="utf-8")
+        self.assertIn('project: "ProjektEins"', text)
+        self.assertIn("{{title}}", text)
+        self.assertIn("{{date}}", text)
+        for field in ("summary:", "updated:", "issues:", "generator:", "retired:", "stale:"):
+            self.assertIn(field, text)
+        self.assertIn("template", out)
+        self.assertIn(template.name, out)
+
+    def test_a_hand_edited_template_survives_the_next_run(self):
+        """A template is there to be edited. A tool that resets it every run eats the edit."""
+        run_tool("build_index.py", "--root", self.vault)
+        template = self.vault / TEMPLATES_DIR / template_name("ProjektEins")
+        mine = template.read_text(encoding="utf-8").replace("stale:\n", "stale:\nowner:\n")
+        template.write_text(mine, encoding="utf-8", newline="\n")
+        code, out, err = run_tool("build_index.py", "--root", self.vault)
+        self.assertEqual(code, 0, err)
+        self.assertEqual(template.read_text(encoding="utf-8"), mine)
+        self.assertNotIn("template", out)   # nothing was missing the second time
+
+    def test_templates_are_neither_a_project_nor_a_category(self):
+        """_templates sits at the vault root, and a directory at the vault root is a project.
+
+        Recipe for the failure without the exemption: drop TEMPLATES_DIR from SKIP_DIRS in
+        vault_paths.py and rerun. Measured that way on this machine -- 28/30 here, 10/11 in
+        acceptance.py and 10/11 in verify_setup.py. The run then reports six `created
+        _templates/<category>` lines and writes a `TEMPLATE - _templates.md` for the folder it
+        just mistook for a project.
+        """
+        run_tool("build_index.py", "--root", self.vault)
+        code, out, err = run_tool("build_index.py", "--root", self.vault)
+        self.assertEqual(code, 0, err)
+        folder = self.vault / TEMPLATES_DIR
+        self.assertTrue(folder.is_dir())
+        # One per project and nothing else -- no category folders, no index of its own.
+        self.assertEqual(sorted(p.name for p in folder.iterdir()),
+                         [template_name("00_Global"), template_name("ProjektEins")])
+        root_index = (self.vault / root_index_name(self.vault)).read_text(encoding="utf-8")
+        self.assertNotIn(TEMPLATES_DIR, root_index)
+        self.assertIn("2 projects", out)
+
+    def test_a_note_made_from_the_template_passes_every_guard(self):
+        """The template is only worth having if what it produces is accepted.
+
+        Obsidian substitutes {{title}} and {{date}}; everything else goes in as it stands, so
+        this fills those two the way Obsidian would and leaves the four empty fields alone.
+        """
+        run_tool("build_index.py", "--root", self.vault)
+        text = (self.vault / TEMPLATES_DIR / template_name("ProjektEins")).read_text(
+            encoding="utf-8")
+        text = text.replace("{{title}}", "Eine Erkenntnis").replace("{{date}}", "2026-07-29")
+        text = text.replace("summary:\n", 'summary: "Genau ein Satz."\n')
+        note = self.project / "00_Notes" / "eine-erkenntnis.md"
+        note.write_text(text + "\nRumpf.\n", encoding="utf-8", newline="\n")
+        code, out, err = run_tool("build_index.py", "--vault", self.project)
+        self.assertEqual(code, 0, err)
+        text = self.index_text()
+        self.assertIn("[[ProjektEins/00_Notes/eine-erkenntnis|Eine Erkenntnis]]", text)
+        self.assertNotIn("generated", text)   # an empty generator: marks nothing
+        self.assertNotIn("[retired", text)
+        self.assertNotIn("[stale", text)
+
+    def test_a_new_project_gets_its_template_on_the_next_root_run(self):
+        """Projects arrive later. A template set that only matches the first run is a trap."""
+        run_tool("build_index.py", "--root", self.vault)
+        (self.vault / "ProjektSpaeter").mkdir()
+        code, out, err = run_tool("build_index.py", "--root", self.vault)
+        self.assertEqual(code, 0, err)
+        later = self.vault / TEMPLATES_DIR / template_name("ProjektSpaeter")
+        self.assertTrue(later.exists(), f"{later} missing")
+        self.assertIn('project: "ProjektSpaeter"', later.read_text(encoding="utf-8"))
+        self.assertIn(later.name, out)
+        self.assertNotIn(template_name("ProjektEins"), out)   # the existing one is not touched
 
     # -------------------------------------------------------------- invariants
 

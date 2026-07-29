@@ -34,6 +34,7 @@ from urllib.parse import quote
 from vault_paths import (
     CATEGORY_FOLDERS,
     SKIP_DIRS,
+    TEMPLATES_DIR,
     category_index_name,
     category_label,
     has_forbidden_chars,
@@ -42,6 +43,8 @@ from vault_paths import (
     project_dirs,
     project_index_name,
     root_index_name,
+    template_name,
+    template_text,
     walk_markdown,
 )
 
@@ -367,6 +370,27 @@ def build_project(vault_root, project_dir, defects):
     return total_entries, len(category_rows), created, adopted
 
 
+def write_templates(vault_root, projects):
+    """One note template per project under <VaultRoot>/_templates/. Returns what it created.
+
+    CREATED WHEN MISSING, NEVER OVERWRITTEN. A template exists to be edited -- a user adds the
+    fields their vault actually uses -- and a tool that rewrites it on every run eats that edit
+    without saying so. The doctrine rule that generated files are not hand-edited covers the
+    index tree; _templates is deliberately not part of it, which is why it is written once and
+    then left alone.
+    """
+    folder = Path(vault_root).resolve() / TEMPLATES_DIR
+    written = []
+    for project in projects:
+        target = folder / template_name(project.name)
+        if target.exists():
+            continue
+        folder.mkdir(parents=True, exist_ok=True)
+        target.write_text(template_text(project.name), encoding="utf-8", newline="\n")
+        written.append(target.name)
+    return written
+
+
 def build_root(vault_root, defects):
     vault_root = Path(vault_root).resolve()
     today = date.today().isoformat()
@@ -391,7 +415,8 @@ def build_root(vault_root, defects):
     lines.append(f"_{len(projects)} projects · {total_entries} entries in {total_categories} categories._")
     lines.append("")
     write_if_changed(vault_root / root_index_name(vault_root), "\n".join(lines))
-    return len(projects), total_entries, total_categories, created_all, adopted_all
+    templates = write_templates(vault_root, projects)
+    return len(projects), total_entries, total_categories, created_all, adopted_all, templates
 
 
 # --------------------------------------------------------------------------- uniqueness
@@ -429,7 +454,7 @@ def main(argv=None):
         if not vault_root.is_dir():
             print(f"not a directory: {vault_root}", file=sys.stderr)
             return 2
-        projects, entries, categories, created, adopted = build_root(vault_root, defects)
+        projects, entries, categories, created, adopted, templates = build_root(vault_root, defects)
         names = check_unique_basenames(vault_root, defects)
         print(f"{entries} entries in {categories} categories · {projects} projects · {names} distinct filenames")
     else:
@@ -441,6 +466,9 @@ def main(argv=None):
         entries, categories, created_names, adopted_names = build_project(vault_root, project_dir, defects)
         created = [f"{project_dir.name}/{n}" for n in created_names]
         adopted = [f"{project_dir.name}/{n}" for n in adopted_names]
+        # Templates are written by the root run only: it is the one invocation that knows every
+        # project, and _templates sits at the vault root, not inside a project.
+        templates = []
         names = check_unique_basenames(vault_root, defects)
         print(f"{entries} entries in {categories} categories · {project_dir.name} · {names} distinct filenames")
 
@@ -451,13 +479,17 @@ def main(argv=None):
         print(f"  created  {name} — category folder was missing")
     for name in adopted:
         print(f"  adopted  {name} — folder made by hand, indexed as a category")
+    for name in templates:
+        print(f"  template {TEMPLATES_DIR}/{name} — note template written once; edit it freely, "
+              f"no run overwrites it")
 
     if defects.skipped:
         print(f"skipped {defects.skipped} unreadable files", file=sys.stderr)
 
     status = "ok" if not defects else "defects"
     log_run(vault_root, "build_index", status,
-            f"{len(defects)} defects · {len(created)} created · {len(adopted)} adopted")
+            f"{len(defects)} defects · {len(created)} created · {len(adopted)} adopted · "
+            f"{len(templates)} templates")
 
     if defects:
         defects.report()

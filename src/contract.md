@@ -317,6 +317,11 @@ Rules for the tree:
   the category folders and a hub index on the next run. Say this before the user parks an
   `attachments/` or a `_scratch/` next to their projects: it is not wrong, but they will get six
   folders inside it and the run will tell them it made them.
+- **`_templates/` is the one exception, and it is the generator's own.** It sits at the vault root,
+  holds one note template per project, and is never a project: no category folders, no hub index,
+  and its files are not notes. That exemption is a line in `SKIP_DIRS`, not a special case in the
+  index code — without it the folder gets six subfolders and the templates go red for having no
+  `summary:`. See SECTION 5 for what is written and SECTION 8 for the one Obsidian setting.
 
 ---
 
@@ -495,8 +500,43 @@ warning a *mistyped* folder name will ever get — `00_Nots` is indistinguishabl
 new category except that the user reads the line and says "I did not mean that".
 
 **Skip what is not a category.** `.git`, `.obsidian`, `__pycache__`, `.trash`, `.venv`,
-`node_modules` and anything starting with a dot are never adopted. One `node_modules` at project
-level would otherwise become a permanent category with an index file inside it.
+`node_modules`, `_templates` and anything starting with a dot are never adopted. One `node_modules`
+at project level would otherwise become a permanent category with an index file inside it.
+
+### It also writes one note template per project, once
+
+The `--root` run writes `<VaultRoot>/_templates/TEMPLATE - <Project>.md` for every project that has
+none. The file is the frontmatter contract of SECTION 4 with everything a person fills in left
+empty:
+
+```
+---
+title: "{{title}}"
+summary:
+project: "<Project>"
+created: {{date}}
+updated:
+issues:
+generator:
+retired:
+stale:
+---
+```
+
+- **`{{title}}` and `{{date}}` are Obsidian's**, two of the three variables its core Templates
+  plugin knows (the third, `{{time}}`, has no field here). The title therefore comes from the
+  filename, which is where the title belongs anyway, and the date fills itself.
+- **`project:` is written in, per file.** It is the one value a template can get right that a person
+  retyping the block gets wrong — and getting it wrong is exactly what the guard in SECTION 4
+  reports. One file per project is not redundancy; it is the only way to carry the project name,
+  because Obsidian has no folder variable.
+- **The four trailing fields stand empty and that is safe** — every reader tests the value, not the
+  presence of the key, so an empty `generator:`, `retired:` or `stale:` marks nothing.
+- **Created when missing, never overwritten.** A template is there to be edited. A tool that rewrites
+  it on every run eats the user's change silently, and the doctrine rule about not hand-editing
+  generated files covers the index tree, not this folder.
+- **Say what was written**, one line per template, like `created` and `adopted` above. A run that
+  puts a file in the user's vault without a word is the defect this whole section exists to avoid.
 
 A folder that cannot be created — permissions, a file of that name in the way — **is** a defect,
 with the OS error attached. That is the one case here where the run goes red.
@@ -841,6 +881,14 @@ resolves it (SECTION 5). Write it escaped, do not dodge the table.
   one note that way left the root index reading `5 entries` against a vault holding 6.
 - **New subsystem or feature** → a page in `03_technical_docs/` in the same commit as the code.
   Numbers on that page are either measured or explicitly marked unmeasured.
+- **Point them at the templates, and name the one setting that switches them on.** The generator
+  writes `_templates/TEMPLATE - <Project>.md` per project (SECTION 5), but Obsidian does not find
+  that folder by itself. Tell the user, once, in these words: *Settings → Core plugins → Templates →
+  Template folder location* = `_templates`. After that, `Ctrl+P → Insert template` in a new note
+  fills the whole frontmatter block, with the project name already correct.
+  **Do not write `.obsidian/templates.json` for them.** The JSON key for that setting is not
+  measured, and a wrong key does nothing quietly — the same failure class as a frontmatter field
+  nobody reads. Name the setting; let them make it.
 - **Stuck on something?** Search `00_Notes/` first. A past procedure that already fits beats a new
   one you invent now.
 

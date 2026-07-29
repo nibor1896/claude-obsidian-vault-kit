@@ -27,8 +27,15 @@ CATEGORY_FOLDERS = [
     "06_tools",
 ]
 
-# Directories that are never notes and never walked.
-SKIP_DIRS = {".git", ".obsidian", "__pycache__", ".trash", ".venv", "node_modules"}
+# The one directory at the vault root that is written by a tool and is still not a project: it
+# holds one note template per project. Named with a leading underscore so it sorts above the
+# projects in Obsidian's file pane.
+TEMPLATES_DIR = "_templates"
+
+# Directories that are never notes and never walked. _templates belongs here for two reasons at
+# once: without it the folder becomes a project with six category folders of its own, and the
+# templates inside would be read as notes and go red for having no summary.
+SKIP_DIRS = {".git", ".obsidian", "__pycache__", ".trash", ".venv", "node_modules", TEMPLATES_DIR}
 
 # Characters Obsidian cannot carry inside a [[wikilink]] target.
 FORBIDDEN_LINK_CHARS = set("#[]|^")
@@ -74,6 +81,42 @@ def category_index_name(project_name: str, folder_name: str) -> str:
     becomes a coin toss.
     """
     return f"INDEX - {project_name} {category_label(folder_name)}.md"
+
+
+def template_name(project_name: str) -> str:
+    """'TEMPLATE - <Project>.md' — one note template per project.
+
+    Same shape as the index filenames on purpose: they sort together in the file pane, and
+    the name says which project the template writes into its `project:` line.
+    """
+    return f"TEMPLATE - {project_name}.md"
+
+
+def template_text(project_name: str) -> str:
+    """The full frontmatter contract, with everything a person fills in left empty.
+
+    `{{title}}` and `{{date}}` are two of the three variables Obsidian's core Templates plugin
+    knows -- the third is `{{time}}` and has no field here. So the title comes from the filename
+    (the convention is that the filename carries the title) and the date fills itself. Only
+    `project:` is written in, which is the one value a template can get right that a person
+    retyping the block gets wrong.
+
+    Empty is safe for the trailing four: every reader tests the VALUE, not the presence of the
+    key, so `generator:`, `retired:` and `stale:` standing empty mark nothing.
+    """
+    return (
+        "---\n"
+        'title: "{{title}}"\n'
+        "summary:\n"
+        f'project: "{project_name}"\n'
+        "created: {{date}}\n"
+        "updated:\n"
+        "issues:\n"
+        "generator:\n"
+        "retired:\n"
+        "stale:\n"
+        "---\n"
+    )
 
 
 def is_index_file(path) -> bool:
