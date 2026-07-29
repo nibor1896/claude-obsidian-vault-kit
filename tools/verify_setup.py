@@ -279,9 +279,11 @@ def _s12(root):
     """The two promises write_templates makes, neither of which any earlier step looks at.
 
     WHY THIS EXISTS (2026-07-29): steps 1-11 only ever inspect index files. A delivery that
-    silently stopped writing templates altogether still reported 11/11 -- the gap was found by
-    reading the tool, not by a red test. The second half matters more than the first: every run
-    prints "edit it freely, no run overwrites it", and until now nothing held the tool to it.
+    silently stopped writing templates altogether still reported every step green -- the gap was
+    found by reading the tool, not by a red test. (That sentence quoted `11/11` until step 14
+    landed and made it read as a current claim about a run with fourteen steps. History gets
+    described, not counted.) The second half matters more than the first: every run prints
+    "edit it freely, no run overwrites it", and until now nothing held the tool to it.
     """
     folder = root / TEMPLATES_DIR
     expected = ["00_Global"] + PROJECTS + ["ProjektDrei"]  # ProjektDrei is added by hand in step 11
@@ -314,9 +316,14 @@ def _s13(root):
 
     Undo recipe, to watch it go red: copy tools/ somewhere, delete the two `if args.stamp:` lines
     from upgrade.py's main(), and run both drivers there. Measured on this machine 2026-07-29 --
-    verify_setup 12/13, failing in step 1 with `upgrade.py --stamp exited 2`, and test_upgrade
+    verify_setup 13/14, failing in step 1 with `upgrade.py --stamp exited 2`, and test_upgrade
     7/9. Both, which is the point of covering it in two places: the driver proves the setup does
     it, the suite proves the tool can.
+
+    That 13/14 was 12/13 for one commit, because it was measured before step 14 existed and then
+    typed rather than re-run. Nothing catches that: check_prose_claims() reads the contract, the
+    SECTION 10 header and README.md, and never the docstrings of the scripts it embeds. A number
+    in here is only as good as the last time somebody actually ran the recipe above.
     """
     tools = root / "00_Global" / "06_tools"
     stamp = tools / "kit-version.txt"

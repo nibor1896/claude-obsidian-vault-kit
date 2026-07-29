@@ -1,4 +1,4 @@
-<!-- kit-version: 5a03ca758ee0 -->
+<!-- kit-version: 601f11480ff6 -->
 # Claude × Obsidian — Vault Kit
 
 **What this file is:** a setup contract for Claude. Drop it into a Claude conversation and say
@@ -3263,9 +3263,11 @@ def _s12(root):
     """The two promises write_templates makes, neither of which any earlier step looks at.
 
     WHY THIS EXISTS (2026-07-29): steps 1-11 only ever inspect index files. A delivery that
-    silently stopped writing templates altogether still reported 11/11 -- the gap was found by
-    reading the tool, not by a red test. The second half matters more than the first: every run
-    prints "edit it freely, no run overwrites it", and until now nothing held the tool to it.
+    silently stopped writing templates altogether still reported every step green -- the gap was
+    found by reading the tool, not by a red test. (That sentence quoted `11/11` until step 14
+    landed and made it read as a current claim about a run with fourteen steps. History gets
+    described, not counted.) The second half matters more than the first: every run prints
+    "edit it freely, no run overwrites it", and until now nothing held the tool to it.
     """
     folder = root / TEMPLATES_DIR
     expected = ["00_Global"] + PROJECTS + ["ProjektDrei"]  # ProjektDrei is added by hand in step 11
@@ -3298,9 +3300,14 @@ def _s13(root):
 
     Undo recipe, to watch it go red: copy tools/ somewhere, delete the two `if args.stamp:` lines
     from upgrade.py's main(), and run both drivers there. Measured on this machine 2026-07-29 --
-    verify_setup 12/13, failing in step 1 with `upgrade.py --stamp exited 2`, and test_upgrade
+    verify_setup 13/14, failing in step 1 with `upgrade.py --stamp exited 2`, and test_upgrade
     7/9. Both, which is the point of covering it in two places: the driver proves the setup does
     it, the suite proves the tool can.
+
+    That 13/14 was 12/13 for one commit, because it was measured before step 14 existed and then
+    typed rather than re-run. Nothing catches that: check_prose_claims() reads the contract, the
+    SECTION 10 header and README.md, and never the docstrings of the scripts it embeds. A number
+    in here is only as good as the last time somebody actually ran the recipe above.
     """
     tools = root / "00_Global" / "06_tools"
     stamp = tools / "kit-version.txt"
@@ -3737,13 +3744,14 @@ class BuildIndexTest(unittest.TestCase):
     # ------------------------------------------------------------ project: is advisory (#15)
 
     def test_project_disagreeing_with_the_folder_is_a_defect(self):
-        """#15. Recipe for the failure without the fix: delete the `declared = ...` block from
-        collect_entries in build_index.py and rerun this file. Measured that way on this machine
-        -- 24 of 25 tests pass and this one fails with `AssertionError: 0 != 1`: the run exits 0,
-        says nothing, and indexes the note under ProjektEins while its frontmatter goes on
-        claiming Homelab. acceptance.py drops to 10/11 in the same state. The asymmetry is what
-        made it hard to see: agreement behaved exactly the same, so the field looked like it
-        worked.
+        """#15. Recipe for the failure without the fix: delete the `declared = ...` assignment
+        AND the `if declared and ...` block under it from collect_entries in build_index.py --
+        cutting only the assignment leaves an orphaned defects.add() and measures something
+        else. Re-measured that way on this machine 2026-07-29 -- 29 of 30 tests pass and this
+        one fails with `AssertionError: 0 != 1`: the run exits 0, says nothing, and indexes the
+        note under ProjektEins while its frontmatter goes on claiming Homelab. acceptance.py
+        drops to 11/12 in the same state. The asymmetry is what made it hard to see: agreement
+        behaved exactly the same, so the field looked like it worked.
         """
         write_note(self.project / "00_Notes" / "falsches-projekt.md",
                    title="Gehoert woandershin", project="Homelab")
@@ -3898,8 +3906,8 @@ class BuildIndexTest(unittest.TestCase):
         """_templates sits at the vault root, and a directory at the vault root is a project.
 
         Recipe for the failure without the exemption: drop TEMPLATES_DIR from SKIP_DIRS in
-        vault_paths.py and rerun. Measured that way on this machine -- 28/30 here, 10/11 in
-        acceptance.py and 10/11 in verify_setup.py. The run then reports six `created
+        vault_paths.py and rerun. Re-measured on this machine 2026-07-29 -- 28/30 here, 11/12 in
+        acceptance.py and 13/14 in verify_setup.py. The run then reports six `created
         _templates/<category>` lines and writes a `TEMPLATE - _templates.md` for the folder it
         just mistook for a project.
         """

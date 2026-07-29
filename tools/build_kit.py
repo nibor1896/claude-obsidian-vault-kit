@@ -143,8 +143,10 @@ def check_prose_claims():
     Undo recipes -- the two runs that have to go red, each on its own:
 
       1. Set src/contract.md's step claim to `99/99`. `python tools/build_kit.py --check` prints
-         `src/contract.md: says "99/99 end-to-end setup steps", counted 13` and exits 1. Before
-         the `\\s+` change this printed nothing and exited 0.
+         `src/contract.md: says "99/99 end-to-end setup steps", counted 14` and exits 1. Before
+         the `\\s+` change this printed nothing and exited 0. The trailing count is whatever
+         `len(verify_setup.STEPS)` is on the day you run it -- read it off the run, do not carry
+         it forward; it was quoted here as 13 for one commit after a step was added.
       2. Delete the word `steps` from README.md's measurement sentence (line 15). `--check` then
          prints `README.md: states no end-to-end setup steps claim at all` and exits 1.
 
