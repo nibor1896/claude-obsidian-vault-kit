@@ -28,8 +28,13 @@ def make_vault(projects=("ProjektEins",)):
     return tmp
 
 
-def write_note(path, title="Ein Titel", summary="Eine Zusammenfassung.", **extra):
-    """Write a note with frontmatter. Pass title=None or summary=None to omit the key."""
+def write_note(path, title="Ein Titel", summary="Eine Zusammenfassung.", bom=False, **extra):
+    """Write a note with frontmatter. Pass title=None or summary=None to omit the key.
+
+    bom=True writes UTF-8 *with* a byte-order mark -- what Notepad and PowerShell 5.1's
+    `Set-Content -Encoding utf8` produce, and what a user creating a note outside Obsidian
+    on Windows gets by default.
+    """
     lines = ["---"]
     if title is not None:
         lines.append(f'title: "{title}"')
@@ -40,7 +45,7 @@ def write_note(path, title="Ein Titel", summary="Eine Zusammenfassung.", **extra
     lines += ["---", "", "Body text that the index generator must never read.", ""]
     path = Path(path)
     path.parent.mkdir(parents=True, exist_ok=True)
-    path.write_text("\n".join(lines), encoding="utf-8", newline="\n")
+    path.write_text("\n".join(lines), encoding="utf-8-sig" if bom else "utf-8", newline="\n")
     return path
 
 

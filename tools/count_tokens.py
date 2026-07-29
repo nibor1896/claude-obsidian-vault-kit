@@ -55,7 +55,8 @@ def main(argv=None):
     skipped = 0
     for path in files:
         try:
-            text = path.read_text(encoding="utf-8", errors="replace")
+            # utf-8-sig so a byte-order mark is not counted as a character of content.
+            text = path.read_text(encoding="utf-8-sig", errors="replace")
         except OSError as exc:
             skipped += 1
             print(f"{path.name}: unreadable ({exc})", file=sys.stderr)

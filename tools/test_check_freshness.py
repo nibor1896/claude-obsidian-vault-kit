@@ -71,6 +71,31 @@ class CheckFreshnessTest(unittest.TestCase):
         self.assertIn("1 malformed", out)
         self.assertIn("malformed", err)
 
+    def test_jobs_config_written_with_a_bom_is_still_read(self):
+        """#12. Recipe without the fix: put encoding="utf-8" back in expected_jobs.
+
+        json.loads then raises on the BOM, the except returned the default job list, and the
+        check measured a set of jobs the user never configured -- without a word. Measured
+        that way on this machine: a jobs.json naming only build_index produced a run that
+        also demanded check_links.
+        """
+        config = self.vault / "00_Global" / "06_tools" / "jobs.json"
+        config.parent.mkdir(parents=True, exist_ok=True)
+        config.write_text('{"jobs": ["build_index"]}', encoding="utf-8-sig", newline="\n")
+        self.write_log(f"{stamp(1)}\tbuild_index\tok\t0 defects")
+        code, out, err = run_tool("check_freshness.py", "--vault", self.vault)
+        self.assertEqual(code, 0, out + err)
+        self.assertIn("1/1 jobs fresh", out)
+
+    def test_an_unreadable_jobs_config_says_so_instead_of_defaulting_quietly(self):
+        config = self.vault / "00_Global" / "06_tools" / "jobs.json"
+        config.parent.mkdir(parents=True, exist_ok=True)
+        config.write_text("{ das ist kein json", encoding="utf-8", newline="\n")
+        self.write_log(f"{stamp(1)}\tbuild_index\tok\t0 defects")
+        code, out, err = run_tool("check_freshness.py", "--vault", self.vault)
+        self.assertIn("jobs.json", err)
+        self.assertIn("unreadable", err)
+
     def test_non_ascii_job_name_survives_the_subprocess_round_trip(self):
         self.write_log(f"{stamp(1)}\tbuild_index\tok\t0 defects")
         code, _, err = run_tool("check_freshness.py", "--vault", self.vault, "--jobs", "Zählung")

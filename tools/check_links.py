@@ -115,7 +115,11 @@ def main(argv=None):
 
     for path in files:
         try:
-            text = path.read_text(encoding="utf-8", errors="replace")
+            # utf-8-sig: FENCE anchors at ^\s* and a byte-order mark is not \s, so a note that
+            # opens with a code fence loses fence detection on its first line. Every wikilink
+            # inside that block is then reported broken -- the note is right, the guard is
+            # wrong, and that is the expensive way round.
+            text = path.read_text(encoding="utf-8-sig", errors="replace")
         except OSError as exc:
             # Count the skip explicitly. A silent skip is a lost denominator.
             skipped += 1

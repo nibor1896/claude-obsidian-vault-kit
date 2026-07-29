@@ -103,6 +103,32 @@ class BuildIndexTest(unittest.TestCase):
         finally:
             shutil.rmtree(vault.parent, ignore_errors=True)
 
+    def test_note_written_with_a_bom_keeps_its_frontmatter(self):
+        """#12. Recipe for the failure without the fix: change the encoding in read_frontmatter
+        back from utf-8-sig to utf-8 and rerun this file. Measured that way on this machine --
+        exit 1 with three defects on mit-bom.md (no frontmatter block, missing title, missing
+        summary) and the entry titled after its filename instead of its title.
+
+        "﻿".isspace() is False, so a byte-order mark survives strip() and the opening
+        '---' never matches. Windows editors write one by default.
+        """
+        write_note(self.project / "00_Notes" / "mit-bom.md", title="Mit BOM",
+                   summary="Aus Notepad gespeichert.", bom=True)
+        code, out, err = run_tool("build_index.py", "--vault", self.project)
+        self.assertEqual(code, 0, err)
+        self.assertIn("1 entries", out)
+        text = self.index_text()
+        self.assertIn("[[ProjektEins/00_Notes/mit-bom|Mit BOM]]", text)
+        self.assertIn("Aus Notepad gespeichert.", text)
+
+    def test_a_bom_does_not_hide_a_real_defect(self):
+        """The other half: the fix must not turn the guard off for BOM'd files."""
+        write_note(self.project / "00_Notes" / "bom-ohne-titel.md", title=None, bom=True)
+        code, _, err = run_tool("build_index.py", "--vault", self.project)
+        self.assertEqual(code, 1)
+        self.assertIn("bom-ohne-titel.md", err)
+        self.assertIn("title", err)
+
     # ------------------------------------------------------- scaffolding and adoption (#6)
 
     def test_empty_project_folder_gets_its_categories(self):

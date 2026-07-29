@@ -20,8 +20,8 @@ OTHER_BODY = (
 )
 
 
-def note_with_body(path, body, title="Ein Titel"):
-    write_note(path, title=title)
+def note_with_body(path, body, title="Ein Titel", bom=False):
+    write_note(path, title=title, bom=bom)
     with open(path, "a", encoding="utf-8", newline="\n") as fh:
         fh.write(body + "\n")
     return path
@@ -66,6 +66,25 @@ class CheckDuplicatesTest(unittest.TestCase):
         note_with_body(self.notes / "zwei.md", OTHER_BODY, title="Zwei")
         _, out, _ = run_tool("check_duplicates.py", "--vault", self.vault, "--threshold", "0.9")
         self.assertIn("threshold 0.9", out)
+
+    def test_a_bom_does_not_hide_a_duplicate(self):
+        """#12. Recipe without the fix: put encoding="utf-8" back in body_shingles.
+
+        A BOM makes startswith("---") false, so the frontmatter is compared as body text and
+        its words dilute the overlap. Two byte-identical bodies then score below 1.0 instead
+        of at it.
+
+        The threshold is raised to 0.9 on purpose. At the default 0.75 this exact pair still
+        scores just above the line and the test passes without the fix -- measured that way
+        on this machine, which is the only reason the number is here.
+        """
+        note_with_body(self.notes / "eins.md", SAME_BODY, title="Eins")
+        note_with_body(self.notes / "kopie.md", SAME_BODY, title="Kopie", bom=True)
+        code, out, err = run_tool("check_duplicates.py", "--vault", self.vault,
+                                  "--threshold", "0.9")
+        self.assertEqual(code, 1, out)
+        self.assertIn("1 pairs flagged of 1 compared", out)
+        self.assertIn("kopie.md", err)
 
     def test_non_ascii_filename_survives_the_subprocess_round_trip(self):
         note_with_body(self.notes / "Übergröße.md", SAME_BODY, title="Eins")

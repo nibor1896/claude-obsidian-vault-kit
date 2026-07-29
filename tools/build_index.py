@@ -84,7 +84,12 @@ def read_frontmatter(path, defects):
     """
     data = {}
     try:
-        with open(path, "r", encoding="utf-8", errors="replace") as fh:
+        # utf-8-sig, not utf-8: a byte-order mark survives str.strip() -- "﻿".isspace()
+        # is False -- so the opening '---' of a note written by a Windows editor fails this
+        # test. The note then reads as having no frontmatter at all: its title and summary
+        # are gone from the index and the run goes red over a file the user wrote correctly.
+        # utf-8-sig drops a BOM if there is one and behaves like utf-8 if there is not.
+        with open(path, "r", encoding="utf-8-sig", errors="replace") as fh:
             first = fh.readline()
             if first.strip() != "---":
                 return None

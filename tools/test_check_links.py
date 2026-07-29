@@ -69,6 +69,20 @@ class CheckLinksTest(unittest.TestCase):
         self.assertEqual(code, 0, err)
         self.assertIn("0/0 wikilinks resolve", out)
 
+    def test_a_bom_does_not_break_fence_detection_on_the_first_line(self):
+        """#12, the narrowest of the four. Recipe without the fix: put encoding="utf-8" back
+        in the read in main().
+
+        FENCE anchors at ^\\s* and a byte-order mark is not \\s, so a note that OPENS with a
+        code fence loses fence detection on line 1: the fence never closes either, and the
+        wikilink inside it is reported broken. The note is right and the guard is wrong.
+        """
+        source = self.notes / "syntax-doku-mit-bom.md"
+        source.write_text("```\n[[nur-ein-beispiel]]\n```\n", encoding="utf-8-sig", newline="\n")
+        code, out, err = run_tool("check_links.py", "--vault", self.vault)
+        self.assertEqual(code, 0, err)
+        self.assertIn("0/0 wikilinks resolve", out)
+
     def test_non_ascii_target_resolves(self):
         write_note(self.notes / "Übergröße.md")
         source = write_note(self.notes / "quelle.md")

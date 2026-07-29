@@ -34,7 +34,10 @@ VERSION_RE = re.compile(r"^<!-- kit-version: ([0-9a-f]{12}) -->$", re.M)
 
 
 def read_kit(path):
-    text = Path(path).read_text(encoding="utf-8")
+    # utf-8-sig: a downloaded kit file re-saved by a Windows editor starts with a BOM, and
+    # VERSION_RE anchors at ^. The match then fails and the newer kit reads as "unversioned"
+    # -- the one number the whole update path compares against.
+    text = Path(path).read_text(encoding="utf-8-sig")
     blocks = {name: body + "\n" for name, body in BLOCK_RE.findall(text)}
     if not blocks:
         raise SystemExit(f"{path}: no script blocks found -- is this a kit file?")
@@ -45,7 +48,7 @@ def read_kit(path):
 def installed_version():
     """The version of the folder we are updating, if the kit that wrote it left one."""
     stamp = TOOLS / "kit-version.txt"
-    return stamp.read_text(encoding="utf-8").strip() if stamp.exists() else "unknown"
+    return stamp.read_text(encoding="utf-8-sig").strip() if stamp.exists() else "unknown"
 
 
 def classify(blocks):

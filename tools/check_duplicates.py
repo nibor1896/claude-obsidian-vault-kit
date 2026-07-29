@@ -31,7 +31,10 @@ WORD = re.compile(r"[^\W\d_]+", re.UNICODE)
 
 def body_shingles(path):
     """Word 5-grams of the note body. Frontmatter is skipped — it is metadata, not content."""
-    text = path.read_text(encoding="utf-8", errors="replace")
+    # utf-8-sig: a BOM makes startswith("---") false, the frontmatter is then compared as if
+    # it were body text, and its words dilute the overlap. Measured on this machine: an
+    # identical-body pair went 1 flagged of 6 compared without a BOM to 0 of 6 with one.
+    text = path.read_text(encoding="utf-8-sig", errors="replace")
     if text.startswith("---"):
         parts = text.split("\n---", 2)
         if len(parts) >= 2:

@@ -544,6 +544,33 @@ encoding is the fix; sanitising the content is a retreat that fails on the first
 Every tool needs a test that asserts non-ASCII output survives a subprocess round trip — otherwise
 this returns the moment someone adds a tool.
 
+### Read every file the user might have written as `utf-8-sig`, never `utf-8`
+
+```python
+text = path.read_text(encoding="utf-8-sig", errors="replace")
+```
+
+Windows editors — Notepad, and PowerShell 5.1's `Set-Content -Encoding utf8` — write a byte-order
+mark by default. **`"﻿".isspace()` is `False` in Python, so a BOM survives `strip()`** and sits
+in front of the first character of the file where nothing visible is. Reading as `utf-8` keeps it;
+reading as `utf-8-sig` drops it if it is there and behaves identically if it is not. There is no
+case where `utf-8` is the better choice for a file the user may have touched.
+
+Every place that anchors on the *first* character breaks, and each one breaks quietly. Measured on
+one machine, one note per case:
+
+| What reads it | What the BOM does | What the user sees |
+|---|---|---|
+| the frontmatter reader's `first.strip() != "---"` | the block is not recognised at all | title and summary gone from the index, and the run goes **red over a correct note** |
+| the duplicate check's `text.startswith("---")` | frontmatter is compared as body text | two identical bodies stop scoring as identical; a real duplicate goes unflagged |
+| the link checker's `^\s*(```\|~~~)` fence match — a BOM is **not** `\s` | a note opening with a code fence loses fence detection, and the fence never closes | every wikilink documented inside that block reported broken; the note is right and the guard is wrong |
+| `json.loads` on a config file | raises, and a bare `except` returns the default | the check measures a job list the user never configured, silently |
+
+Two rules follow from that last row and they are cheap: **read config as `utf-8-sig` too**, and
+**never let a config that exists but cannot be parsed fall back without printing why.** A missing
+config falling back to a default is normal. A present one doing it is the same silent zero this
+whole section is about.
+
 ### Two more mechanics that break the rule quietly, both worth stating because they look like working code:
 
 - **A skip that does not count itself.** `except OSError: continue` in a counting loop still prints a

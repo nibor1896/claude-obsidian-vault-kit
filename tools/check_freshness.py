@@ -27,14 +27,26 @@ DEFAULT_MAX_AGE_HOURS = 24.0
 HEALTHY = {"ok"}
 
 
+DEFAULT_JOBS = ["build_index", "check_links"]
+
+
 def expected_jobs(vault_root):
-    """Jobs that must have a healthy run. Configured per vault, defaulted here."""
+    """Jobs that must have a healthy run. Configured per vault, defaulted here.
+
+    No config file is normal -- a project-only run has none, and the default stands. A config
+    that exists and cannot be read is not normal, and falling back to the default over it
+    checks a job list the user never chose while printing nothing about it. utf-8-sig is how
+    that used to happen: Notepad writes a BOM, json.loads raises, the except swallowed it.
+    """
     config = Path(vault_root).resolve() / "00_Global" / "06_tools" / "jobs.json"
+    if not config.exists():
+        return DEFAULT_JOBS
     try:
-        data = json.loads(config.read_text(encoding="utf-8"))
+        data = json.loads(config.read_text(encoding="utf-8-sig"))
         return list(data["jobs"])
-    except (OSError, ValueError, KeyError):
-        return ["build_index", "check_links"]
+    except (OSError, ValueError, KeyError, TypeError) as exc:
+        print(f"{config}: unreadable ({exc}) — falling back to {DEFAULT_JOBS}", file=sys.stderr)
+        return DEFAULT_JOBS
 
 
 def parse_log(log_path):
