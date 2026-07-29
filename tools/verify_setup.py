@@ -88,6 +88,10 @@ def build_vault(root):
     dst = root / "00_Global" / "06_tools"
     for src in list(TOOLS.glob("*.py")) + [TOOLS / "jobs.json"]:
         shutil.copy2(src, dst / src.name)
+    # The stamp SECTION 8 writes during setup, taken there from the kit file's first line. This
+    # tree has no kit file, so the value is a stand-in; what step 13 tests is that the folder
+    # carries a version at all and that upgrade.py reads that value back.
+    (dst / "kit-version.txt").write_text("abcabcabcabc\n", encoding="utf-8", newline="\n")
     for project, folder, name, title, summary, body in NOTES:
         write_note(root / project / folder / name, title, summary, body)
     (root / ".gitignore").write_text(
@@ -264,6 +268,37 @@ def _s12(root):
     tool(root, "build_index.py", "--root", ".")
     if victim.read_text(encoding="utf-8") != edited:
         raise Failed(f"a rerun overwrote a hand-edited template: {victim.name}")
+
+
+@step("13 the tool folder knows which kit version installed it")
+def _s13(root):
+    """The one value the whole update path compares against, and nothing used to write it.
+
+    WHY THIS EXISTS (2026-07-29): kit-version.txt was only ever written by upgrade.py itself
+    (upgrade.py:109), which means from the *second* version onwards. A freshly installed folder
+    answered `installed: unknown`, and steps 1-12 stayed green through it -- not one of them
+    looks at the update path. SECTION 8 now writes the stamp during setup; this holds it to that.
+
+    Undo recipe, to watch it go red: remove the kit-version.txt write in build_vault() and this
+    step fails with `no kit-version.txt beside the tools`.
+    """
+    tools = root / "00_Global" / "06_tools"
+    stamp = tools / "kit-version.txt"
+    if not stamp.is_file():
+        raise Failed("no kit-version.txt beside the tools -- upgrade.py cannot say what is installed")
+    installed = stamp.read_text(encoding="utf-8-sig").strip()
+
+    # A kit file carrying one block byte-identical to what is installed: upgrade.py then has
+    # nothing to write, and the only thing under test is the line it prints first. It lives
+    # outside the vault, which is where a downloaded kit file actually sits.
+    jobs = (tools / "jobs.json").read_text(encoding="utf-8").rstrip()
+    kit = root.parent / "newer-kit.md"
+    kit.write_text(f"<!-- kit-version: ffffffffffff -->\n\n### `jobs.json`\n\n```json\n{jobs}\n```\n",
+                   encoding="utf-8", newline="\n")
+    _, out, _ = run([sys.executable, str(tools / "upgrade.py"), str(kit)], cwd=root,
+                    label="upgrade.py")
+    if f"installed: {installed}" not in out or "unknown" in out:
+        raise Failed(f"upgrade.py did not read the installed stamp back:\n{out}")
 
 
 def one_pass(verbose=True):

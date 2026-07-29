@@ -12,7 +12,7 @@ structure, a **generated** index, and a set of guards that go red instead of qui
 The tools are shipped, not generated: the file carries every script verbatim in SECTION 10, and
 the setup writes them to disk instead of composing its own. Measured on Windows 11, Python 3.13,
 under PowerShell 5.1 **and** Git Bash — **8/8 suites green, 11/11 acceptance checks correct and
-11/11 end-to-end setup steps, ten consecutive runs under each shell.**
+13/13 end-to-end setup steps, ten consecutive runs under each shell.**
 Reproduce it yourself before you trust it:
 
 ```

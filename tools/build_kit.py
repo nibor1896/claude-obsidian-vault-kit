@@ -21,6 +21,7 @@ from pathlib import Path
 
 REPO = Path(__file__).resolve().parent.parent
 CONTRACT = REPO / "src" / "contract.md"
+README = REPO / "README.md"
 TOOLS = REPO / "tools"
 OUT = REPO / "claude-obsidian-vault-kit.md"
 
@@ -48,7 +49,7 @@ copying, and do not skip the suites: they are the only reason the numbers in SEC
 anything.
 
 Measured on Windows 11, Python 3.13, under PowerShell 5.1 **and** Git Bash: 8/8 suites green,
-11/11 acceptance checks correct, 12/12 end-to-end setup steps -- ten consecutive runs under each
+11/11 acceptance checks correct, 13/13 end-to-end setup steps -- ten consecutive runs under each
 shell. Copy them and that measurement still applies to what you handed the user. Rewrite them and
 it does not.
 
@@ -62,9 +63,75 @@ After writing them, prove it on this machine before you report anything:
 ```
 python <vault>/00_Global/06_tools/run_suites.py       expect 8/8 suites green
 python <vault>/00_Global/06_tools/acceptance.py       expect 11/11 checks
-python <vault>/00_Global/06_tools/verify_setup.py     expect 12/12 steps
+python <vault>/00_Global/06_tools/verify_setup.py     expect 13/13 steps
 ```
 """
+
+
+# Every "n/m <thing>" the prose is allowed to state, and the code that owns the m. The wording
+# varies on purpose ("expect 11/11 checks", "11/11 acceptance checks"), so each pattern has to
+# cover the phrasings actually in use -- a claim the pattern misses is a claim nothing counts.
+CLAIMS = ((r"(\d+)/\d+ suites", "suites"),
+          (r"(\d+)/\d+ (?:acceptance )?checks", "acceptance checks"),
+          (r"(\d+)/\d+ (?:end-to-end )?(?:setup )?steps", "end-to-end setup steps"))
+
+
+def check_prose_claims():
+    """Every number and every version stamp in the prose, against the code that owns it.
+
+    WHY ALL THREE, AND WHY README (2026-07-29): this checked `suites` only, and only across the
+    contract and the SECTION 10 header. README.md sat at `11/11 end-to-end setup steps` for four
+    hours after step 12 shipped, with `--check` green the whole time, because nothing looked at
+    it. The counts are imported rather than re-derived: `len(FIXTURES)` and `len(STEPS)` are the
+    same objects the drivers count for their own summary lines, so the guard cannot disagree with
+    the run it claims to summarise.
+
+    Undo recipe -- the run that has to go red: set README.md back to `11/11 end-to-end setup
+    steps`, then `python tools/build_kit.py --check` prints
+    `README.md: says 11/11 end-to-end setup steps, counted 13` and exits 1.
+
+    Known wart: README.md's maintainer notes quote an older Linux run (`8/8 suites`) as history,
+    not as a current claim, and this guard cannot tell the two apart. It agrees today. If a suite
+    is ever added, that line will be reported -- rephrase the history so it carries no bare n/m,
+    do not bump a measurement nobody repeated.
+    """
+    sys.path.insert(0, str(TOOLS))
+    import acceptance
+    import verify_setup
+    counted = {"suites": len(list(TOOLS.glob("test_*.py"))),
+               "acceptance checks": len(acceptance.FIXTURES),
+               "end-to-end setup steps": len(verify_setup.STEPS)}
+    # Prose only. The embedded suites contain strings like "0/2 suites" as test data, and counting
+    # those as claims makes the guard cry wolf on its own fixtures.
+    sources = (("src/contract.md", CONTRACT.read_text(encoding="utf-8")),
+               ("tools/build_kit.py", HEADER),
+               ("README.md", README.read_text(encoding="utf-8")))
+
+    wrong = []
+    for label, text in sources:
+        for pattern, what in CLAIMS:
+            for found in re.finditer(pattern, text):
+                if int(found.group(1)) != counted[what]:
+                    wrong.append(f'  {label}: says "{found.group(0)}", counted {counted[what]}')
+    if wrong:
+        print(f"{OUT.name}: the prose states a number the code does not count.\n"
+              + "\n".join(sorted(set(wrong)))
+              + "\n  A number in prose goes stale the moment a suite, a fixture or a step is "
+                "added -- this check exists because three of them shipped that way.",
+              file=sys.stderr)
+        return 1
+
+    # Same class of defect, one level nastier: a real hash quoted in the prose as an example.
+    # The file then carries two kit-version lines, only one of them true, and a reader comparing
+    # copies has no way to tell which. Write the example as an ellipsis.
+    for label, text in sources:
+        stale = re.findall(r"kit-version: ([0-9a-f]{12})", text)
+        if stale:
+            print(f"{OUT.name}: {label} quotes a literal kit-version {stale}. The stamp on line 1 "
+                  f"is the only true one -- a second one goes stale on the next build and reads as "
+                  f"if the copy were outdated. Use `<!-- kit-version: … -->`.", file=sys.stderr)
+            return 1
+    return 0
 
 
 def block(name):
@@ -95,6 +162,8 @@ def render():
     for name in sorted(p.name for p in TOOLS.glob("test_*.py")):
         parts.append(block(name))
     parts.append("---\n\n*Generated by `tools/build_kit.py`. Edit the sources, never this file.*\n"
+                 "*Source and newest published copy: "
+                 "https://github.com/nibor1896/claude-obsidian-vault-kit*\n"
                  "*Compare the `kit-version` at the top against the published file to see whether "
                  "this copy is current.*\n")
     body = "\n".join(parts)
@@ -152,30 +221,10 @@ def verify():
             print(f"  ok   {script} runs from the deliverable")
     finally:
         shutil.rmtree(work.parent, ignore_errors=True)
-    # Prose only. The embedded suites contain strings like "0/2 suites" as test data, and
-    # counting those as claims makes the guard cry wolf on its own fixtures.
-    suites = len(list(TOOLS.glob("test_*.py")))
-    prose = CONTRACT.read_text(encoding="utf-8") + HEADER
-    claimed = set(re.findall(r"(\d+)/\d+ suites", prose))
-    wrong = sorted(n for n in claimed if int(n) != suites)
-    if wrong:
-        print(f"{OUT.name}: text claims {'/'.join(wrong)} suites, {suites} exist. "
-              f"A number in prose goes stale the moment a suite is added -- this check exists "
-              f"because one shipped that way.", file=sys.stderr)
+    if check_prose_claims():
         return 1
-
-    # Same class of defect, one level nastier: a real hash quoted in the prose as an example.
-    # The file then carries two kit-version lines, only one of them true, and a reader comparing
-    # copies has no way to tell which. Write the example as an ellipsis.
-    stale_stamps = re.findall(r"kit-version: ([0-9a-f]{12})", prose)
-    if stale_stamps:
-        print(f"{OUT.name}: prose quotes a literal kit-version {stale_stamps}. The stamp on line 1 "
-              f"is the only true one -- a second one goes stale on the next build and reads as if "
-              f"the copy were outdated. Use `<!-- kit-version: … -->`.", file=sys.stderr)
-        return 1
-
     print(f"{OUT.name}: {len(blocks)} blocks extract, match tools/, and run green · "
-          f"every suite count in the text says {suites} · no stale stamp quoted in the prose")
+          f"every count in the text matches the code · no stale stamp quoted in the prose")
     return 0
 
 
@@ -189,6 +238,12 @@ def main(argv=None):
 
     if args.verify:
         return verify()
+
+    # Before writing, not after: a build that emits the file and *then* complains has already
+    # produced the artefact someone will ship. Both paths pay for it -- --check is the cheap gate
+    # the acceptance run uses, and the write path refuses to mint a deliverable that lies.
+    if check_prose_claims():
+        return 1
 
     rendered = render()
     if args.check:

@@ -1,4 +1,4 @@
-<!-- kit-version: 9600eaf30104 -->
+<!-- kit-version: 6feadbb8db35 -->
 # Claude × Obsidian — Vault Kit
 
 **What this file is:** a setup contract for Claude. Drop it into a Claude conversation and say
@@ -61,7 +61,7 @@ document in order. It is a contract, not a suggestion.
    and waiting for a yes.
 6. **The scripts are inside this file. Write them out; do not rewrite them.** SECTION 10 carries
    every tool, every suite and the three runners verbatim — measured on Windows 11 with Python 3.13
-   under PowerShell 5.1 and Git Bash: **8/8 suites green, 11/11 acceptance checks and 12/12
+   under PowerShell 5.1 and Git Bash: **8/8 suites green, 11/11 acceptance checks and 13/13
    end-to-end setup steps, in ten consecutive runs under each shell.** Write each block to disk
    byte for byte. Retyping them from the contracts in SECTION 5 and SECTION 6 throws that
    measurement away and reintroduces the defects those sections describe — every one was found the
@@ -72,8 +72,10 @@ document in order. It is a contract, not a suggestion.
    two copies with the same line are the same kit and a different line means something changed.
    Point them at `upgrade.py`, which is shipped alongside the other tools: given a newer kit file it
    lists what would be overwritten, writes nothing without `--apply`, and reruns the suites and the
-   acceptance driver afterwards. Say this once during setup -- a user who does not know an update
-   path exists will not go looking for one.
+   acceptance driver afterwards. **Name where a newer file comes from** — the repository is in the
+   last lines of this file; a user holding only the `.md` has no other way to find out that a newer
+   one exists. Say this once during setup -- a user who does not know an update path exists will not
+   go looking for one. The stamp `upgrade.py` compares against is written in SECTION 8.
 7. **The scripts do the mechanical work.** Do not hand-write an index, do not hand-count entries, do
    not eyeball whether links resolve. If a number can be measured, measure it with code. If it
    cannot, say "not measured".
@@ -766,6 +768,25 @@ Two more things to tell the user:
 
 ## SECTION 8 — Verify, then hand over
 
+### Stamp the tool folder with the version that wrote it
+
+Before the verification run, write one file next to the tools:
+
+```
+<VaultRoot>/00_Global/06_tools/kit-version.txt
+```
+
+Its whole content is the twelve hex characters from the `<!-- kit-version: … -->` comment on line 1
+of this file, plus a newline. UTF-8, no BOM, nothing else in the file — no date, no label, no
+sentence around it; `upgrade.py` reads the file and strips it, and anything else in there becomes
+part of the version.
+
+This is the value the entire update path compares against. `upgrade.py` prints
+`installed: <version> · kit file: <version>`, and until this file exists it prints
+`installed: unknown` — so a user cannot tell an outdated tool folder from a current one, which is
+the one question the update path exists to answer. Nothing else writes it at setup time:
+`upgrade.py` writes it when it applies an update, i.e. from the *second* version onwards.
+
 ### Verification run — all of it, no exceptions
 
 ```bash
@@ -885,12 +906,16 @@ resolves it (SECTION 5). Write it escaped, do not dodge the table.
   that folder by itself. Tell the user, once, in these words: *Settings → Core plugins → Templates →
   Template folder location* = `_templates`. After that, `Ctrl+P → Insert template` in a new note
   fills the frontmatter block, with the project name already correct.
-  **Do not write `.obsidian/templates.json` for them.** The key itself is known — Obsidian 1.12.7
-  writes `{"folder": "_templates"}` — but that was measured by watching Obsidian write the file,
-  which proves the key and not the read path: whether Obsidian picks up a `templates.json` written
-  by someone else at startup is untested. Until it is, a file written for them could do nothing
-  quietly, which is the same failure class as a frontmatter field nobody reads. Name the setting;
-  let them make it.
+  **Do not write `.obsidian/templates.json` for them — and not because it would fail.** It works:
+  measured on 2026-07-29 against Obsidian **1.12.7**, a `templates.json` that Obsidian did not
+  write itself is read at startup. The file was `{"folder": "_templates"}` — 23 bytes, UTF-8
+  **without a BOM**, written while Obsidian was closed — and the setting was live on the next
+  start; observed twice. Three things were not tested: the same file *with* a BOM, writing it
+  while Obsidian is running, and any other Obsidian version.
+  The rule stands on the other reason: `.obsidian/` is the user's application state, and this kit
+  does not write into it. Name the setting and let them make it. If they would rather have the
+  file than click through Settings, that is theirs to write, with Obsidian closed — one line,
+  no BOM: `{"folder": "_templates"}`.
 - **Stuck on something?** Search `00_Notes/` first. A past procedure that already fits beats a new
   one you invent now.
 
@@ -910,8 +935,14 @@ python <vault>/00_Global/06_tools/acceptance.py
 ```
 
 It builds a throwaway vault per fixture under the system temp directory, so it never touches the
-user's notes, and it takes its verdict from process exit codes and files on disk — never from
-parsing console output, which wraps at the terminal width and differs per shell. Expect
+user's notes, and it takes its verdict from process exit codes and files on disk. Console text
+wraps at the terminal width and differs per shell, so **it never stands alone as evidence** — a
+fixture that only greps stdout passes a tool which prints the right sentence and does the wrong
+thing. **Where the message itself is the specified behaviour, the message is what gets checked** —
+in addition to the exit code, never instead of it. Every row below that requires the run to *name*
+the file, or to show a denominator, is that case: "it is reported" is the requirement, and a guard
+that goes red without saying which file has not met it. The shipped driver reads output at exactly
+those places and nowhere else; fixture 9 carries the reasoning in its docstring. Expect
 `11/11 checks behaved as specified`. Anything less is a defect in a script, not in the expectation.
 `--repeat 10` runs ten full passes; use it after any change to a guard.
 
@@ -998,7 +1029,7 @@ copying, and do not skip the suites: they are the only reason the numbers in SEC
 anything.
 
 Measured on Windows 11, Python 3.13, under PowerShell 5.1 **and** Git Bash: 8/8 suites green,
-11/11 acceptance checks correct, 12/12 end-to-end setup steps -- ten consecutive runs under each
+11/11 acceptance checks correct, 13/13 end-to-end setup steps -- ten consecutive runs under each
 shell. Copy them and that measurement still applies to what you handed the user. Rewrite them and
 it does not.
 
@@ -1012,7 +1043,7 @@ After writing them, prove it on this machine before you report anything:
 ```
 python <vault>/00_Global/06_tools/run_suites.py       expect 8/8 suites green
 python <vault>/00_Global/06_tools/acceptance.py       expect 11/11 checks
-python <vault>/00_Global/06_tools/verify_setup.py     expect 12/12 steps
+python <vault>/00_Global/06_tools/verify_setup.py     expect 13/13 steps
 ```
 
 #### Shared
@@ -2732,6 +2763,10 @@ def build_vault(root):
     dst = root / "00_Global" / "06_tools"
     for src in list(TOOLS.glob("*.py")) + [TOOLS / "jobs.json"]:
         shutil.copy2(src, dst / src.name)
+    # The stamp SECTION 8 writes during setup, taken there from the kit file's first line. This
+    # tree has no kit file, so the value is a stand-in; what step 13 tests is that the folder
+    # carries a version at all and that upgrade.py reads that value back.
+    (dst / "kit-version.txt").write_text("abcabcabcabc\n", encoding="utf-8", newline="\n")
     for project, folder, name, title, summary, body in NOTES:
         write_note(root / project / folder / name, title, summary, body)
     (root / ".gitignore").write_text(
@@ -2908,6 +2943,37 @@ def _s12(root):
     tool(root, "build_index.py", "--root", ".")
     if victim.read_text(encoding="utf-8") != edited:
         raise Failed(f"a rerun overwrote a hand-edited template: {victim.name}")
+
+
+@step("13 the tool folder knows which kit version installed it")
+def _s13(root):
+    """The one value the whole update path compares against, and nothing used to write it.
+
+    WHY THIS EXISTS (2026-07-29): kit-version.txt was only ever written by upgrade.py itself
+    (upgrade.py:109), which means from the *second* version onwards. A freshly installed folder
+    answered `installed: unknown`, and steps 1-12 stayed green through it -- not one of them
+    looks at the update path. SECTION 8 now writes the stamp during setup; this holds it to that.
+
+    Undo recipe, to watch it go red: remove the kit-version.txt write in build_vault() and this
+    step fails with `no kit-version.txt beside the tools`.
+    """
+    tools = root / "00_Global" / "06_tools"
+    stamp = tools / "kit-version.txt"
+    if not stamp.is_file():
+        raise Failed("no kit-version.txt beside the tools -- upgrade.py cannot say what is installed")
+    installed = stamp.read_text(encoding="utf-8-sig").strip()
+
+    # A kit file carrying one block byte-identical to what is installed: upgrade.py then has
+    # nothing to write, and the only thing under test is the line it prints first. It lives
+    # outside the vault, which is where a downloaded kit file actually sits.
+    jobs = (tools / "jobs.json").read_text(encoding="utf-8").rstrip()
+    kit = root.parent / "newer-kit.md"
+    kit.write_text(f"<!-- kit-version: ffffffffffff -->\n\n### `jobs.json`\n\n```json\n{jobs}\n```\n",
+                   encoding="utf-8", newline="\n")
+    _, out, _ = run([sys.executable, str(tools / "upgrade.py"), str(kit)], cwd=root,
+                    label="upgrade.py")
+    if f"installed: {installed}" not in out or "unknown" in out:
+        raise Failed(f"upgrade.py did not read the installed stamp back:\n{out}")
 
 
 def one_pass(verbose=True):
@@ -4146,4 +4212,5 @@ if __name__ == "__main__":
 ---
 
 *Generated by `tools/build_kit.py`. Edit the sources, never this file.*
+*Source and newest published copy: https://github.com/nibor1896/claude-obsidian-vault-kit*
 *Compare the `kit-version` at the top against the published file to see whether this copy is current.*
