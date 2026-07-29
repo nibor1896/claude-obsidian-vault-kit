@@ -129,6 +129,59 @@ class BuildIndexTest(unittest.TestCase):
         self.assertIn("bom-ohne-titel.md", err)
         self.assertIn("title", err)
 
+    # ------------------------------------------------------------ project: is advisory (#15)
+
+    def test_project_disagreeing_with_the_folder_is_a_defect(self):
+        """#15. Recipe for the failure without the fix: delete the `declared = ...` block from
+        collect_entries in build_index.py and rerun this file. Measured that way on this machine
+        -- 24 of 25 tests pass and this one fails with `AssertionError: 0 != 1`: the run exits 0,
+        says nothing, and indexes the note under ProjektEins while its frontmatter goes on
+        claiming Homelab. acceptance.py drops to 10/11 in the same state. The asymmetry is what
+        made it hard to see: agreement behaved exactly the same, so the field looked like it
+        worked.
+        """
+        write_note(self.project / "00_Notes" / "falsches-projekt.md",
+                   title="Gehoert woandershin", project="Homelab")
+        code, _, err = run_tool("build_index.py", "--vault", self.project)
+        self.assertEqual(code, 1)
+        self.assertIn("falsches-projekt.md", err)
+        self.assertIn("Homelab", err)
+        self.assertIn("ProjektEins", err)
+
+    def test_project_matching_the_folder_is_silent(self):
+        """A guard that fires on the agreeing case would make the field unusable."""
+        write_note(self.project / "00_Notes" / "richtiges-projekt.md",
+                   title="Gehoert hierher", project="ProjektEins")
+        code, out, err = run_tool("build_index.py", "--vault", self.project)
+        self.assertEqual(code, 0, err)
+        self.assertNotIn("project", err)
+        self.assertIn("1 entries", out)
+
+    def test_a_missing_project_field_is_not_a_defect(self):
+        """This is the promise the contract makes by writing `# optional` next to the field.
+
+        Without this case, tightening the guard into a required field would go unnoticed --
+        and 135 of the 339 notes in the vault this kit came from carry no `project:` at all.
+        """
+        write_note(self.project / "00_Notes" / "ohne-projekt.md", title="Kein Projektfeld")
+        code, out, err = run_tool("build_index.py", "--vault", self.project)
+        self.assertEqual(code, 0, err)
+        self.assertNotIn("project", err)
+        self.assertIn("1 entries", out)
+
+    def test_a_quoted_project_value_compares_cleanly(self):
+        """`project: "ProjektEins"` and `project: ProjektEins` are the same claim.
+
+        _clean_scalar strips the quotes before anything compares them; without that, every
+        quoted value in the vault -- which is how the contract writes them -- would be a defect.
+        """
+        path = self.project / "00_Notes" / "zitiert.md"
+        path.write_text('---\ntitle: "Zitiert"\nsummary: "Wert in Anfuehrungszeichen."\n'
+                        'project: "ProjektEins"\n---\n\nRumpf.\n', encoding="utf-8", newline="\n")
+        code, out, err = run_tool("build_index.py", "--vault", self.project)
+        self.assertEqual(code, 0, err)
+        self.assertIn("1 entries", out)
+
     # ------------------------------------------------------- scaffolding and adoption (#6)
 
     def test_empty_project_folder_gets_its_categories(self):

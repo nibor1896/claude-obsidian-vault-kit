@@ -60,7 +60,7 @@ document in order. It is a contract, not a suggestion.
    and waiting for a yes.
 6. **The scripts are inside this file. Write them out; do not rewrite them.** SECTION 10 carries
    every tool, every suite and the three runners verbatim — measured on Windows 11 with Python 3.13
-   under PowerShell 5.1 and Git Bash: **8/8 suites green, 10/10 acceptance checks and 11/11
+   under PowerShell 5.1 and Git Bash: **8/8 suites green, 11/11 acceptance checks and 11/11
    end-to-end setup steps, in ten consecutive runs under each shell.** Write each block to disk
    byte for byte. Retyping them from the contracts in SECTION 5 and SECTION 6 throws that
    measurement away and reintroduces the defects those sections describe — every one was found the
@@ -329,7 +329,7 @@ downstream reads it.
 ---
 title: "One line that states the insight"
 summary: "One plain sentence. No markdown, no blockquote, no heading marks, no line breaks."
-project: "<ProjectName>"
+project: "<ProjectName>"     # optional; must equal the containing project folder
 created: 2026-01-15
 updated: 2026-02-03          # optional; the index prefers this over `created`
 issues: "#12, #14"           # optional; a plain-text citation, never a link — see below
@@ -346,6 +346,13 @@ Field semantics that matter:
 - **`summary` is required and must be plain.** If markdown debris ends up here — a leading `>`, a
   `#`, a `**` — the index line renders as garbage. The generator strips it, names the file, and
   exits non-zero.
+- **`project:` is optional and advisory.** The folder a note sits in decides where it is indexed;
+  no script reads this field to place anything. It exists so a human reading the file knows where it
+  belongs without reconstructing the path. Leave it out and nothing happens — that is what optional
+  means here. Write a value that disagrees with the project folder and the run goes red: not because
+  the value is wrong, but because two sources claim different things and only one of them has any
+  effect. The comparison is exact, case included — the folder name *is* the project name and goes
+  into every wikilink as it stands, so a case difference breaks on case-sensitive filesystems.
 - **`issues:` is optional, free text, and deliberately not a wikilink.** It exists so a note can cite
   a ticket number the user tracks somewhere else; this kit reads no tracker and writes none. Making
   it a link would pull hundreds of note→ticket edges into the graph and turn it into a hairball, and
@@ -855,11 +862,11 @@ python <vault>/00_Global/06_tools/acceptance.py
 It builds a throwaway vault per fixture under the system temp directory, so it never touches the
 user's notes, and it takes its verdict from process exit codes and files on disk — never from
 parsing console output, which wraps at the terminal width and differs per shell. Expect
-`10/10 checks behaved as specified`. Anything less is a defect in a script, not in the expectation.
+`11/11 checks behaved as specified`. Anything less is a defect in a script, not in the expectation.
 `--repeat 10` runs ten full passes; use it after any change to a guard.
 
 The table below is what the driver checks, and it is the specification a changed script must still
-meet. **Eight fixtures require red, two require green** — fixture 0 is the healthy control and
+meet. **Nine fixtures require red, two require green** — fixture 0 is the healthy control and
 fixture 9 is input the structure explicitly allows. A suite that only ever sees bad input is exactly
 as blind as one that only ever sees good input. The driver counts the two kinds from the fixture
 list rather than printing a fixed sentence, so a fixture that changes sides changes the summary with
@@ -877,6 +884,7 @@ it.
 | 7 | point the suite runner at an empty directory | reports **"0 suites collected"** and does **not** say green | "all green" over zero tests |
 | 8 | remove or blank a scheduled job's run log | freshness check says **"did not run"**, not "fine" | a scheduler that stopped is indistinguishable from a healthy one |
 | 9 | a folder made by hand — `<Project>/99_extra/` with one note in it | folder survives, gets its own index containing the note, run exits **0** and **names it on stdout** | either half alone is the failure: red on a folder the structure allows, or green while the note reaches no index — measured on a real setup, a renamed `06_tools` took the count from 21 categories to 20 without a word |
+| 10 | note with `project:` naming a different project than its folder, then the agreeing and the absent case | index run exits **non-zero** on the contradiction and names both values; **exit 0 and silent** when the field agrees or is missing | the field reads as if it placed the note, places nothing, and says nothing either way — measured on a real vault before the guard existed: 339 notes, 204 of them carrying `project:`, no run had ever compared one against its folder |
 
 The driver leaves nothing behind — every fixture vault lives under the system temp directory and is
 deleted in a `finally` block. After the run, `git status --porcelain` in the real vault must still be
@@ -889,8 +897,8 @@ is invisible from inside a single shell.
 Report it like this, one line per check, and **name any check you did not run**:
 
 ```
-Acceptance: 10/10 checks behaved as specified (8 red on bad input, 2 green on allowed input)
-            (or) 8/10 — #5 non-ASCII filename NOT caught, #9 not run
+Acceptance: 11/11 checks behaved as specified (9 red on bad input, 2 green on allowed input)
+            (or) 9/11 — #5 non-ASCII filename NOT caught, #9 not run
 ```
 
 If a check does not behave as specified, the generated script is wrong — fix the script, not the

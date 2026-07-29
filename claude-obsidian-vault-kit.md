@@ -1,4 +1,4 @@
-<!-- kit-version: 44815614f997 -->
+<!-- kit-version: 9d1f2db8d6ed -->
 # Claude × Obsidian — Vault Kit
 
 **What this file is:** a setup contract for Claude. Drop it into a Claude conversation and say
@@ -61,7 +61,7 @@ document in order. It is a contract, not a suggestion.
    and waiting for a yes.
 6. **The scripts are inside this file. Write them out; do not rewrite them.** SECTION 10 carries
    every tool, every suite and the three runners verbatim — measured on Windows 11 with Python 3.13
-   under PowerShell 5.1 and Git Bash: **8/8 suites green, 10/10 acceptance checks and 11/11
+   under PowerShell 5.1 and Git Bash: **8/8 suites green, 11/11 acceptance checks and 11/11
    end-to-end setup steps, in ten consecutive runs under each shell.** Write each block to disk
    byte for byte. Retyping them from the contracts in SECTION 5 and SECTION 6 throws that
    measurement away and reintroduces the defects those sections describe — every one was found the
@@ -330,7 +330,7 @@ downstream reads it.
 ---
 title: "One line that states the insight"
 summary: "One plain sentence. No markdown, no blockquote, no heading marks, no line breaks."
-project: "<ProjectName>"
+project: "<ProjectName>"     # optional; must equal the containing project folder
 created: 2026-01-15
 updated: 2026-02-03          # optional; the index prefers this over `created`
 issues: "#12, #14"           # optional; a plain-text citation, never a link — see below
@@ -347,6 +347,13 @@ Field semantics that matter:
 - **`summary` is required and must be plain.** If markdown debris ends up here — a leading `>`, a
   `#`, a `**` — the index line renders as garbage. The generator strips it, names the file, and
   exits non-zero.
+- **`project:` is optional and advisory.** The folder a note sits in decides where it is indexed;
+  no script reads this field to place anything. It exists so a human reading the file knows where it
+  belongs without reconstructing the path. Leave it out and nothing happens — that is what optional
+  means here. Write a value that disagrees with the project folder and the run goes red: not because
+  the value is wrong, but because two sources claim different things and only one of them has any
+  effect. The comparison is exact, case included — the folder name *is* the project name and goes
+  into every wikilink as it stands, so a case difference breaks on case-sensitive filesystems.
 - **`issues:` is optional, free text, and deliberately not a wikilink.** It exists so a note can cite
   a ticket number the user tracks somewhere else; this kit reads no tracker and writes none. Making
   it a link would pull hundreds of note→ticket edges into the graph and turn it into a hairball, and
@@ -856,11 +863,11 @@ python <vault>/00_Global/06_tools/acceptance.py
 It builds a throwaway vault per fixture under the system temp directory, so it never touches the
 user's notes, and it takes its verdict from process exit codes and files on disk — never from
 parsing console output, which wraps at the terminal width and differs per shell. Expect
-`10/10 checks behaved as specified`. Anything less is a defect in a script, not in the expectation.
+`11/11 checks behaved as specified`. Anything less is a defect in a script, not in the expectation.
 `--repeat 10` runs ten full passes; use it after any change to a guard.
 
 The table below is what the driver checks, and it is the specification a changed script must still
-meet. **Eight fixtures require red, two require green** — fixture 0 is the healthy control and
+meet. **Nine fixtures require red, two require green** — fixture 0 is the healthy control and
 fixture 9 is input the structure explicitly allows. A suite that only ever sees bad input is exactly
 as blind as one that only ever sees good input. The driver counts the two kinds from the fixture
 list rather than printing a fixed sentence, so a fixture that changes sides changes the summary with
@@ -878,6 +885,7 @@ it.
 | 7 | point the suite runner at an empty directory | reports **"0 suites collected"** and does **not** say green | "all green" over zero tests |
 | 8 | remove or blank a scheduled job's run log | freshness check says **"did not run"**, not "fine" | a scheduler that stopped is indistinguishable from a healthy one |
 | 9 | a folder made by hand — `<Project>/99_extra/` with one note in it | folder survives, gets its own index containing the note, run exits **0** and **names it on stdout** | either half alone is the failure: red on a folder the structure allows, or green while the note reaches no index — measured on a real setup, a renamed `06_tools` took the count from 21 categories to 20 without a word |
+| 10 | note with `project:` naming a different project than its folder, then the agreeing and the absent case | index run exits **non-zero** on the contradiction and names both values; **exit 0 and silent** when the field agrees or is missing | the field reads as if it placed the note, places nothing, and says nothing either way — measured on a real vault before the guard existed: 339 notes, 204 of them carrying `project:`, no run had ever compared one against its folder |
 
 The driver leaves nothing behind — every fixture vault lives under the system temp directory and is
 deleted in a `finally` block. After the run, `git status --porcelain` in the real vault must still be
@@ -890,8 +898,8 @@ is invisible from inside a single shell.
 Report it like this, one line per check, and **name any check you did not run**:
 
 ```
-Acceptance: 10/10 checks behaved as specified (8 red on bad input, 2 green on allowed input)
-            (or) 8/10 — #5 non-ASCII filename NOT caught, #9 not run
+Acceptance: 11/11 checks behaved as specified (9 red on bad input, 2 green on allowed input)
+            (or) 9/11 — #5 non-ASCII filename NOT caught, #9 not run
 ```
 
 If a check does not behave as specified, the generated script is wrong — fix the script, not the
@@ -941,7 +949,7 @@ copying, and do not skip the suites: they are the only reason the numbers in SEC
 anything.
 
 Measured on Windows 11, Python 3.13, under PowerShell 5.1 **and** Git Bash: 8/8 suites green,
-10/10 acceptance checks correct, 11/11 end-to-end setup steps -- ten consecutive runs under each
+11/11 acceptance checks correct, 11/11 end-to-end setup steps -- ten consecutive runs under each
 shell. Copy them and that measurement still applies to what you handed the user. Rewrite them and
 it does not.
 
@@ -954,7 +962,7 @@ After writing them, prove it on this machine before you report anything:
 
 ```
 python <vault>/00_Global/06_tools/run_suites.py       expect 8/8 suites green
-python <vault>/00_Global/06_tools/acceptance.py       expect 10/10 checks
+python <vault>/00_Global/06_tools/acceptance.py       expect 11/11 checks
 python <vault>/00_Global/06_tools/verify_setup.py     expect 11/11 steps
 ```
 
@@ -1368,6 +1376,9 @@ def collect_entries(vault_root, project_dir, folder_name, defects):
     entries = []
     if not folder.is_dir():
         return entries
+    # Resolved once, not per note: Path('.').name is the empty string, and every note in the
+    # folder would then be reported as disagreeing with a project called "".
+    project_name = Path(project_dir).resolve().name
     for path in sorted(folder.glob("*.md")):
         if is_index_file(path):
             continue
@@ -1390,6 +1401,17 @@ def collect_entries(vault_root, project_dir, folder_name, defects):
             defects.add(name, "markdown debris in 'summary:' — stripped for the index")
         if summary and summary.strip().lower() == title.strip().lower():
             summary = ""
+
+        # 'project:' is advisory -- the folder decides where a note is indexed, and nothing here
+        # reads this field to place anything. Absent, it means nothing and stays silent. Present
+        # and disagreeing, it is two sources claiming different things while only one of them
+        # acts, which is the defect: the note is indexed under the folder and the frontmatter
+        # says otherwise, forever, with no message. Compared exactly, case included -- the folder
+        # name IS the project name and goes into every wikilink as it stands.
+        declared = fm.get("project", "").strip()
+        if declared and declared != project_name:
+            defects.add(name, f"'project: {declared}' disagrees with the folder "
+                              f"({project_name}) — the folder decides where a note is indexed")
 
         prefixes = []
         if fm.get("retired"):
@@ -2227,7 +2249,7 @@ if __name__ == "__main__":
 ```python
 """Acceptance test: prove each guard reacts as specified to one input, on this machine.
 
-Ten fixtures, each built in a throwaway vault under the system temp directory. Eight hand a
+Eleven fixtures, each built in a throwaway vault under the system temp directory. Nine hand a
 guard bad input and require it to go red; two hand the tools input the structure explicitly
 allows and require them to stay green. Both halves are needed: a suite that only ever sees
 bad input is exactly as blind as one that only ever sees good input.
@@ -2239,7 +2261,7 @@ where the printed line *is* the specified behaviour.
     python acceptance.py            one pass
     python acceptance.py --repeat 10
 
-Exit 0 only when all ten behaved as specified in every pass.
+Exit 0 only when all eleven behaved as specified in every pass.
 """
 
 import argparse
@@ -2373,6 +2395,27 @@ def fixture_9_hand_made_folder_is_adopted(vault, project):
     return "verlorene-notiz" in index_text(project, "99_extra")
 
 
+def fixture_10_project_disagrees_with_folder(vault, project):
+    """The field that looked like it worked: nothing reads it, so only a guard can say so.
+
+    Both directions in one fixture, because the asymmetry is the whole defect -- a note whose
+    `project:` matches its folder behaved identically to one that contradicted it, which is
+    exactly why the contradiction went unnoticed. Red on disagreement is only half the check;
+    a guard that also fires on agreement would make the field unusable instead of advisory.
+    """
+    write_note(project / "00_Notes" / "falsches-projekt.md", title="Falsch einsortiert",
+               project="Homelab")
+    code, _, err = run_tool("build_index.py", "--vault", project)
+    if code == 0 or "falsches-projekt.md" not in err or "Homelab" not in err:
+        return False
+    (project / "00_Notes" / "falsches-projekt.md").unlink()
+    write_note(project / "00_Notes" / "richtiges-projekt.md", title="Richtig einsortiert",
+               project=PROJECT)
+    write_note(project / "00_Notes" / "ohne-projekt.md", title="Feld weggelassen")
+    code, _, err = run_tool("build_index.py", "--vault", project)
+    return code == 0 and "project" not in err
+
+
 def control_clean_vault_is_green(vault, project):
     """The healthy control: a suite that only ever sees bad input is as blind as one that
     only ever sees good input. Every tool must exit 0 on a clean tree, and say so with a
@@ -2417,6 +2460,7 @@ FIXTURES = [
     ("7 suite runner on an empty directory", fixture_7_empty_suite_dir, "red"),
     ("8 freshness check without a run log", fixture_8_freshness_without_log, "red"),
     ("9 hand-made folder is adopted, indexed and named", fixture_9_hand_made_folder_is_adopted, "green"),
+    ("10 project: disagreeing with its folder", fixture_10_project_disagrees_with_folder, "red"),
 ]
 
 RED = sum(1 for _, _, kind in FIXTURES if kind == "red")
@@ -3026,6 +3070,59 @@ class BuildIndexTest(unittest.TestCase):
         self.assertEqual(code, 1)
         self.assertIn("bom-ohne-titel.md", err)
         self.assertIn("title", err)
+
+    # ------------------------------------------------------------ project: is advisory (#15)
+
+    def test_project_disagreeing_with_the_folder_is_a_defect(self):
+        """#15. Recipe for the failure without the fix: delete the `declared = ...` block from
+        collect_entries in build_index.py and rerun this file. Measured that way on this machine
+        -- 24 of 25 tests pass and this one fails with `AssertionError: 0 != 1`: the run exits 0,
+        says nothing, and indexes the note under ProjektEins while its frontmatter goes on
+        claiming Homelab. acceptance.py drops to 10/11 in the same state. The asymmetry is what
+        made it hard to see: agreement behaved exactly the same, so the field looked like it
+        worked.
+        """
+        write_note(self.project / "00_Notes" / "falsches-projekt.md",
+                   title="Gehoert woandershin", project="Homelab")
+        code, _, err = run_tool("build_index.py", "--vault", self.project)
+        self.assertEqual(code, 1)
+        self.assertIn("falsches-projekt.md", err)
+        self.assertIn("Homelab", err)
+        self.assertIn("ProjektEins", err)
+
+    def test_project_matching_the_folder_is_silent(self):
+        """A guard that fires on the agreeing case would make the field unusable."""
+        write_note(self.project / "00_Notes" / "richtiges-projekt.md",
+                   title="Gehoert hierher", project="ProjektEins")
+        code, out, err = run_tool("build_index.py", "--vault", self.project)
+        self.assertEqual(code, 0, err)
+        self.assertNotIn("project", err)
+        self.assertIn("1 entries", out)
+
+    def test_a_missing_project_field_is_not_a_defect(self):
+        """This is the promise the contract makes by writing `# optional` next to the field.
+
+        Without this case, tightening the guard into a required field would go unnoticed --
+        and 135 of the 339 notes in the vault this kit came from carry no `project:` at all.
+        """
+        write_note(self.project / "00_Notes" / "ohne-projekt.md", title="Kein Projektfeld")
+        code, out, err = run_tool("build_index.py", "--vault", self.project)
+        self.assertEqual(code, 0, err)
+        self.assertNotIn("project", err)
+        self.assertIn("1 entries", out)
+
+    def test_a_quoted_project_value_compares_cleanly(self):
+        """`project: "ProjektEins"` and `project: ProjektEins` are the same claim.
+
+        _clean_scalar strips the quotes before anything compares them; without that, every
+        quoted value in the vault -- which is how the contract writes them -- would be a defect.
+        """
+        path = self.project / "00_Notes" / "zitiert.md"
+        path.write_text('---\ntitle: "Zitiert"\nsummary: "Wert in Anfuehrungszeichen."\n'
+                        'project: "ProjektEins"\n---\n\nRumpf.\n', encoding="utf-8", newline="\n")
+        code, out, err = run_tool("build_index.py", "--vault", self.project)
+        self.assertEqual(code, 0, err)
+        self.assertIn("1 entries", out)
 
     # ------------------------------------------------------- scaffolding and adoption (#6)
 

@@ -183,6 +183,9 @@ def collect_entries(vault_root, project_dir, folder_name, defects):
     entries = []
     if not folder.is_dir():
         return entries
+    # Resolved once, not per note: Path('.').name is the empty string, and every note in the
+    # folder would then be reported as disagreeing with a project called "".
+    project_name = Path(project_dir).resolve().name
     for path in sorted(folder.glob("*.md")):
         if is_index_file(path):
             continue
@@ -205,6 +208,17 @@ def collect_entries(vault_root, project_dir, folder_name, defects):
             defects.add(name, "markdown debris in 'summary:' — stripped for the index")
         if summary and summary.strip().lower() == title.strip().lower():
             summary = ""
+
+        # 'project:' is advisory -- the folder decides where a note is indexed, and nothing here
+        # reads this field to place anything. Absent, it means nothing and stays silent. Present
+        # and disagreeing, it is two sources claiming different things while only one of them
+        # acts, which is the defect: the note is indexed under the folder and the frontmatter
+        # says otherwise, forever, with no message. Compared exactly, case included -- the folder
+        # name IS the project name and goes into every wikilink as it stands.
+        declared = fm.get("project", "").strip()
+        if declared and declared != project_name:
+            defects.add(name, f"'project: {declared}' disagrees with the folder "
+                              f"({project_name}) — the folder decides where a note is indexed")
 
         prefixes = []
         if fm.get("retired"):

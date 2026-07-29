@@ -1,6 +1,6 @@
 """Acceptance test: prove each guard reacts as specified to one input, on this machine.
 
-Ten fixtures, each built in a throwaway vault under the system temp directory. Eight hand a
+Eleven fixtures, each built in a throwaway vault under the system temp directory. Nine hand a
 guard bad input and require it to go red; two hand the tools input the structure explicitly
 allows and require them to stay green. Both halves are needed: a suite that only ever sees
 bad input is exactly as blind as one that only ever sees good input.
@@ -12,7 +12,7 @@ where the printed line *is* the specified behaviour.
     python acceptance.py            one pass
     python acceptance.py --repeat 10
 
-Exit 0 only when all ten behaved as specified in every pass.
+Exit 0 only when all eleven behaved as specified in every pass.
 """
 
 import argparse
@@ -146,6 +146,27 @@ def fixture_9_hand_made_folder_is_adopted(vault, project):
     return "verlorene-notiz" in index_text(project, "99_extra")
 
 
+def fixture_10_project_disagrees_with_folder(vault, project):
+    """The field that looked like it worked: nothing reads it, so only a guard can say so.
+
+    Both directions in one fixture, because the asymmetry is the whole defect -- a note whose
+    `project:` matches its folder behaved identically to one that contradicted it, which is
+    exactly why the contradiction went unnoticed. Red on disagreement is only half the check;
+    a guard that also fires on agreement would make the field unusable instead of advisory.
+    """
+    write_note(project / "00_Notes" / "falsches-projekt.md", title="Falsch einsortiert",
+               project="Homelab")
+    code, _, err = run_tool("build_index.py", "--vault", project)
+    if code == 0 or "falsches-projekt.md" not in err or "Homelab" not in err:
+        return False
+    (project / "00_Notes" / "falsches-projekt.md").unlink()
+    write_note(project / "00_Notes" / "richtiges-projekt.md", title="Richtig einsortiert",
+               project=PROJECT)
+    write_note(project / "00_Notes" / "ohne-projekt.md", title="Feld weggelassen")
+    code, _, err = run_tool("build_index.py", "--vault", project)
+    return code == 0 and "project" not in err
+
+
 def control_clean_vault_is_green(vault, project):
     """The healthy control: a suite that only ever sees bad input is as blind as one that
     only ever sees good input. Every tool must exit 0 on a clean tree, and say so with a
@@ -190,6 +211,7 @@ FIXTURES = [
     ("7 suite runner on an empty directory", fixture_7_empty_suite_dir, "red"),
     ("8 freshness check without a run log", fixture_8_freshness_without_log, "red"),
     ("9 hand-made folder is adopted, indexed and named", fixture_9_hand_made_folder_is_adopted, "green"),
+    ("10 project: disagreeing with its folder", fixture_10_project_disagrees_with_folder, "red"),
 ]
 
 RED = sum(1 for _, _, kind in FIXTURES if kind == "red")
