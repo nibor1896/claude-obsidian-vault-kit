@@ -263,8 +263,19 @@ class BuildIndexTest(unittest.TestCase):
         self.assertIn('project: "ProjektEins"', text)
         self.assertIn("{{title}}", text)
         self.assertIn("{{date}}", text)
-        for field in ("summary:", "updated:", "issues:", "generator:", "retired:", "stale:"):
+        for field in ("title:", "summary:", "project:", "created:"):
             self.assertIn(field, text)
+        # The other direction is the real test: a template shipping `generator:` invites someone
+        # to fill it, and a note carrying that marker is declared derived and may be overwritten
+        # or deleted by a rebuild. Without this line the field set grows back the next time
+        # someone tidies up.
+        #
+        # Recipe, so the number below stays reproducible: copy tools/ somewhere, add the five
+        # lines back to template_text() in vault_paths.py, run `python -m unittest
+        # test_build_index` there. Measured on this machine 2026-07-29 -- 29/30, failing here
+        # and nowhere else.
+        for field in ("updated:", "issues:", "generator:", "retired:", "stale:"):
+            self.assertNotIn(field, text)
         self.assertIn("template", out)
         self.assertIn(template.name, out)
 
@@ -272,7 +283,8 @@ class BuildIndexTest(unittest.TestCase):
         """A template is there to be edited. A tool that resets it every run eats the edit."""
         run_tool("build_index.py", "--root", self.vault)
         template = self.vault / TEMPLATES_DIR / template_name("ProjektEins")
-        mine = template.read_text(encoding="utf-8").replace("stale:\n", "stale:\nowner:\n")
+        mine = template.read_text(encoding="utf-8").replace(
+            "created: {{date}}\n", "created: {{date}}\nowner:\n")
         template.write_text(mine, encoding="utf-8", newline="\n")
         code, out, err = run_tool("build_index.py", "--root", self.vault)
         self.assertEqual(code, 0, err)
@@ -304,7 +316,12 @@ class BuildIndexTest(unittest.TestCase):
         """The template is only worth having if what it produces is accepted.
 
         Obsidian substitutes {{title}} and {{date}}; everything else goes in as it stands, so
-        this fills those two the way Obsidian would and leaves the four empty fields alone.
+        this fills those two the way Obsidian would.
+
+        Since the template shrank to four fields, the assertions below check the inverse case: a
+        note carrying no `generator:`, `retired:` or `stale:` at all must get no marker either.
+        Same promise as before, made over the absent key instead of the empty one -- and this is
+        the only place that notices if a reader ever tests presence instead of value.
         """
         run_tool("build_index.py", "--root", self.vault)
         text = (self.vault / TEMPLATES_DIR / template_name("ProjektEins")).read_text(
@@ -317,7 +334,7 @@ class BuildIndexTest(unittest.TestCase):
         self.assertEqual(code, 0, err)
         text = self.index_text()
         self.assertIn("[[ProjektEins/00_Notes/eine-erkenntnis|Eine Erkenntnis]]", text)
-        self.assertNotIn("generated", text)   # an empty generator: marks nothing
+        self.assertNotIn("generated", text)   # an absent generator: marks nothing
         self.assertNotIn("[retired", text)
         self.assertNotIn("[stale", text)
 

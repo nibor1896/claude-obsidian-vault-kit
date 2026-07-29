@@ -93,7 +93,7 @@ def template_name(project_name: str) -> str:
 
 
 def template_text(project_name: str) -> str:
-    """The full frontmatter contract, with everything a person fills in left empty.
+    """The four fields every note actually carries -- not the whole contract.
 
     `{{title}}` and `{{date}}` are two of the three variables Obsidian's core Templates plugin
     knows -- the third is `{{time}}` and has no field here. So the title comes from the filename
@@ -101,8 +101,12 @@ def template_text(project_name: str) -> str:
     `project:` is written in, which is the one value a template can get right that a person
     retyping the block gets wrong.
 
-    Empty is safe for the trailing four: every reader tests the VALUE, not the presence of the
-    key, so `generator:`, `retired:` and `stale:` standing empty mark nothing.
+    WHY `updated`, `issues`, `generator`, `retired` and `stale` ARE NOT HERE: they are
+    situational -- set when something happened, not when a note is started. `generator:` is the
+    one that must never sit in a template waiting to be filled: a note carrying it is declared
+    derived, and a rebuild is then entitled to overwrite or delete it. Nothing is hidden by
+    leaving them out -- Obsidian's "Add property" offers every field already used anywhere in the
+    vault. The CONTRACT (SECTION 4) still defines all nine; the template is not the contract.
     """
     return (
         "---\n"
@@ -110,11 +114,6 @@ def template_text(project_name: str) -> str:
         "summary:\n"
         f'project: "{project_name}"\n'
         "created: {{date}}\n"
-        "updated:\n"
-        "issues:\n"
-        "generator:\n"
-        "retired:\n"
-        "stale:\n"
         "---\n"
     )
 

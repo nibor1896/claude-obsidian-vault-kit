@@ -506,8 +506,7 @@ at project level would otherwise become a permanent category with an index file 
 ### It also writes one note template per project, once
 
 The `--root` run writes `<VaultRoot>/_templates/TEMPLATE - <Project>.md` for every project that has
-none. The file is the frontmatter contract of SECTION 4 with everything a person fills in left
-empty:
+none. The file carries the four fields of SECTION 4 that every note actually fills — not all nine:
 
 ```
 ---
@@ -515,11 +514,6 @@ title: "{{title}}"
 summary:
 project: "<Project>"
 created: {{date}}
-updated:
-issues:
-generator:
-retired:
-stale:
 ---
 ```
 
@@ -530,8 +524,12 @@ stale:
   retyping the block gets wrong — and getting it wrong is exactly what the guard in SECTION 4
   reports. One file per project is not redundancy; it is the only way to carry the project name,
   because Obsidian has no folder variable.
-- **The four trailing fields stand empty and that is safe** — every reader tests the value, not the
-  presence of the key, so an empty `generator:`, `retired:` or `stale:` marks nothing.
+- **`updated:`, `issues:`, `generator:`, `retired:` and `stale:` are deliberately absent.** They are
+  situational — set when something happened, not when a note is started. `generator:` is the one
+  that must never sit in a template waiting to be filled: a note carrying it is declared derived,
+  and a rebuild is then entitled to overwrite or delete it. Nothing is hidden by leaving them out,
+  because Obsidian's *Add property* offers every field already in use anywhere in the vault. The
+  contract in SECTION 4 still defines all nine — the template is not the contract.
 - **Created when missing, never overwritten.** A template is there to be edited. A tool that rewrites
   it on every run eats the user's change silently, and the doctrine rule about not hand-editing
   generated files covers the index tree, not this folder.
@@ -885,10 +883,13 @@ resolves it (SECTION 5). Write it escaped, do not dodge the table.
   writes `_templates/TEMPLATE - <Project>.md` per project (SECTION 5), but Obsidian does not find
   that folder by itself. Tell the user, once, in these words: *Settings → Core plugins → Templates →
   Template folder location* = `_templates`. After that, `Ctrl+P → Insert template` in a new note
-  fills the whole frontmatter block, with the project name already correct.
-  **Do not write `.obsidian/templates.json` for them.** The JSON key for that setting is not
-  measured, and a wrong key does nothing quietly — the same failure class as a frontmatter field
-  nobody reads. Name the setting; let them make it.
+  fills the frontmatter block, with the project name already correct.
+  **Do not write `.obsidian/templates.json` for them.** The key itself is known — Obsidian 1.12.7
+  writes `{"folder": "_templates"}` — but that was measured by watching Obsidian write the file,
+  which proves the key and not the read path: whether Obsidian picks up a `templates.json` written
+  by someone else at startup is untested. Until it is, a file written for them could do nothing
+  quietly, which is the same failure class as a frontmatter field nobody reads. Name the setting;
+  let them make it.
 - **Stuck on something?** Search `00_Notes/` first. A past procedure that already fits beats a new
   one you invent now.
 

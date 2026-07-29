@@ -1,4 +1,4 @@
-<!-- kit-version: 048e770a799e -->
+<!-- kit-version: 2789d4641aac -->
 # Claude × Obsidian — Vault Kit
 
 **What this file is:** a setup contract for Claude. Drop it into a Claude conversation and say
@@ -507,8 +507,7 @@ at project level would otherwise become a permanent category with an index file 
 ### It also writes one note template per project, once
 
 The `--root` run writes `<VaultRoot>/_templates/TEMPLATE - <Project>.md` for every project that has
-none. The file is the frontmatter contract of SECTION 4 with everything a person fills in left
-empty:
+none. The file carries the four fields of SECTION 4 that every note actually fills — not all nine:
 
 ```
 ---
@@ -516,11 +515,6 @@ title: "{{title}}"
 summary:
 project: "<Project>"
 created: {{date}}
-updated:
-issues:
-generator:
-retired:
-stale:
 ---
 ```
 
@@ -531,8 +525,12 @@ stale:
   retyping the block gets wrong — and getting it wrong is exactly what the guard in SECTION 4
   reports. One file per project is not redundancy; it is the only way to carry the project name,
   because Obsidian has no folder variable.
-- **The four trailing fields stand empty and that is safe** — every reader tests the value, not the
-  presence of the key, so an empty `generator:`, `retired:` or `stale:` marks nothing.
+- **`updated:`, `issues:`, `generator:`, `retired:` and `stale:` are deliberately absent.** They are
+  situational — set when something happened, not when a note is started. `generator:` is the one
+  that must never sit in a template waiting to be filled: a note carrying it is declared derived,
+  and a rebuild is then entitled to overwrite or delete it. Nothing is hidden by leaving them out,
+  because Obsidian's *Add property* offers every field already in use anywhere in the vault. The
+  contract in SECTION 4 still defines all nine — the template is not the contract.
 - **Created when missing, never overwritten.** A template is there to be edited. A tool that rewrites
   it on every run eats the user's change silently, and the doctrine rule about not hand-editing
   generated files covers the index tree, not this folder.
@@ -886,10 +884,13 @@ resolves it (SECTION 5). Write it escaped, do not dodge the table.
   writes `_templates/TEMPLATE - <Project>.md` per project (SECTION 5), but Obsidian does not find
   that folder by itself. Tell the user, once, in these words: *Settings → Core plugins → Templates →
   Template folder location* = `_templates`. After that, `Ctrl+P → Insert template` in a new note
-  fills the whole frontmatter block, with the project name already correct.
-  **Do not write `.obsidian/templates.json` for them.** The JSON key for that setting is not
-  measured, and a wrong key does nothing quietly — the same failure class as a frontmatter field
-  nobody reads. Name the setting; let them make it.
+  fills the frontmatter block, with the project name already correct.
+  **Do not write `.obsidian/templates.json` for them.** The key itself is known — Obsidian 1.12.7
+  writes `{"folder": "_templates"}` — but that was measured by watching Obsidian write the file,
+  which proves the key and not the read path: whether Obsidian picks up a `templates.json` written
+  by someone else at startup is untested. Until it is, a file written for them could do nothing
+  quietly, which is the same failure class as a frontmatter field nobody reads. Name the setting;
+  let them make it.
 - **Stuck on something?** Search `00_Notes/` first. A past procedure that already fits beats a new
   one you invent now.
 
@@ -1114,7 +1115,7 @@ def template_name(project_name: str) -> str:
 
 
 def template_text(project_name: str) -> str:
-    """The full frontmatter contract, with everything a person fills in left empty.
+    """The four fields every note actually carries -- not the whole contract.
 
     `{{title}}` and `{{date}}` are two of the three variables Obsidian's core Templates plugin
     knows -- the third is `{{time}}` and has no field here. So the title comes from the filename
@@ -1122,8 +1123,12 @@ def template_text(project_name: str) -> str:
     `project:` is written in, which is the one value a template can get right that a person
     retyping the block gets wrong.
 
-    Empty is safe for the trailing four: every reader tests the VALUE, not the presence of the
-    key, so `generator:`, `retired:` and `stale:` standing empty mark nothing.
+    WHY `updated`, `issues`, `generator`, `retired` and `stale` ARE NOT HERE: they are
+    situational -- set when something happened, not when a note is started. `generator:` is the
+    one that must never sit in a template waiting to be filled: a note carrying it is declared
+    derived, and a rebuild is then entitled to overwrite or delete it. Nothing is hidden by
+    leaving them out -- Obsidian's "Add property" offers every field already used anywhere in the
+    vault. The CONTRACT (SECTION 4) still defines all nine; the template is not the contract.
     """
     return (
         "---\n"
@@ -1131,11 +1136,6 @@ def template_text(project_name: str) -> str:
         "summary:\n"
         f'project: "{project_name}"\n'
         "created: {{date}}\n"
-        "updated:\n"
-        "issues:\n"
-        "generator:\n"
-        "retired:\n"
-        "stale:\n"
         "---\n"
     )
 
@@ -3328,8 +3328,19 @@ class BuildIndexTest(unittest.TestCase):
         self.assertIn('project: "ProjektEins"', text)
         self.assertIn("{{title}}", text)
         self.assertIn("{{date}}", text)
-        for field in ("summary:", "updated:", "issues:", "generator:", "retired:", "stale:"):
+        for field in ("title:", "summary:", "project:", "created:"):
             self.assertIn(field, text)
+        # The other direction is the real test: a template shipping `generator:` invites someone
+        # to fill it, and a note carrying that marker is declared derived and may be overwritten
+        # or deleted by a rebuild. Without this line the field set grows back the next time
+        # someone tidies up.
+        #
+        # Recipe, so the number below stays reproducible: copy tools/ somewhere, add the five
+        # lines back to template_text() in vault_paths.py, run `python -m unittest
+        # test_build_index` there. Measured on this machine 2026-07-29 -- 29/30, failing here
+        # and nowhere else.
+        for field in ("updated:", "issues:", "generator:", "retired:", "stale:"):
+            self.assertNotIn(field, text)
         self.assertIn("template", out)
         self.assertIn(template.name, out)
 
@@ -3337,7 +3348,8 @@ class BuildIndexTest(unittest.TestCase):
         """A template is there to be edited. A tool that resets it every run eats the edit."""
         run_tool("build_index.py", "--root", self.vault)
         template = self.vault / TEMPLATES_DIR / template_name("ProjektEins")
-        mine = template.read_text(encoding="utf-8").replace("stale:\n", "stale:\nowner:\n")
+        mine = template.read_text(encoding="utf-8").replace(
+            "created: {{date}}\n", "created: {{date}}\nowner:\n")
         template.write_text(mine, encoding="utf-8", newline="\n")
         code, out, err = run_tool("build_index.py", "--root", self.vault)
         self.assertEqual(code, 0, err)
@@ -3369,7 +3381,12 @@ class BuildIndexTest(unittest.TestCase):
         """The template is only worth having if what it produces is accepted.
 
         Obsidian substitutes {{title}} and {{date}}; everything else goes in as it stands, so
-        this fills those two the way Obsidian would and leaves the four empty fields alone.
+        this fills those two the way Obsidian would.
+
+        Since the template shrank to four fields, the assertions below check the inverse case: a
+        note carrying no `generator:`, `retired:` or `stale:` at all must get no marker either.
+        Same promise as before, made over the absent key instead of the empty one -- and this is
+        the only place that notices if a reader ever tests presence instead of value.
         """
         run_tool("build_index.py", "--root", self.vault)
         text = (self.vault / TEMPLATES_DIR / template_name("ProjektEins")).read_text(
@@ -3382,7 +3399,7 @@ class BuildIndexTest(unittest.TestCase):
         self.assertEqual(code, 0, err)
         text = self.index_text()
         self.assertIn("[[ProjektEins/00_Notes/eine-erkenntnis|Eine Erkenntnis]]", text)
-        self.assertNotIn("generated", text)   # an empty generator: marks nothing
+        self.assertNotIn("generated", text)   # an absent generator: marks nothing
         self.assertNotIn("[retired", text)
         self.assertNotIn("[stale", text)
 
