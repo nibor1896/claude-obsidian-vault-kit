@@ -64,7 +64,10 @@ def classify(blocks):
 def prove():
     """Suites and acceptance, from the folder we just wrote."""
     ok = True
-    for script, want in (("run_suites.py", "suites green"), ("acceptance.py", "10/10")):
+    # No fixture count in the string: exit 0 already means every one behaved, and a literal
+    # here goes stale the moment a fixture is added.
+    for script, want in (("run_suites.py", "suites green"),
+                         ("acceptance.py", "checks behaved as specified")):
         result = subprocess.run([sys.executable, str(TOOLS / script)],
                                 capture_output=True, cwd=str(TOOLS))
         out = result.stdout.decode("utf-8", errors="replace")

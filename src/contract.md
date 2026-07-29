@@ -454,25 +454,40 @@ only as long as whoever is working remembers it. Read the paths as **bytes** fro
 or by walking the tree — not from a shell pipeline, which differs per platform and breaks on names
 containing non-ASCII (SECTION 6).
 
-### It also reports a folder it walked past
+### It owns the shape of a project: it scaffolds, it adopts, and it says so
 
-The category list is configuration, and configuration goes stale the moment someone renames a folder
-in the file pane. Walk the project's actual subfolders, compare them against the configured
-categories, and report any folder that is not in the list as a defect with a non-zero exit:
+The category list is what a project is **created** with, not the only thing it may hold. Two things
+follow, and the generator does both on every run:
+
+- **A project folder that is missing category folders gets them.** A user makes `<Project>/` in
+  Obsidian's file pane and it is empty. Leaving it empty means they must know six folder names and
+  spell them correctly before anything they write is indexed.
+- **A folder the user made by hand becomes a category of its own** — it stays where it is, it gets
+  its own `INDEX - <Project> <Folder>.md`, and its notes are in the count. SECTION 3 explicitly lets
+  the user name their own folders; a generator that then calls one a defect is arguing with the
+  document it implements.
+
+**Neither is a defect, and neither is silent.** Print one line per folder created and one per folder
+adopted, on stdout, and put the counts in the run log:
 
 ```
-ProjectB/06_werkzeuge: folder is not a configured category — nothing in it reaches an index
+  created  ProjectB/03_technical_docs — category folder was missing
+  adopted  ProjectB/06_werkzeuge — folder made by hand, indexed as a category
 ```
 
-Measured on a first cold setup: renaming `06_tools` to `06_werkzeuge` in Obsidian took the run from
-21 categories to 20 — **exit 0, no message on stderr, and the folder simply absent from every
-index.** The index generator, the link checker and the duplicate check all reported green over it,
-because none of them was asked what *should* have been there. SECTION 3 explicitly lets the user name
-their own folders, which is exactly why the generator has to notice when they do.
+That line is the whole safeguard, so do not drop it as noise. Measured on a first cold setup:
+renaming `06_tools` to `06_werkzeuge` in Obsidian took the run from 21 categories to 20 — **exit 0,
+no message, and the folder simply absent from every index.** Adoption fixes the missing half of
+that: the notes now reach an index. The printed line fixes the other half, and it is the only
+warning a *mistyped* folder name will ever get — `00_Nots` is indistinguishable from a deliberate
+new category except that the user reads the line and says "I did not mean that".
 
-The reverse case is the same defect: a configured category whose folder does not exist returns an
-empty list today. Say so — `03_technical_docs: configured category has no folder` — rather than
-counting it as zero clean entries.
+**Skip what is not a category.** `.git`, `.obsidian`, `__pycache__`, `.trash`, `.venv`,
+`node_modules` and anything starting with a dot are never adopted. One `node_modules` at project
+level would otherwise become a permanent category with an index file inside it.
+
+A folder that cannot be created — permissions, a file of that name in the way — **is** a defect,
+with the OS error attached. That is the one case here where the run goes red.
 
 ### Exit code
 
@@ -790,7 +805,7 @@ resolves it (SECTION 5). Write it escaped, do not dodge the table.
 
 ---
 
-## SECTION 9 — Acceptance test: prove the guards fail when they should
+## SECTION 9 — Acceptance test: prove the guards react as specified
 
 **Do not skip this, and do not report the setup as working before it passes.** Everything up to here
 proves the scripts run on clean input. That is the half that cannot fail. A guard is only worth
@@ -810,8 +825,11 @@ parsing console output, which wraps at the terminal width and differs per shell.
 `--repeat 10` runs ten full passes; use it after any change to a guard.
 
 The table below is what the driver checks, and it is the specification a changed script must still
-meet. Fixture 0 is the healthy control: a suite that only ever sees bad input is exactly as blind as
-one that only ever sees good input.
+meet. **Eight fixtures require red, two require green** — fixture 0 is the healthy control and
+fixture 9 is input the structure explicitly allows. A suite that only ever sees bad input is exactly
+as blind as one that only ever sees good input. The driver counts the two kinds from the fixture
+list rather than printing a fixed sentence, so a fixture that changes sides changes the summary with
+it.
 
 | # | Fixture | Required behaviour | Fails how, if broken |
 |---|---|---|---|
@@ -824,7 +842,7 @@ one that only ever sees good input.
 | 6 | nothing — run the index generator twice | second run leaves `git status` empty | every later `git status` is noise |
 | 7 | point the suite runner at an empty directory | reports **"0 suites collected"** and does **not** say green | "all green" over zero tests |
 | 8 | remove or blank a scheduled job's run log | freshness check says **"did not run"**, not "fine" | a scheduler that stopped is indistinguishable from a healthy one |
-| 9 | a folder the config does not know — `<Project>/99_extra/` with one note in it | index run names the folder and exits **non-zero** | exit 0 and the folder is in no index; measured on a real setup, a renamed `06_tools` took the count from 21 categories to 20 without a word |
+| 9 | a folder made by hand — `<Project>/99_extra/` with one note in it | folder survives, gets its own index containing the note, run exits **0** and **names it on stdout** | either half alone is the failure: red on a folder the structure allows, or green while the note reaches no index — measured on a real setup, a renamed `06_tools` took the count from 21 categories to 20 without a word |
 
 The driver leaves nothing behind — every fixture vault lives under the system temp directory and is
 deleted in a `finally` block. After the run, `git status --porcelain` in the real vault must still be
@@ -837,7 +855,7 @@ is invisible from inside a single shell.
 Report it like this, one line per check, and **name any check you did not run**:
 
 ```
-Acceptance: 10/10 checks behaved as specified (9 red on bad input, 1 healthy control green)
+Acceptance: 10/10 checks behaved as specified (8 red on bad input, 2 green on allowed input)
             (or) 8/10 — #5 non-ASCII filename NOT caught, #9 not run
 ```
 

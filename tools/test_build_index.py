@@ -12,7 +12,13 @@ from pathlib import Path
 sys.path.insert(0, str(Path(__file__).resolve().parent))
 
 from _testkit import make_vault, run_tool, write_note
-from vault_paths import category_index_name, project_index_name, root_index_name
+from vault_paths import (
+    CATEGORY_FOLDERS,
+    RUN_LOG_RELPATH,
+    category_index_name,
+    project_index_name,
+    root_index_name,
+)
 
 
 class BuildIndexTest(unittest.TestCase):
@@ -97,18 +103,67 @@ class BuildIndexTest(unittest.TestCase):
         finally:
             shutil.rmtree(vault.parent, ignore_errors=True)
 
-    def test_unknown_folder_is_a_defect(self):
-        """A renamed 06_tools once dropped a real run from 21 categories to 20, silently."""
+    # ------------------------------------------------------- scaffolding and adoption (#6)
+
+    def test_empty_project_folder_gets_its_categories(self):
+        """Requirement 1 of #6: a project folder a user creates is empty and must not stay so."""
+        fresh = self.vault / "ProjektNeu"
+        fresh.mkdir()
+        code, out, err = run_tool("build_index.py", "--vault", fresh)
+        self.assertEqual(code, 0, err)
+        for folder in CATEGORY_FOLDERS:
+            self.assertTrue((fresh / folder).is_dir(), f"{folder} not created")
+            self.assertTrue((fresh / folder / category_index_name("ProjektNeu", folder)).exists())
+        self.assertIn("created", out)
+        self.assertIn("ProjektNeu/00_Notes", out)
+
+    def test_hand_made_folder_is_adopted_and_indexed(self):
+        """Requirement 2 of #6: it stays where it is and gets an index of its own."""
+        (self.project / "Rechnungen").mkdir()
+        write_note(self.project / "Rechnungen" / "eine-rechnung.md", title="Eine Rechnung")
+        code, out, err = run_tool("build_index.py", "--vault", self.project)
+        self.assertEqual(code, 0, err)
+        self.assertTrue((self.project / "Rechnungen").is_dir(), "the folder was moved or removed")
+        text = self.index_text("Rechnungen")
+        self.assertIn("[[ProjektEins/Rechnungen/eine-rechnung|Eine Rechnung]]", text)
+        self.assertIn("1 entries in 7 categories", out)
+
+    def test_adoption_is_announced_and_logged(self):
+        """Adopting silently is the old defect wearing a green exit code.
+
+        A renamed 06_tools once dropped a real run from 21 categories to 20 with no message.
+        Adoption keeps the notes indexed; the printed line is what makes a typo'd folder name
+        visible at all.
+        """
         (self.project / "06_werkzeuge").mkdir()
         write_note(self.project / "06_werkzeuge" / "verlorene-notiz.md", title="Verloren")
         code, out, err = run_tool("build_index.py", "--vault", self.project)
-        self.assertEqual(code, 1, out)
-        self.assertIn("06_werkzeuge", err)
+        self.assertEqual(code, 0, err)
+        self.assertIn("adopted", out)
+        self.assertIn("ProjektEins/06_werkzeuge", out)
+        log = (self.vault / RUN_LOG_RELPATH).read_text(encoding="utf-8")
+        self.assertIn("1 adopted", log)
 
-    def test_healthy_control_has_no_unknown_folder(self):
+    def test_skip_dirs_are_never_adopted(self):
+        """__pycache__ under 06_tools is normal. As a category it would be indexed forever."""
+        (self.project / "__pycache__").mkdir()
+        (self.project / ".obsidian").mkdir()
         code, out, err = run_tool("build_index.py", "--vault", self.project)
         self.assertEqual(code, 0, err)
-        self.assertNotIn("not a configured category", err)
+        self.assertNotIn("__pycache__", out)
+        self.assertNotIn(".obsidian", out)
+        self.assertFalse((self.project / "__pycache__" / "INDEX - ProjektEins __pycache__.md").exists())
+
+    def test_second_run_after_adoption_creates_nothing_new(self):
+        (self.project / "Rechnungen").mkdir()
+        run_tool("build_index.py", "--vault", self.project)
+        before = {p: p.read_bytes() for p in self.project.rglob("INDEX - *.md")}
+        code, out, err = run_tool("build_index.py", "--vault", self.project)
+        after = {p: p.read_bytes() for p in self.project.rglob("INDEX - *.md")}
+        self.assertEqual(code, 0, err)
+        self.assertEqual(before, after)
+        self.assertNotIn("created", out)   # nothing was missing the second time
+        self.assertIn("adopted", out)      # but the folder is still worth naming
 
     # -------------------------------------------------------------- invariants
 

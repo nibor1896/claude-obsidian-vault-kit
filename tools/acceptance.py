@@ -1,13 +1,18 @@
-"""Acceptance test: prove every guard goes red on bad input, on this machine.
+"""Acceptance test: prove each guard reacts as specified to one input, on this machine.
 
-Nine fixtures, each built in a throwaway vault under the system temp directory. The verdict
-comes from process exit codes and from files on disk -- never from parsing console text, which
-wraps at the terminal width and differs per shell.
+Ten fixtures, each built in a throwaway vault under the system temp directory. Eight hand a
+guard bad input and require it to go red; two hand the tools input the structure explicitly
+allows and require them to stay green. Both halves are needed: a suite that only ever sees
+bad input is exactly as blind as one that only ever sees good input.
+
+The verdict comes from process exit codes and from files on disk -- never from parsing console
+text, which wraps at the terminal width and differs per shell. The one exception is fixture 9,
+where the printed line *is* the specified behaviour.
 
     python acceptance.py            one pass
     python acceptance.py --repeat 10
 
-Exit 0 only when all nine passed in every pass.
+Exit 0 only when all ten behaved as specified in every pass.
 """
 
 import argparse
@@ -123,11 +128,22 @@ def fixture_8_freshness_without_log(vault, project):
     return code != 0 and "did not run" in (out + err)
 
 
-def fixture_9_unknown_folder(vault, project):
+def fixture_9_hand_made_folder_is_adopted(vault, project):
+    """The second green-expected check, and the reason it is not a red one.
+
+    A folder the user makes by hand is allowed by the structure, so the run must not go red
+    over it -- but it must not swallow it either. What is checked here is all three parts:
+    the folder survives, its note reaches an index, and the run names it on stdout. Drop the
+    third and this passes over exactly the silent behaviour it exists to forbid.
+    """
     (project / "99_extra").mkdir(exist_ok=True)
     write_note(project / "99_extra" / "verlorene-notiz.md", title="Verloren")
-    code, _, err = run_tool("build_index.py", "--vault", project)
-    return code != 0 and "99_extra" in err
+    code, out, _ = run_tool("build_index.py", "--vault", project)
+    if code != 0 or not (project / "99_extra").is_dir():
+        return False
+    if "99_extra" not in out or "adopted" not in out:
+        return False
+    return "verlorene-notiz" in index_text(project, "99_extra")
 
 
 def control_clean_vault_is_green(vault, project):
@@ -159,24 +175,31 @@ def control_clean_vault_is_green(vault, project):
     return bool(before) and before == after
 
 
+# The third column is what the fixture expects of the tool: "red" means the guard must refuse
+# the input, "green" means the tool must accept it and keep working. Counted from here rather
+# than written into the summary line -- the sentence "9 guards red, 1 control green" was true
+# until a fixture changed sides, and nothing would have caught that.
 FIXTURES = [
-    ("0 healthy control: clean vault is green and stable", control_clean_vault_is_green),
-    ("1 note without title", fixture_1_missing_title),
-    ("2 markdown debris in summary", fixture_2_summary_debris),
-    ("3 dead wikilink", fixture_3_dead_wikilink),
-    ("4 forbidden character in filename", fixture_4_forbidden_filename),
-    ("5 non-ASCII filename stays in the denominator", fixture_5_non_ascii_filename),
-    ("6 second index run changes nothing", fixture_6_second_run_is_a_noop),
-    ("7 suite runner on an empty directory", fixture_7_empty_suite_dir),
-    ("8 freshness check without a run log", fixture_8_freshness_without_log),
-    ("9 folder that is not a configured category", fixture_9_unknown_folder),
+    ("0 healthy control: clean vault is green and stable", control_clean_vault_is_green, "green"),
+    ("1 note without title", fixture_1_missing_title, "red"),
+    ("2 markdown debris in summary", fixture_2_summary_debris, "red"),
+    ("3 dead wikilink", fixture_3_dead_wikilink, "red"),
+    ("4 forbidden character in filename", fixture_4_forbidden_filename, "red"),
+    ("5 non-ASCII filename stays in the denominator", fixture_5_non_ascii_filename, "red"),
+    ("6 second index run changes nothing", fixture_6_second_run_is_a_noop, "red"),
+    ("7 suite runner on an empty directory", fixture_7_empty_suite_dir, "red"),
+    ("8 freshness check without a run log", fixture_8_freshness_without_log, "red"),
+    ("9 hand-made folder is adopted, indexed and named", fixture_9_hand_made_folder_is_adopted, "green"),
 ]
+
+RED = sum(1 for _, _, kind in FIXTURES if kind == "red")
+GREEN = len(FIXTURES) - RED
 
 
 def one_pass(verbose=True):
     """Every fixture gets its own vault, so one fixture cannot poison the next."""
     results = []
-    for label, fn in FIXTURES:
+    for label, fn, _kind in FIXTURES:
         vault = make_vault((PROJECT,))
         try:
             try:
@@ -206,7 +229,8 @@ def main(argv=None):
                 failures.append((run, label))
         passed = len(FIXTURES) - sum(1 for r, _ in failures if r == run)
         print(f"{passed}/{len(FIXTURES)} checks behaved as specified — "
-              f"9 guards red on bad input, 1 healthy control green (pass {run})")
+              f"{RED} guards red on bad input, {GREEN} green on input the structure allows "
+              f"(pass {run})")
 
     if failures:
         print(f"\n{len(failures)} failing fixture runs:", file=sys.stderr)

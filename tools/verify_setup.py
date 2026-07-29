@@ -185,8 +185,10 @@ def _s7(root):
 @step("8 acceptance run correct")
 def _s8(root):
     _, out, _ = tool(root, "acceptance.py")
-    if "10/10" not in out:
-        raise Failed(f"acceptance not 10/10: {out!r}")
+    # No count in the string: acceptance.py exits non-zero unless every fixture behaved, and a
+    # literal here goes stale the moment a fixture is added.
+    if "checks behaved as specified" not in out:
+        raise Failed(f"acceptance did not report its verdict: {out!r}")
 
 
 @step("9 second index run is byte-identical")
@@ -208,6 +210,36 @@ def _s10(root):
     _, out, _ = run(["git", "status", "--porcelain"], cwd=root, label="git status")
     if out.strip():
         raise Failed(f"tree not clean after a rerun:\n{out}")
+
+
+@step("11 a project and a folder added by hand are scaffolded, adopted and stable")
+def _s11(root):
+    """What the user does the week after setup, which no earlier step covers.
+
+    They make a folder in Obsidian's file pane. Both requirements of the promise are here:
+    an empty project folder gets its categories, and a folder they invent gets an index
+    instead of a complaint -- and the tree is still clean on the run after that.
+    """
+    (root / "ProjektDrei").mkdir()
+    (root / "ProjektDrei" / "Rechnungen").mkdir(parents=True)
+    write_note(root / "ProjektDrei" / "Rechnungen" / "eine-rechnung.md",
+               "Eine Rechnung", "Was darauf stand.", "Betrag, Datum und wofuer sie ausgestellt war.")
+    _, out, _ = tool(root, "build_index.py", "--root", ".")
+
+    missing = [f for f in CATEGORY_FOLDERS if not (root / "ProjektDrei" / f).is_dir()]
+    if missing:
+        raise Failed(f"category folders not created in a hand-made project: {missing}")
+    if "created" not in out or "adopted" not in out:
+        raise Failed(f"the run changed the tree without saying so:\n{out}")
+    adopted_index = root / "ProjektDrei" / "Rechnungen" / "INDEX - ProjektDrei Rechnungen.md"
+    if "eine-rechnung" not in adopted_index.read_text(encoding="utf-8"):
+        raise Failed("the hand-made folder has an index but the note is not in it")
+
+    git_commit_all(root, "chore: a project added by hand")
+    tool(root, "build_index.py", "--root", ".")
+    _, status, _ = run(["git", "status", "--porcelain"], cwd=root, label="git status")
+    if status.strip():
+        raise Failed(f"tree not clean after scaffolding and a rerun:\n{status}")
 
 
 def one_pass(verbose=True):

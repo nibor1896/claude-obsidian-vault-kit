@@ -7,6 +7,11 @@
 Reads FRONTMATTER ONLY. There is no code path in this file that opens a note body, which
 is the structural guarantee that prose can never leak into the index.
 
+It also owns the shape of a project: a project folder that is missing category folders gets
+them, and a folder the user made by hand becomes a category of its own. Both are printed --
+they change the tree, and a run that changes the tree silently is the failure this whole
+file exists to prevent. Neither is a defect.
+
 Exit code is 0 only when every entry was clean. Otherwise each defect is printed as
 "<filename>: <what is wrong>" on stderr and the exit code is non-zero.
 """
@@ -248,15 +253,67 @@ def write_if_changed(path, content):
     return True
 
 
+def scaffold(project_dir, defects):
+    """Create the category folders this project is missing. Returns the names created.
+
+    A project folder a user makes in the file pane is empty. Leaving it that way means the
+    user has to know the six names and type them correctly before anything they write is
+    indexed -- so the run creates them instead, and says which ones it made.
+    """
+    created = []
+    for folder_name in CATEGORY_FOLDERS:
+        folder = project_dir / folder_name
+        if folder.is_dir():
+            continue
+        try:
+            folder.mkdir(parents=True, exist_ok=True)
+        except OSError as exc:
+            defects.add(f"{project_dir.name}/{folder_name}", f"category folder not created ({exc})")
+            continue
+        created.append(folder_name)
+    return created
+
+
+def project_categories(project_dir):
+    """Every category of this project: the configured ones first, then the hand-made ones.
+
+    CATEGORY_FOLDERS is what a project is *created* with, not the only thing it may hold.
+    A folder the user adds themselves is a category they meant to have, so it is adopted and
+    indexed like any other. Returns (folder_names, adopted_names).
+
+    The alternative -- calling an unknown folder a defect -- was the behaviour up to here, and
+    it made the run red for a user doing something the structure explicitly allows. What must
+    not happen is the *silent* version: a renamed 06_tools once took a real run from 21
+    categories to 20 with exit 0 and no message, and every note in it was simply gone from
+    every index. Adoption keeps those notes indexed; main() prints the folder either way.
+    """
+    known = set(CATEGORY_FOLDERS)
+    adopted = []
+    for child in sorted(project_dir.iterdir()):
+        if not child.is_dir() or child.name.startswith(".") or child.name in SKIP_DIRS:
+            continue
+        if child.name not in known:
+            adopted.append(child.name)
+    return CATEGORY_FOLDERS + adopted, adopted
+
+
 def build_project(vault_root, project_dir, defects):
-    """Write every category index plus the project hub. Returns (entries, categories)."""
+    """Write every category index plus the project hub.
+
+    Returns (entries, categories, created, adopted) -- the last two are folder names, and main()
+    prints them. A run that creates a folder and does not say so is a run that changed the tree
+    behind the user's back.
+    """
     project_dir = Path(project_dir).resolve()
     project_name = project_dir.name
     today = date.today().isoformat()
     total_entries = 0
     category_rows = []
 
-    for folder_name in CATEGORY_FOLDERS:
+    created = scaffold(project_dir, defects)
+    folder_names, adopted = project_categories(project_dir)
+
+    for folder_name in folder_names:
         folder = project_dir / folder_name
         if not folder.is_dir():
             continue
@@ -277,17 +334,6 @@ def build_project(vault_root, project_dir, defects):
         write_if_changed(folder / category_index_name(project_name, folder_name), "\n".join(lines))
         category_rows.append((folder_name, len(entries)))
 
-    # A folder nobody configured is a folder nobody indexes. Renaming 06_tools in the file pane
-    # once took a real run from 21 categories to 20 with exit 0 and no message -- the notes were
-    # simply gone from every index. Say it instead.
-    known = set(CATEGORY_FOLDERS)
-    for child in sorted(project_dir.iterdir()):
-        if not child.is_dir() or child.name.startswith("."):
-            continue
-        if child.name not in known:
-            defects.add(f"{project_name}/{child.name}",
-                        "folder is not a configured category - nothing in it reaches an index")
-
     lines = [HEADER.format(name=project_name, today=today)]
     root_hub = Path(vault_root).resolve() / root_index_name(vault_root)
     lines.append(f"↑ {link_to(vault_root, root_hub, Path(vault_root).resolve().name, defects)}\n")
@@ -299,7 +345,7 @@ def build_project(vault_root, project_dir, defects):
     lines.append(f"_{total_entries} entries in {len(category_rows)} categories._")
     lines.append("")
     write_if_changed(project_dir / project_index_name(project_dir), "\n".join(lines))
-    return total_entries, len(category_rows)
+    return total_entries, len(category_rows), created, adopted
 
 
 def build_root(vault_root, defects):
@@ -308,11 +354,15 @@ def build_root(vault_root, defects):
     lines = [HEADER.format(name=vault_root.name, today=today)]
     total_entries = 0
     total_categories = 0
+    created_all = []
+    adopted_all = []
     projects = project_dirs(vault_root)
     for project in projects:
-        entries, categories = build_project(vault_root, project, defects)
+        entries, categories, created, adopted = build_project(vault_root, project, defects)
         total_entries += entries
         total_categories += categories
+        created_all += [f"{project.name}/{n}" for n in created]
+        adopted_all += [f"{project.name}/{n}" for n in adopted]
         target = project / project_index_name(project)
         lines.append(
             f"- {link_to(vault_root, target, project.name, defects)} "
@@ -322,7 +372,7 @@ def build_root(vault_root, defects):
     lines.append(f"_{len(projects)} projects · {total_entries} entries in {total_categories} categories._")
     lines.append("")
     write_if_changed(vault_root / root_index_name(vault_root), "\n".join(lines))
-    return len(projects), total_entries, total_categories
+    return len(projects), total_entries, total_categories, created_all, adopted_all
 
 
 # --------------------------------------------------------------------------- uniqueness
@@ -360,7 +410,7 @@ def main(argv=None):
         if not vault_root.is_dir():
             print(f"not a directory: {vault_root}", file=sys.stderr)
             return 2
-        projects, entries, categories = build_root(vault_root, defects)
+        projects, entries, categories, created, adopted = build_root(vault_root, defects)
         names = check_unique_basenames(vault_root, defects)
         print(f"{entries} entries in {categories} categories · {projects} projects · {names} distinct filenames")
     else:
@@ -369,15 +419,26 @@ def main(argv=None):
             print(f"not a directory: {project_dir}", file=sys.stderr)
             return 2
         vault_root = project_dir.parent
-        entries, categories = build_project(vault_root, project_dir, defects)
+        entries, categories, created_names, adopted_names = build_project(vault_root, project_dir, defects)
+        created = [f"{project_dir.name}/{n}" for n in created_names]
+        adopted = [f"{project_dir.name}/{n}" for n in adopted_names]
         names = check_unique_basenames(vault_root, defects)
         print(f"{entries} entries in {categories} categories · {project_dir.name} · {names} distinct filenames")
+
+    # Neither of these is a defect -- the run does exactly what the structure allows. Both change
+    # or extend the tree, so both are said out loud. A typo'd folder name shows up here as a
+    # category the user did not mean to have, which is the only warning that case ever gets.
+    for name in created:
+        print(f"  created  {name} — category folder was missing")
+    for name in adopted:
+        print(f"  adopted  {name} — folder made by hand, indexed as a category")
 
     if defects.skipped:
         print(f"skipped {defects.skipped} unreadable files", file=sys.stderr)
 
     status = "ok" if not defects else "defects"
-    log_run(vault_root, "build_index", status, f"{len(defects)} defects")
+    log_run(vault_root, "build_index", status,
+            f"{len(defects)} defects · {len(created)} created · {len(adopted)} adopted")
 
     if defects:
         defects.report()

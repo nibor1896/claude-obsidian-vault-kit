@@ -136,9 +136,12 @@ def verify():
             print(f"{OUT.name}: embedded copy differs from tools/: {drifted}", file=sys.stderr)
             return 1
 
+        # Substrings without counts on purpose. Exit 0 already means every check passed, and a
+        # literal "10/10" here is a number in a second place that goes stale the moment a
+        # fixture or a step is added -- which is the defect this file checks the prose for.
         for script, want in (("run_suites.py", "suites green"),
-                             ("acceptance.py", "10/10"),
-                             ("verify_setup.py", "10/10 steps")):
+                             ("acceptance.py", "checks behaved as specified"),
+                             ("verify_setup.py", "steps every time")):
             result = subprocess.run([sys.executable, str(work / script)],
                                     capture_output=True, cwd=str(work))
             out = result.stdout.decode("utf-8", errors="replace")
