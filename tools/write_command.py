@@ -16,8 +16,13 @@ A command file removes all three by spelling out the answers once, per vault, wi
 filled in. It is a convenience for Claude Code and nothing depends on it: the workflow page in
 `05_workflows` carries the same chain in prose for anyone working in a browser.
 
-    python write_command.py --vault <VaultRoot> --target vault --shell powershell
-    python write_command.py --vault <VaultRoot> --target home  --shell posix
+    python write_command.py --vault <VaultRoot> --shell powershell
+    python write_command.py --vault <VaultRoot> --shell posix
+
+THE DESTINATION IS ALWAYS `~/.claude/commands/vaultkit.md`, AND THERE IS NO OPTION. An in-vault
+copy under `<VaultRoot>/.claude/commands/` was offered once and taken out again: it fires only in
+a session started at the vault root, and a sync command that demands a particular working
+directory is not one anybody uses. The file holds absolute paths, so it needs no cwd at all.
 
 CREATED WHEN MISSING, NEVER OVERWRITTEN, same as the note templates. A command file is there to
 be edited -- the user adds their own steps -- and a tool that rewrites it every run eats that
@@ -182,17 +187,18 @@ def command_text(vault_root, projects, shell):
     return "\n".join(lines)
 
 
-def target_path(vault_root, target):
-    if target == "home":
-        return Path.home() / ".claude" / "commands" / f"{COMMAND_NAME}.md"
-    return Path(vault_root).resolve() / ".claude" / "commands" / f"{COMMAND_NAME}.md"
+def target_path():
+    """Always the user's own commands folder. No parameter, because there is no second answer.
+
+    Taking a vault root here would keep the door open for an in-vault copy, and that copy is
+    exactly what was removed: it loads only in a session started at the vault root.
+    """
+    return Path.home() / ".claude" / "commands" / f"{COMMAND_NAME}.md"
 
 
 def main(argv=None):
     parser = argparse.ArgumentParser(description=__doc__)
     parser.add_argument("--vault", required=True, help="vault root")
-    parser.add_argument("--target", choices=("vault", "home"), default="vault",
-                        help="vault: <VaultRoot>/.claude/commands · home: ~/.claude/commands")
     parser.add_argument("--shell", choices=("powershell", "posix"), default="powershell",
                         help="the syntax the paths are written in")
     args = parser.parse_args(argv)
@@ -202,7 +208,7 @@ def main(argv=None):
         print(f"not a directory: {vault_root}", file=sys.stderr)
         return 2
 
-    target = target_path(vault_root, args.target)
+    target = target_path()
     projects = project_dirs(vault_root)
     if not projects:
         # Not a silent skip: a vault with no projects means the wrong path was given, and a
@@ -222,8 +228,8 @@ def main(argv=None):
         print(f"{target} already exists and was not written by this kit — nothing written.\n"
               f"  It carries no `{MARKER_PREFIX} … -->` line, so it is your own command of the "
               f"same name, and it keeps the name.\n"
-              f"  Rename or remove it and run this again, or choose "
-              f"{'the vault' if args.target == 'home' else 'your home'} folder instead.",
+              f"  Rename or remove your own file and run this again; there is no second location "
+              f"to fall back to, because a command anywhere else would not load.",
               file=sys.stderr)
         log_run(vault_root, "write_command", "blocked", f"{target} held by a foreign command")
         return 1

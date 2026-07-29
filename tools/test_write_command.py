@@ -5,9 +5,12 @@ are not "a file appeared" but "the file answers them". `--vault` means a PROJECT
 build_index.py and the ROOT after check_links.py; getting that backwards is the failure the
 command is written to prevent, and a test that only checks the file exists would pass over it.
 
-Nothing here ever writes with `--target home`. That path is outside the vault -- it is the
-machine's real Claude config -- and a suite that writes there to prove it can is a suite that
-edits the user's setup. The home path is checked as a value, not as a side effect.
+THE DESTINATION IS THE USER'S OWN `~/.claude/commands/`, AND IT IS THE ONLY ONE. That is also
+what makes this suite dangerous to write badly: run it against the real home folder and it edits
+the setup of whoever runs it. Every case here redirects `Path.home()` into a throwaway folder via
+`run_tool(home=...)`, so the tool takes its real path, writes for real, and touches nothing
+outside the tempdir. Checking the path as a value only -- which is what this suite did while an
+in-vault option still existed -- left the one destination that ships completely untested.
 """
 
 import shutil
@@ -28,13 +31,16 @@ COMMAND_RELPATH = Path(".claude") / "commands" / "vaultkit.md"
 class WriteCommandTest(unittest.TestCase):
     def setUp(self):
         self.vault = make_vault(("ProjektEins", "ProjektZwei"))
-        self.target = self.vault / COMMAND_RELPATH
+        # A stand-in for the user's home folder, inside the same tempdir the vault lives in.
+        self.home = self.vault.parent / "FakeHome"
+        self.home.mkdir(parents=True, exist_ok=True)
+        self.target = self.home / COMMAND_RELPATH
 
     def tearDown(self):
         shutil.rmtree(self.vault.parent, ignore_errors=True)
 
     def write(self, *extra):
-        return run_tool("write_command.py", "--vault", self.vault, "--target", "vault", *extra)
+        return run_tool("write_command.py", "--vault", self.vault, *extra, home=self.home)
 
     # ------------------------------------------------------------------ control
 
@@ -43,6 +49,16 @@ class WriteCommandTest(unittest.TestCase):
         self.assertEqual(code, 0, err)
         self.assertTrue(self.target.is_file(), f"no command file: {out} {err}")
         self.assertIn("vaultkit.md", out, "it wrote a file outside the vault without saying so")
+
+    def test_it_writes_into_the_home_folder_and_not_into_the_vault(self):
+        """The destination is not a preference. A copy under the vault root would load only in a
+        session started at that root, which is why the option was taken out again -- and why the
+        vault must come back from this run with nothing added to it."""
+        self.write()
+        self.assertTrue(self.target.is_file())
+        self.assertFalse((self.vault / COMMAND_RELPATH).exists(),
+                         "a command was written into the vault, where it would not load")
+        self.assertFalse((self.vault / ".claude").exists())
 
     def test_the_frontmatter_carries_a_description_and_nothing_else(self):
         """All five documented fields are optional. Every one that is set is one more thing to
@@ -124,6 +140,9 @@ class WriteCommandTest(unittest.TestCase):
         overwritten -- but nothing is written either, and a zero exit there would let the setup
         report the command as ready while the stranger keeps the name. Both directions are
         checked here, because the guard is only worth having if it can tell them apart.
+
+        This is the case that could not be tested at all while it only ran against the vault
+        copy: the collision it guards against happens in the home folder, by definition.
         """
         self.target.parent.mkdir(parents=True, exist_ok=True)
         self.target.write_text("---\ndescription: My own command\n---\n\nDo my thing.\n",
@@ -157,14 +176,22 @@ class WriteCommandTest(unittest.TestCase):
         self.assertEqual(code, 0, err)
         self.assertEqual(self.target.read_text(encoding="utf-8"), mine)
 
-    def test_the_command_file_does_not_enter_the_note_denominators(self):
-        """It is configuration, not knowledge, and a guard that counts it reports a wrong n/m.
+    def test_a_dot_claude_folder_inside_the_vault_stays_out_of_the_denominators(self):
+        """Configuration is not knowledge, and a guard that counts it reports a wrong n/m.
 
-        Measured 2026-07-29 with `.claude` missing from SKIP_DIRS: writing this one file took
+        The command no longer lands in the vault, but a `.claude/` folder there is ordinary --
+        the user may keep project settings beside their notes, and the setup itself is often
+        started in such a folder. So the guards are held to skipping it, with a file written by
+        hand rather than by the tool.
+
+        Measured 2026-07-29 with `.claude` missing from SKIP_DIRS: one such file took
         check_links.py from 26 files scanned to 27, check_duplicates.py from 4 notes to 5 and
         from 6 compared pairs to 10, and the generator from 26 distinct filenames to 27. Nothing
         went red, which is exactly why it needs a test -- the numbers were quietly wrong and no
         run had a reason to mention it.
+
+        Recipe without the fix: take ".claude" out of SKIP_DIRS in vault_paths.py and run this
+        suite there; this case fails and no other does.
         """
         write_note(self.vault / "ProjektEins" / "00_Notes" / "eine-erkenntnis.md",
                    title="Eine Erkenntnis")
@@ -172,31 +199,31 @@ class WriteCommandTest(unittest.TestCase):
         before = [run_tool(script, "--vault", self.vault)[1]
                   for script in ("check_links.py", "check_duplicates.py")]
 
-        self.write()
-        self.assertTrue(self.target.is_file())
+        intruder = self.vault / COMMAND_RELPATH
+        intruder.parent.mkdir(parents=True, exist_ok=True)
+        intruder.write_text("---\ndescription: Something the user keeps here\n---\n\nBody.\n",
+                            encoding="utf-8", newline="\n")
         after = [run_tool(script, "--vault", self.vault)[1]
                  for script in ("check_links.py", "check_duplicates.py")]
         self.assertEqual(before, after,
-                         "the command file changed what the guards count as notes")
+                         "a file under .claude/ changed what the guards count as notes")
 
     def test_a_vault_without_projects_is_refused_not_written_empty(self):
         """A command listing no projects is a working file that does nothing. It means the wrong
         path was given, and that has to be said, not written out."""
         empty = self.vault.parent / "NotAVault"
         empty.mkdir()
-        code, out, err = run_tool("write_command.py", "--vault", empty, "--target", "vault")
+        code, out, err = run_tool("write_command.py", "--vault", empty, home=self.home)
         self.assertNotEqual(code, 0, "an empty vault produced a command file")
         self.assertIn("no projects", out + err)
-        self.assertFalse((empty / COMMAND_RELPATH).exists())
+        self.assertFalse(self.target.exists())
 
-    def test_the_home_target_is_outside_the_vault(self):
-        """Checked as a value, never written. `~/.claude/commands/` is the real config folder of
-        whoever runs this suite, and it is also why SECTION 1 has to ask before choosing it: the
-        name collides silently with a command the user may already have."""
-        home = write_command.target_path(self.vault, "home")
-        self.assertEqual(home, Path.home() / ".claude" / "commands" / "vaultkit.md")
-        self.assertNotEqual(home, write_command.target_path(self.vault, "vault"))
-        self.assertFalse(str(home).startswith(str(self.vault)))
+    def test_there_is_exactly_one_destination_and_it_is_the_home_folder(self):
+        """`target_path()` takes no argument on purpose. A parameter here would be the door back
+        to an in-vault copy, and that copy is the thing that got removed -- it loads only in a
+        session started at the vault root, which is not how anyone runs a sync command."""
+        self.assertEqual(write_command.target_path(),
+                         Path.home() / ".claude" / "commands" / "vaultkit.md")
 
 
 if __name__ == "__main__":

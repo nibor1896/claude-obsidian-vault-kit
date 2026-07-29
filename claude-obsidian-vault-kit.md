@@ -1,4 +1,4 @@
-<!-- kit-version: 7bcddd232032 -->
+<!-- kit-version: 46e33fab27ae -->
 # Claude × Obsidian — Vault Kit
 
 **What this file is:** a setup contract for Claude. Drop it into a Claude conversation and say
@@ -91,8 +91,9 @@ document in order. It is a contract, not a suggestion.
 - The shipped `tools/` folder copied into the vault, suites and all.
 - The four starting pages named in SECTION 8 — and **no other notes**. Nothing invented.
 - Backup and git set up per SECTION 7.
-- **A `/vaultkit` command, if and only if 1.6 asked for one** — in the location they picked, with
-  the path it went to shown to them. If they said no, nothing, and no second offer.
+- **A `/vaultkit` command in `~/.claude/commands/`**, with the path it went to shown to the user.
+  If a command of that name was already there, it keeps the name: say so, and do not list
+  `/vaultkit` as delivered.
 - A verification run per SECTION 8, with its output shown to the user.
 - **The acceptance test from SECTION 9, passed.** The setup is not finished until every guard has
   been shown to go red on deliberately bad input on this machine. Clean input proves nothing.
@@ -125,9 +126,6 @@ loud which questions you skipped and what you measured.
 - **1.2 — migration, new production vault, or test vault.**
 - **1.3 — project names, and where their code lives.**
 - **1.4 — the vault path, the backup, git, and whether a remote may be added.**
-- **1.6 — whether to write a `/vaultkit` command, and where.** One of its answers writes outside
-  the vault. A `~/.claude/` folder already on disk answers a different question than this one, the
-  same way an installed Obsidian does in 1.1.
 - **`user.email` — ask, even when an address is sitting right in front of you.** Your session
   context, another repo on the machine, a shell variable, a git credential store: **an address that
   is visible in your environment is not consent to publish it.** It goes into every commit forever,
@@ -229,45 +227,6 @@ Four questions, one call:
 - **OS and shell**, exactly. Every command you emit later depends on this.
 - **Python 3.10+ available?** Check with `python --version` / `python3 --version`. The guard scripts
   are Python. If Python is absent, offer the install and wait.
-
-### 1.6 A `/vaultkit` command — where, or not at all
-
-Ask this in the same round as 1.5. It is the one question in this interview whose "yes" can write
-**outside the vault**, so it falls under operating rule 5 and cannot be inferred, however obvious a
-`~/.claude/` folder on disk makes it look. Same shape as 1.4's "yes to git is not yes to a remote":
-yes to the command is not yes to a location.
-
-```
-Claude Code can run the whole verification chain as one command, /vaultkit.
-Where should it live?
-  1  In the vault           <VaultRoot>/.claude/commands/ — fires only when you start Claude
-                            in this folder, and travels with your backup and your git history
-  2  For every project      ~/.claude/commands/ — works everywhere, but if you already have a
-                            /vaultkit there, YOURS keeps the name and this one is not written
-  3  Don't create one       the chain stays in the workflow page, as prose
-```
-
-- **Option 1 first, and it is the recommendation.** The command holds this vault's absolute paths,
-  so it is about this vault; keeping it inside means a restored backup restores it too.
-- **Option 2 collides with the user's own commands, and the collision is not resolved in their
-  favour by accident.** `write_command.py` never overwrites: it refuses, names the file, and exits
-  non-zero. Say that before they pick it — not "it will be replaced", which is the opposite of what
-  happens. If it refuses, the command was **not** created; do not report `/vaultkit` as ready, and
-  offer option 1 or a different name.
-- **Option 3 is a real answer.** Do not re-offer it later, and do not build it anyway.
-- **This is a Claude Code feature.** If the user works with Claude in a browser, say so and expect
-  option 3 — the workflow page carries the same chain either way, so nothing is lost.
-
-`write_command.py` writes the file (SECTION 8). Do not hand-write it: it fills in every project
-path from the vault as it actually is, which is the part a person retyping gets wrong.
-
-**The vault this setup hands over is empty.** It is structure, tools and the four starting pages from
-SECTION 8 — no imported notes, no migrated memory, no example content. If the user has knowledge
-elsewhere they want in here, that is their own step afterwards, against the frontmatter contract in
-SECTION 4. Do not offer to do it as part of the setup: an import that runs before the structure has
-verified clean makes a failure of the structure indistinguishable from a failure of the import.
-
----
 
 ## SECTION 2 — The doctrine (why the structure is shaped this way)
 
@@ -694,11 +653,12 @@ directory (`.claude/`, `.cursor/`, whatever the harness uses) sits next to the n
 vault's history. A subfolder — `<workdir>/<VaultName>/` — keeps the two apart with no ignore rules to
 maintain.
 
-**That warning is about a vault that landed inside a working folder, not about the one file this
-setup writes on purpose.** If 1.6 chose the in-vault location, `<VaultRoot>/.claude/commands/vaultkit.md`
-is part of the vault's setup and belongs in its history — travelling with the backup is the reason
-that option exists. What must not be versioned is everything else under `.claude/`: sessions,
-settings and caches. The `.gitignore` below handles both, the same way it handles `.obsidian/`.
+**Nothing this setup writes lands in a `.claude/` folder inside the vault.** The `/vaultkit`
+command goes to the user's own `~/.claude/commands/`, outside the vault entirely. Such a folder may
+still turn up here — the user keeps settings beside their notes, or the setup was started in one —
+and none of it belongs in the history: sessions, settings and caches are the agent's state, not
+project knowledge. The `.gitignore` below ignores the whole folder, the same way it handles the
+volatile parts of `.obsidian/`.
 
 **A fresh machine usually has no git identity at all**, and `git commit` then fails with *"Author
 identity unknown"* mid-setup. Check before the first commit and set it **repo-locally** — never
@@ -777,11 +737,10 @@ time it mattered.
 .obsidian/workspace-mobile.json
 .obsidian/graph.json
 
-# Same shape as .obsidian above, for the agent's own folder: the /vaultkit command is part of
-# this vault's setup and belongs in its history; sessions, settings and caches do not. The
-# negation needs the directory itself re-included, which is why it ends in a slash.
-.claude/*
-!.claude/commands/
+# The agent's own folder, if one turns up here: sessions, settings and caches are its state, not
+# project knowledge. Nothing this setup writes lives here -- the /vaultkit command goes to the
+# user's own ~/.claude/commands/ -- so the whole folder is ignored, with no exception to maintain.
+.claude/
 
 # Append-only run log that every tool writes a line to. Tracked, it makes git status dirty after
 # every check, and acceptance fixture 6 permanently noisy. check_freshness.py reads it off disk,
@@ -848,26 +807,32 @@ This is the value the entire update path compares against. `upgrade.py` prints
 the one question the update path exists to answer. Nothing else writes it at setup time:
 `upgrade.py` writes it again when it applies an update, i.e. from the *second* version onwards.
 
-### Write the `/vaultkit` command — only if 1.6 said to
+### Write the `/vaultkit` command
 
-If the user picked a location in **1.6**, run this once, with the location they chose:
+Run this once, before the verification run:
 
 ```bash
 python <VaultRoot>/00_Global/06_tools/write_command.py --vault <VaultRoot> \
-       --target vault|home --shell powershell|posix
+       --shell powershell|posix
 ```
 
-It writes `<location>/.claude/commands/vaultkit.md` with this vault's real paths already in it and
-prints the path it wrote. Show the user that line; with `--target home` the file lands **outside
-the vault**, and operating rule 5 applies. If they chose "none", skip this and say so; nothing
-downstream depends on it.
+It writes `~/.claude/commands/vaultkit.md` — the user's own commands folder, which is the only
+destination and takes no flag — with this vault's real paths already in it, and prints the path it
+wrote. **Show the user that line.** The file lands **outside the vault**, so operating rule 5
+applies: name the path and say what it is for *before* the run, not after.
+
+There is no in-vault alternative, and the reason belongs here so nobody re-adds one: a command
+under `<VaultRoot>/.claude/commands/` loads only in a session started at that exact folder, and a
+sync command that demands a particular working directory is not one anybody uses. This file carries
+absolute paths, so it needs no working directory at all.
 
 **Three outcomes, and only one of them is "done".** It prints a path and exits 0 — written. It
 prints nothing and exits 0 — the file was already there and this kit wrote it, so it was left
 alone, which is correct and is also *not* a fresh install. It prints a refusal and exits
 **non-zero** — a command of that name exists that this kit did not write, most likely the user's
 own; nothing was written and nothing was overwritten. **In that third case `/vaultkit` does not
-exist for this vault. Say so plainly, offer the other location, and do not list it as delivered.**
+exist for this vault. Say so plainly, tell them their own file keeps the name, and do not list it as
+delivered.** There is nowhere else to put it, so the only ways out are their file or a rename.
 A quiet non-write reported as success is the failure this kit has paid for most often.
 
 The command exists because the chain below has three traps in it, and a chain typed from memory
@@ -1381,17 +1346,27 @@ def write_note(path, title="Ein Titel", summary="Eine Zusammenfassung.", bom=Fal
     return path
 
 
-def run_tool(script, *args, strip_io_encoding=True):
+def run_tool(script, *args, strip_io_encoding=True, home=None):
     """Run a tool as a real subprocess. Returns (returncode, stdout, stderr) as UTF-8 text.
 
     PYTHONIOENCODING is removed on purpose: the tools must force UTF-8 themselves, or the
     same suite goes green under PowerShell and red under Git Bash on one machine.
+
+    `home` redirects what `Path.home()` resolves to inside the subprocess, which is the only way
+    to test a tool that writes into the user's own config folder without writing into it. Both
+    variables are set because Python reads USERPROFILE on Windows and HOME elsewhere; setting one
+    on the wrong platform is a no-op that silently leaves the real folder in play.
     """
     env = dict(os.environ)
     env["PYTHONPATH"] = str(TOOLS) + os.pathsep + env.get("PYTHONPATH", "")
     if strip_io_encoding:
         env.pop("PYTHONIOENCODING", None)
         env.pop("PYTHONUTF8", None)
+    if home is not None:
+        env["USERPROFILE"] = str(home)
+        env["HOME"] = str(home)
+        env.pop("HOMEDRIVE", None)
+        env.pop("HOMEPATH", None)
     result = subprocess.run(
         [sys.executable, str(TOOLS / script), *[str(a) for a in args]],
         cwd=str(TOOLS),
@@ -1944,8 +1919,13 @@ A command file removes all three by spelling out the answers once, per vault, wi
 filled in. It is a convenience for Claude Code and nothing depends on it: the workflow page in
 `05_workflows` carries the same chain in prose for anyone working in a browser.
 
-    python write_command.py --vault <VaultRoot> --target vault --shell powershell
-    python write_command.py --vault <VaultRoot> --target home  --shell posix
+    python write_command.py --vault <VaultRoot> --shell powershell
+    python write_command.py --vault <VaultRoot> --shell posix
+
+THE DESTINATION IS ALWAYS `~/.claude/commands/vaultkit.md`, AND THERE IS NO OPTION. An in-vault
+copy under `<VaultRoot>/.claude/commands/` was offered once and taken out again: it fires only in
+a session started at the vault root, and a sync command that demands a particular working
+directory is not one anybody uses. The file holds absolute paths, so it needs no cwd at all.
 
 CREATED WHEN MISSING, NEVER OVERWRITTEN, same as the note templates. A command file is there to
 be edited -- the user adds their own steps -- and a tool that rewrites it every run eats that
@@ -2110,17 +2090,18 @@ def command_text(vault_root, projects, shell):
     return "\n".join(lines)
 
 
-def target_path(vault_root, target):
-    if target == "home":
-        return Path.home() / ".claude" / "commands" / f"{COMMAND_NAME}.md"
-    return Path(vault_root).resolve() / ".claude" / "commands" / f"{COMMAND_NAME}.md"
+def target_path():
+    """Always the user's own commands folder. No parameter, because there is no second answer.
+
+    Taking a vault root here would keep the door open for an in-vault copy, and that copy is
+    exactly what was removed: it loads only in a session started at the vault root.
+    """
+    return Path.home() / ".claude" / "commands" / f"{COMMAND_NAME}.md"
 
 
 def main(argv=None):
     parser = argparse.ArgumentParser(description=__doc__)
     parser.add_argument("--vault", required=True, help="vault root")
-    parser.add_argument("--target", choices=("vault", "home"), default="vault",
-                        help="vault: <VaultRoot>/.claude/commands · home: ~/.claude/commands")
     parser.add_argument("--shell", choices=("powershell", "posix"), default="powershell",
                         help="the syntax the paths are written in")
     args = parser.parse_args(argv)
@@ -2130,7 +2111,7 @@ def main(argv=None):
         print(f"not a directory: {vault_root}", file=sys.stderr)
         return 2
 
-    target = target_path(vault_root, args.target)
+    target = target_path()
     projects = project_dirs(vault_root)
     if not projects:
         # Not a silent skip: a vault with no projects means the wrong path was given, and a
@@ -2150,8 +2131,8 @@ def main(argv=None):
         print(f"{target} already exists and was not written by this kit — nothing written.\n"
               f"  It carries no `{MARKER_PREFIX} … -->` line, so it is your own command of the "
               f"same name, and it keeps the name.\n"
-              f"  Rename or remove it and run this again, or choose "
-              f"{'the vault' if args.target == 'home' else 'your home'} folder instead.",
+              f"  Rename or remove your own file and run this again; there is no second location "
+              f"to fall back to, because a command anywhere else would not load.",
               file=sys.stderr)
         log_run(vault_root, "write_command", "blocked", f"{target} held by a foreign command")
         return 1
@@ -2914,10 +2895,16 @@ def fixture_11_command_is_written_named_and_left_alone(vault, project):
     and the run names what it wrote. Drop the third and a tool that writes into
     `~/.claude/commands/` without a word passes this. That path is outside the vault, which is
     the one place operating rule 5 says nothing may happen quietly.
+
+    `~/.claude/commands/` is also the only destination the tool has, so this fixture redirects
+    `Path.home()` into the throwaway tree instead of checking a lesser path that ships to nobody.
+    Without the redirect this would edit the config of whoever runs the acceptance driver.
     """
-    code, out, _ = run_tool("write_command.py", "--vault", vault, "--target", "vault",
-                            "--shell", "posix")
-    target = vault / ".claude" / "commands" / "vaultkit.md"
+    home = vault.parent / "FakeHome"
+    home.mkdir(parents=True, exist_ok=True)
+    code, out, _ = run_tool("write_command.py", "--vault", vault,
+                            "--shell", "posix", home=home)
+    target = home / ".claude" / "commands" / "vaultkit.md"
     if code != 0 or not target.is_file():
         return False
     if target.name not in out:
@@ -2930,8 +2917,8 @@ def fixture_11_command_is_written_named_and_left_alone(vault, project):
     # Second run: nothing said, nothing written, the hand edit still there.
     edited = text + "\nA line the user added.\n"
     target.write_text(edited, encoding="utf-8", newline="\n")
-    _, second, _ = run_tool("write_command.py", "--vault", vault, "--target", "vault",
-                            "--shell", "posix")
+    _, second, _ = run_tool("write_command.py", "--vault", vault,
+                            "--shell", "posix", home=home)
     if second.strip() or target.read_text(encoding="utf-8") != edited:
         return False
 
@@ -2939,8 +2926,8 @@ def fixture_11_command_is_written_named_and_left_alone(vault, project):
     # zero, which would let a setup report /vaultkit ready while a stranger holds the name.
     foreign = "---\ndescription: A command the user already had\n---\n\nMine.\n"
     target.write_text(foreign, encoding="utf-8", newline="\n")
-    code, out, err = run_tool("write_command.py", "--vault", vault, "--target", "vault",
-                              "--shell", "posix")
+    code, out, err = run_tool("write_command.py", "--vault", vault,
+                              "--shell", "posix", home=home)
     return (code != 0 and target.name in (out + err)
             and target.read_text(encoding="utf-8") == foreign)
 
@@ -3132,10 +3119,18 @@ class Failed(Exception):
     pass
 
 
-def run(cmd, cwd, expect_zero=True, label=""):
+def run(cmd, cwd, expect_zero=True, label="", home=None):
     env = dict(os.environ)
     env.pop("PYTHONIOENCODING", None)
     env.pop("PYTHONUTF8", None)
+    if home is not None:
+        # Redirects Path.home() inside the subprocess. The only way to exercise a tool that
+        # writes into the user's own config folder without writing into it. Both names are set
+        # because Python reads USERPROFILE on Windows and HOME elsewhere.
+        env["USERPROFILE"] = str(home)
+        env["HOME"] = str(home)
+        env.pop("HOMEDRIVE", None)
+        env.pop("HOMEPATH", None)
     result = subprocess.run([str(c) for c in cmd], cwd=str(cwd), env=env, capture_output=True)
     out = result.stdout.decode("utf-8", errors="replace")
     err = result.stderr.decode("utf-8", errors="replace")
@@ -3146,9 +3141,9 @@ def run(cmd, cwd, expect_zero=True, label=""):
     return result.returncode, out, err
 
 
-def tool(vault, script, *args, expect_zero=True):
+def tool(vault, script, *args, expect_zero=True, home=None):
     return run([sys.executable, str(vault / "00_Global" / "06_tools" / script), *args],
-               cwd=vault, expect_zero=expect_zero, label=script)
+               cwd=vault, expect_zero=expect_zero, label=script, home=home)
 
 
 def write_note(path, title, summary, body):
@@ -3428,28 +3423,35 @@ def _s14(root):
     The command exists because `--vault` means a PROJECT after build_index.py and the ROOT after
     check_links.py, and a chain typed from memory gets that wrong. So the file existing proves
     nothing on its own -- what is checked is that the two invocations differ, that the second run
-    leaves a hand edit alone, and that the guards' denominators do not move because of it.
+    leaves a hand edit alone, and that the vault gains nothing from the run.
 
-    Undo recipes, both measured on this machine 2026-07-29 against a copy of tools/:
+    It goes to `~/.claude/commands/`, the only destination there is, with Path.home() redirected
+    into this throwaway tree. An in-vault copy was offered once and removed: it loads only in a
+    session started at the vault root, which is not how a sync command gets used.
+
+    Undo recipes, measured on this machine 2026-07-30 against a copy of tools/:
 
       - Make the `if target.exists():` block in write_command.py's main() unreachable: the hand
         edit is eaten and the second run reports work. verify_setup 13/14, acceptance 11/12,
         test_write_command 8/12.
-      - Remove `.claude` from SKIP_DIRS in vault_paths.py: the last half here fails instead,
-        with the link checker scanning one file more after the command was written than before.
-        verify_setup 13/14, test_write_command 11/12 -- and acceptance stays 12/12, because
-        fixture 11 checks the file and the message, not the denominators. That gap is the
-        reason this step carries the denominator half at all.
+      - Remove `.claude` from SKIP_DIRS in vault_paths.py: the link checker counts a `.claude/`
+        file in the vault as a note. verify_setup 13/14, test_write_command 11/12 -- and
+        acceptance stays 12/12, because fixture 11 checks the file and the message, not the
+        denominators. That gap is the reason this step carries the denominator half at all.
     """
-    target = root / ".claude" / "commands" / "vaultkit.md"
+    home = root.parent / "FakeHome"
+    home.mkdir(parents=True, exist_ok=True)
+    target = home / ".claude" / "commands" / "vaultkit.md"
     _, links_before, _ = tool(root, "check_links.py", "--vault", ".")
 
-    _, out, _ = tool(root, "write_command.py", "--vault", str(root), "--target", "vault",
-                     "--shell", "posix")
+    _, out, _ = tool(root, "write_command.py", "--vault", str(root),
+                     "--shell", "posix", home=home)
     if not target.is_file():
         raise Failed(f"no /vaultkit command at {target}\n{out}")
     if target.name not in out:
         raise Failed(f"a file was written outside the vault tree without being named:\n{out}")
+    if (root / ".claude" / "commands").exists():
+        raise Failed("a command was written into the vault, where it would not load")
 
     text = target.read_text(encoding="utf-8")
     root_arg = f'--root "{root.as_posix()}"'
@@ -3463,33 +3465,29 @@ def _s14(root):
 
     edited = text + "\n## 7 · A step the user added\n"
     target.write_text(edited, encoding="utf-8", newline="\n")
-    _, second, _ = tool(root, "write_command.py", "--vault", str(root), "--target", "vault",
-                        "--shell", "posix")
+    _, second, _ = tool(root, "write_command.py", "--vault", str(root),
+                        "--shell", "posix", home=home)
     if second.strip():
         raise Failed(f"the second run reported work it did not do:\n{second}")
     if target.read_text(encoding="utf-8") != edited:
         raise Failed("a rerun overwrote a hand-edited command file")
 
+    # A `.claude/` folder in the vault is ordinary -- the user may keep settings beside their
+    # notes -- and the guards must not count what is in it. Written by hand here, because the
+    # command itself no longer lands in the vault at all.
+    (root / ".claude").mkdir(exist_ok=True)
+    (root / ".claude" / "settings.json").write_text("{}\n", encoding="utf-8", newline="\n")
     _, links_after, _ = tool(root, "check_links.py", "--vault", ".")
     if links_before != links_after:
-        raise Failed(f"the command file entered the note denominators:\n"
+        raise Failed(f"a file under .claude/ entered the note denominators:\n"
                      f"  before: {links_before.strip()}\n  after:  {links_after.strip()}")
 
-    # The .gitignore promise, asked of git rather than read off the file: commands/ is versioned
-    # because it is part of the setup, everything else under .claude/ is the agent's own state.
-    # `.claude/*` plus `!.claude/commands/` only works because the negation re-includes the
-    # DIRECTORY -- drop the trailing slash and git never looks inside it again.
-    (root / ".claude" / "settings.json").write_text("{}\n", encoding="utf-8", newline="\n")
-    code, _, _ = run(["git", "check-ignore", "-q", ".claude/commands/vaultkit.md"],
-                     cwd=root, expect_zero=False, label="git check-ignore command")
-    if code == 0:
-        raise Failed("the /vaultkit command is gitignored -- it is part of the setup and has to "
-                     "travel with the backup and the history")
+    # The .gitignore promise, asked of git rather than read off the file: the agent's own state
+    # stays out of the vault's history.
     code, _, _ = run(["git", "check-ignore", "-q", ".claude/settings.json"],
                      cwd=root, label="git check-ignore settings")
     if code != 0:
-        raise Failed("the agent's own settings are versioned -- .claude/* must stay ignored "
-                     "apart from commands/")
+        raise Failed("the agent's own settings are versioned -- .claude/ must stay ignored")
 
 
 def one_pass(verbose=True):
@@ -4808,9 +4806,12 @@ are not "a file appeared" but "the file answers them". `--vault` means a PROJECT
 build_index.py and the ROOT after check_links.py; getting that backwards is the failure the
 command is written to prevent, and a test that only checks the file exists would pass over it.
 
-Nothing here ever writes with `--target home`. That path is outside the vault -- it is the
-machine's real Claude config -- and a suite that writes there to prove it can is a suite that
-edits the user's setup. The home path is checked as a value, not as a side effect.
+THE DESTINATION IS THE USER'S OWN `~/.claude/commands/`, AND IT IS THE ONLY ONE. That is also
+what makes this suite dangerous to write badly: run it against the real home folder and it edits
+the setup of whoever runs it. Every case here redirects `Path.home()` into a throwaway folder via
+`run_tool(home=...)`, so the tool takes its real path, writes for real, and touches nothing
+outside the tempdir. Checking the path as a value only -- which is what this suite did while an
+in-vault option still existed -- left the one destination that ships completely untested.
 """
 
 import shutil
@@ -4831,13 +4832,16 @@ COMMAND_RELPATH = Path(".claude") / "commands" / "vaultkit.md"
 class WriteCommandTest(unittest.TestCase):
     def setUp(self):
         self.vault = make_vault(("ProjektEins", "ProjektZwei"))
-        self.target = self.vault / COMMAND_RELPATH
+        # A stand-in for the user's home folder, inside the same tempdir the vault lives in.
+        self.home = self.vault.parent / "FakeHome"
+        self.home.mkdir(parents=True, exist_ok=True)
+        self.target = self.home / COMMAND_RELPATH
 
     def tearDown(self):
         shutil.rmtree(self.vault.parent, ignore_errors=True)
 
     def write(self, *extra):
-        return run_tool("write_command.py", "--vault", self.vault, "--target", "vault", *extra)
+        return run_tool("write_command.py", "--vault", self.vault, *extra, home=self.home)
 
     # ------------------------------------------------------------------ control
 
@@ -4846,6 +4850,16 @@ class WriteCommandTest(unittest.TestCase):
         self.assertEqual(code, 0, err)
         self.assertTrue(self.target.is_file(), f"no command file: {out} {err}")
         self.assertIn("vaultkit.md", out, "it wrote a file outside the vault without saying so")
+
+    def test_it_writes_into_the_home_folder_and_not_into_the_vault(self):
+        """The destination is not a preference. A copy under the vault root would load only in a
+        session started at that root, which is why the option was taken out again -- and why the
+        vault must come back from this run with nothing added to it."""
+        self.write()
+        self.assertTrue(self.target.is_file())
+        self.assertFalse((self.vault / COMMAND_RELPATH).exists(),
+                         "a command was written into the vault, where it would not load")
+        self.assertFalse((self.vault / ".claude").exists())
 
     def test_the_frontmatter_carries_a_description_and_nothing_else(self):
         """All five documented fields are optional. Every one that is set is one more thing to
@@ -4927,6 +4941,9 @@ class WriteCommandTest(unittest.TestCase):
         overwritten -- but nothing is written either, and a zero exit there would let the setup
         report the command as ready while the stranger keeps the name. Both directions are
         checked here, because the guard is only worth having if it can tell them apart.
+
+        This is the case that could not be tested at all while it only ran against the vault
+        copy: the collision it guards against happens in the home folder, by definition.
         """
         self.target.parent.mkdir(parents=True, exist_ok=True)
         self.target.write_text("---\ndescription: My own command\n---\n\nDo my thing.\n",
@@ -4960,14 +4977,22 @@ class WriteCommandTest(unittest.TestCase):
         self.assertEqual(code, 0, err)
         self.assertEqual(self.target.read_text(encoding="utf-8"), mine)
 
-    def test_the_command_file_does_not_enter_the_note_denominators(self):
-        """It is configuration, not knowledge, and a guard that counts it reports a wrong n/m.
+    def test_a_dot_claude_folder_inside_the_vault_stays_out_of_the_denominators(self):
+        """Configuration is not knowledge, and a guard that counts it reports a wrong n/m.
 
-        Measured 2026-07-29 with `.claude` missing from SKIP_DIRS: writing this one file took
+        The command no longer lands in the vault, but a `.claude/` folder there is ordinary --
+        the user may keep project settings beside their notes, and the setup itself is often
+        started in such a folder. So the guards are held to skipping it, with a file written by
+        hand rather than by the tool.
+
+        Measured 2026-07-29 with `.claude` missing from SKIP_DIRS: one such file took
         check_links.py from 26 files scanned to 27, check_duplicates.py from 4 notes to 5 and
         from 6 compared pairs to 10, and the generator from 26 distinct filenames to 27. Nothing
         went red, which is exactly why it needs a test -- the numbers were quietly wrong and no
         run had a reason to mention it.
+
+        Recipe without the fix: take ".claude" out of SKIP_DIRS in vault_paths.py and run this
+        suite there; this case fails and no other does.
         """
         write_note(self.vault / "ProjektEins" / "00_Notes" / "eine-erkenntnis.md",
                    title="Eine Erkenntnis")
@@ -4975,31 +5000,31 @@ class WriteCommandTest(unittest.TestCase):
         before = [run_tool(script, "--vault", self.vault)[1]
                   for script in ("check_links.py", "check_duplicates.py")]
 
-        self.write()
-        self.assertTrue(self.target.is_file())
+        intruder = self.vault / COMMAND_RELPATH
+        intruder.parent.mkdir(parents=True, exist_ok=True)
+        intruder.write_text("---\ndescription: Something the user keeps here\n---\n\nBody.\n",
+                            encoding="utf-8", newline="\n")
         after = [run_tool(script, "--vault", self.vault)[1]
                  for script in ("check_links.py", "check_duplicates.py")]
         self.assertEqual(before, after,
-                         "the command file changed what the guards count as notes")
+                         "a file under .claude/ changed what the guards count as notes")
 
     def test_a_vault_without_projects_is_refused_not_written_empty(self):
         """A command listing no projects is a working file that does nothing. It means the wrong
         path was given, and that has to be said, not written out."""
         empty = self.vault.parent / "NotAVault"
         empty.mkdir()
-        code, out, err = run_tool("write_command.py", "--vault", empty, "--target", "vault")
+        code, out, err = run_tool("write_command.py", "--vault", empty, home=self.home)
         self.assertNotEqual(code, 0, "an empty vault produced a command file")
         self.assertIn("no projects", out + err)
-        self.assertFalse((empty / COMMAND_RELPATH).exists())
+        self.assertFalse(self.target.exists())
 
-    def test_the_home_target_is_outside_the_vault(self):
-        """Checked as a value, never written. `~/.claude/commands/` is the real config folder of
-        whoever runs this suite, and it is also why SECTION 1 has to ask before choosing it: the
-        name collides silently with a command the user may already have."""
-        home = write_command.target_path(self.vault, "home")
-        self.assertEqual(home, Path.home() / ".claude" / "commands" / "vaultkit.md")
-        self.assertNotEqual(home, write_command.target_path(self.vault, "vault"))
-        self.assertFalse(str(home).startswith(str(self.vault)))
+    def test_there_is_exactly_one_destination_and_it_is_the_home_folder(self):
+        """`target_path()` takes no argument on purpose. A parameter here would be the door back
+        to an in-vault copy, and that copy is the thing that got removed -- it loads only in a
+        session started at the vault root, which is not how anyone runs a sync command."""
+        self.assertEqual(write_command.target_path(),
+                         Path.home() / ".claude" / "commands" / "vaultkit.md")
 
 
 if __name__ == "__main__":

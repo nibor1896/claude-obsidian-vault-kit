@@ -90,8 +90,9 @@ document in order. It is a contract, not a suggestion.
 - The shipped `tools/` folder copied into the vault, suites and all.
 - The four starting pages named in SECTION 8 — and **no other notes**. Nothing invented.
 - Backup and git set up per SECTION 7.
-- **A `/vaultkit` command, if and only if 1.6 asked for one** — in the location they picked, with
-  the path it went to shown to them. If they said no, nothing, and no second offer.
+- **A `/vaultkit` command in `~/.claude/commands/`**, with the path it went to shown to the user.
+  If a command of that name was already there, it keeps the name: say so, and do not list
+  `/vaultkit` as delivered.
 - A verification run per SECTION 8, with its output shown to the user.
 - **The acceptance test from SECTION 9, passed.** The setup is not finished until every guard has
   been shown to go red on deliberately bad input on this machine. Clean input proves nothing.
@@ -124,9 +125,6 @@ loud which questions you skipped and what you measured.
 - **1.2 — migration, new production vault, or test vault.**
 - **1.3 — project names, and where their code lives.**
 - **1.4 — the vault path, the backup, git, and whether a remote may be added.**
-- **1.6 — whether to write a `/vaultkit` command, and where.** One of its answers writes outside
-  the vault. A `~/.claude/` folder already on disk answers a different question than this one, the
-  same way an installed Obsidian does in 1.1.
 - **`user.email` — ask, even when an address is sitting right in front of you.** Your session
   context, another repo on the machine, a shell variable, a git credential store: **an address that
   is visible in your environment is not consent to publish it.** It goes into every commit forever,
@@ -228,45 +226,6 @@ Four questions, one call:
 - **OS and shell**, exactly. Every command you emit later depends on this.
 - **Python 3.10+ available?** Check with `python --version` / `python3 --version`. The guard scripts
   are Python. If Python is absent, offer the install and wait.
-
-### 1.6 A `/vaultkit` command — where, or not at all
-
-Ask this in the same round as 1.5. It is the one question in this interview whose "yes" can write
-**outside the vault**, so it falls under operating rule 5 and cannot be inferred, however obvious a
-`~/.claude/` folder on disk makes it look. Same shape as 1.4's "yes to git is not yes to a remote":
-yes to the command is not yes to a location.
-
-```
-Claude Code can run the whole verification chain as one command, /vaultkit.
-Where should it live?
-  1  In the vault           <VaultRoot>/.claude/commands/ — fires only when you start Claude
-                            in this folder, and travels with your backup and your git history
-  2  For every project      ~/.claude/commands/ — works everywhere, but if you already have a
-                            /vaultkit there, YOURS keeps the name and this one is not written
-  3  Don't create one       the chain stays in the workflow page, as prose
-```
-
-- **Option 1 first, and it is the recommendation.** The command holds this vault's absolute paths,
-  so it is about this vault; keeping it inside means a restored backup restores it too.
-- **Option 2 collides with the user's own commands, and the collision is not resolved in their
-  favour by accident.** `write_command.py` never overwrites: it refuses, names the file, and exits
-  non-zero. Say that before they pick it — not "it will be replaced", which is the opposite of what
-  happens. If it refuses, the command was **not** created; do not report `/vaultkit` as ready, and
-  offer option 1 or a different name.
-- **Option 3 is a real answer.** Do not re-offer it later, and do not build it anyway.
-- **This is a Claude Code feature.** If the user works with Claude in a browser, say so and expect
-  option 3 — the workflow page carries the same chain either way, so nothing is lost.
-
-`write_command.py` writes the file (SECTION 8). Do not hand-write it: it fills in every project
-path from the vault as it actually is, which is the part a person retyping gets wrong.
-
-**The vault this setup hands over is empty.** It is structure, tools and the four starting pages from
-SECTION 8 — no imported notes, no migrated memory, no example content. If the user has knowledge
-elsewhere they want in here, that is their own step afterwards, against the frontmatter contract in
-SECTION 4. Do not offer to do it as part of the setup: an import that runs before the structure has
-verified clean makes a failure of the structure indistinguishable from a failure of the import.
-
----
 
 ## SECTION 2 — The doctrine (why the structure is shaped this way)
 
@@ -693,11 +652,12 @@ directory (`.claude/`, `.cursor/`, whatever the harness uses) sits next to the n
 vault's history. A subfolder — `<workdir>/<VaultName>/` — keeps the two apart with no ignore rules to
 maintain.
 
-**That warning is about a vault that landed inside a working folder, not about the one file this
-setup writes on purpose.** If 1.6 chose the in-vault location, `<VaultRoot>/.claude/commands/vaultkit.md`
-is part of the vault's setup and belongs in its history — travelling with the backup is the reason
-that option exists. What must not be versioned is everything else under `.claude/`: sessions,
-settings and caches. The `.gitignore` below handles both, the same way it handles `.obsidian/`.
+**Nothing this setup writes lands in a `.claude/` folder inside the vault.** The `/vaultkit`
+command goes to the user's own `~/.claude/commands/`, outside the vault entirely. Such a folder may
+still turn up here — the user keeps settings beside their notes, or the setup was started in one —
+and none of it belongs in the history: sessions, settings and caches are the agent's state, not
+project knowledge. The `.gitignore` below ignores the whole folder, the same way it handles the
+volatile parts of `.obsidian/`.
 
 **A fresh machine usually has no git identity at all**, and `git commit` then fails with *"Author
 identity unknown"* mid-setup. Check before the first commit and set it **repo-locally** — never
@@ -776,11 +736,10 @@ time it mattered.
 .obsidian/workspace-mobile.json
 .obsidian/graph.json
 
-# Same shape as .obsidian above, for the agent's own folder: the /vaultkit command is part of
-# this vault's setup and belongs in its history; sessions, settings and caches do not. The
-# negation needs the directory itself re-included, which is why it ends in a slash.
-.claude/*
-!.claude/commands/
+# The agent's own folder, if one turns up here: sessions, settings and caches are its state, not
+# project knowledge. Nothing this setup writes lives here -- the /vaultkit command goes to the
+# user's own ~/.claude/commands/ -- so the whole folder is ignored, with no exception to maintain.
+.claude/
 
 # Append-only run log that every tool writes a line to. Tracked, it makes git status dirty after
 # every check, and acceptance fixture 6 permanently noisy. check_freshness.py reads it off disk,
@@ -847,26 +806,32 @@ This is the value the entire update path compares against. `upgrade.py` prints
 the one question the update path exists to answer. Nothing else writes it at setup time:
 `upgrade.py` writes it again when it applies an update, i.e. from the *second* version onwards.
 
-### Write the `/vaultkit` command — only if 1.6 said to
+### Write the `/vaultkit` command
 
-If the user picked a location in **1.6**, run this once, with the location they chose:
+Run this once, before the verification run:
 
 ```bash
 python <VaultRoot>/00_Global/06_tools/write_command.py --vault <VaultRoot> \
-       --target vault|home --shell powershell|posix
+       --shell powershell|posix
 ```
 
-It writes `<location>/.claude/commands/vaultkit.md` with this vault's real paths already in it and
-prints the path it wrote. Show the user that line; with `--target home` the file lands **outside
-the vault**, and operating rule 5 applies. If they chose "none", skip this and say so; nothing
-downstream depends on it.
+It writes `~/.claude/commands/vaultkit.md` — the user's own commands folder, which is the only
+destination and takes no flag — with this vault's real paths already in it, and prints the path it
+wrote. **Show the user that line.** The file lands **outside the vault**, so operating rule 5
+applies: name the path and say what it is for *before* the run, not after.
+
+There is no in-vault alternative, and the reason belongs here so nobody re-adds one: a command
+under `<VaultRoot>/.claude/commands/` loads only in a session started at that exact folder, and a
+sync command that demands a particular working directory is not one anybody uses. This file carries
+absolute paths, so it needs no working directory at all.
 
 **Three outcomes, and only one of them is "done".** It prints a path and exits 0 — written. It
 prints nothing and exits 0 — the file was already there and this kit wrote it, so it was left
 alone, which is correct and is also *not* a fresh install. It prints a refusal and exits
 **non-zero** — a command of that name exists that this kit did not write, most likely the user's
 own; nothing was written and nothing was overwritten. **In that third case `/vaultkit` does not
-exist for this vault. Say so plainly, offer the other location, and do not list it as delivered.**
+exist for this vault. Say so plainly, tell them their own file keeps the name, and do not list it as
+delivered.** There is nowhere else to put it, so the only ways out are their file or a rename.
 A quiet non-write reported as success is the failure this kit has paid for most often.
 
 The command exists because the chain below has three traps in it, and a chain typed from memory

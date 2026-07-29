@@ -159,10 +159,16 @@ def fixture_11_command_is_written_named_and_left_alone(vault, project):
     and the run names what it wrote. Drop the third and a tool that writes into
     `~/.claude/commands/` without a word passes this. That path is outside the vault, which is
     the one place operating rule 5 says nothing may happen quietly.
+
+    `~/.claude/commands/` is also the only destination the tool has, so this fixture redirects
+    `Path.home()` into the throwaway tree instead of checking a lesser path that ships to nobody.
+    Without the redirect this would edit the config of whoever runs the acceptance driver.
     """
-    code, out, _ = run_tool("write_command.py", "--vault", vault, "--target", "vault",
-                            "--shell", "posix")
-    target = vault / ".claude" / "commands" / "vaultkit.md"
+    home = vault.parent / "FakeHome"
+    home.mkdir(parents=True, exist_ok=True)
+    code, out, _ = run_tool("write_command.py", "--vault", vault,
+                            "--shell", "posix", home=home)
+    target = home / ".claude" / "commands" / "vaultkit.md"
     if code != 0 or not target.is_file():
         return False
     if target.name not in out:
@@ -175,8 +181,8 @@ def fixture_11_command_is_written_named_and_left_alone(vault, project):
     # Second run: nothing said, nothing written, the hand edit still there.
     edited = text + "\nA line the user added.\n"
     target.write_text(edited, encoding="utf-8", newline="\n")
-    _, second, _ = run_tool("write_command.py", "--vault", vault, "--target", "vault",
-                            "--shell", "posix")
+    _, second, _ = run_tool("write_command.py", "--vault", vault,
+                            "--shell", "posix", home=home)
     if second.strip() or target.read_text(encoding="utf-8") != edited:
         return False
 
@@ -184,8 +190,8 @@ def fixture_11_command_is_written_named_and_left_alone(vault, project):
     # zero, which would let a setup report /vaultkit ready while a stranger holds the name.
     foreign = "---\ndescription: A command the user already had\n---\n\nMine.\n"
     target.write_text(foreign, encoding="utf-8", newline="\n")
-    code, out, err = run_tool("write_command.py", "--vault", vault, "--target", "vault",
-                              "--shell", "posix")
+    code, out, err = run_tool("write_command.py", "--vault", vault,
+                              "--shell", "posix", home=home)
     return (code != 0 and target.name in (out + err)
             and target.read_text(encoding="utf-8") == foreign)
 

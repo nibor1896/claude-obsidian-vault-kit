@@ -59,10 +59,18 @@ class Failed(Exception):
     pass
 
 
-def run(cmd, cwd, expect_zero=True, label=""):
+def run(cmd, cwd, expect_zero=True, label="", home=None):
     env = dict(os.environ)
     env.pop("PYTHONIOENCODING", None)
     env.pop("PYTHONUTF8", None)
+    if home is not None:
+        # Redirects Path.home() inside the subprocess. The only way to exercise a tool that
+        # writes into the user's own config folder without writing into it. Both names are set
+        # because Python reads USERPROFILE on Windows and HOME elsewhere.
+        env["USERPROFILE"] = str(home)
+        env["HOME"] = str(home)
+        env.pop("HOMEDRIVE", None)
+        env.pop("HOMEPATH", None)
     result = subprocess.run([str(c) for c in cmd], cwd=str(cwd), env=env, capture_output=True)
     out = result.stdout.decode("utf-8", errors="replace")
     err = result.stderr.decode("utf-8", errors="replace")
@@ -73,9 +81,9 @@ def run(cmd, cwd, expect_zero=True, label=""):
     return result.returncode, out, err
 
 
-def tool(vault, script, *args, expect_zero=True):
+def tool(vault, script, *args, expect_zero=True, home=None):
     return run([sys.executable, str(vault / "00_Global" / "06_tools" / script), *args],
-               cwd=vault, expect_zero=expect_zero, label=script)
+               cwd=vault, expect_zero=expect_zero, label=script, home=home)
 
 
 def write_note(path, title, summary, body):
@@ -355,28 +363,35 @@ def _s14(root):
     The command exists because `--vault` means a PROJECT after build_index.py and the ROOT after
     check_links.py, and a chain typed from memory gets that wrong. So the file existing proves
     nothing on its own -- what is checked is that the two invocations differ, that the second run
-    leaves a hand edit alone, and that the guards' denominators do not move because of it.
+    leaves a hand edit alone, and that the vault gains nothing from the run.
 
-    Undo recipes, both measured on this machine 2026-07-29 against a copy of tools/:
+    It goes to `~/.claude/commands/`, the only destination there is, with Path.home() redirected
+    into this throwaway tree. An in-vault copy was offered once and removed: it loads only in a
+    session started at the vault root, which is not how a sync command gets used.
+
+    Undo recipes, measured on this machine 2026-07-30 against a copy of tools/:
 
       - Make the `if target.exists():` block in write_command.py's main() unreachable: the hand
         edit is eaten and the second run reports work. verify_setup 13/14, acceptance 11/12,
         test_write_command 8/12.
-      - Remove `.claude` from SKIP_DIRS in vault_paths.py: the last half here fails instead,
-        with the link checker scanning one file more after the command was written than before.
-        verify_setup 13/14, test_write_command 11/12 -- and acceptance stays 12/12, because
-        fixture 11 checks the file and the message, not the denominators. That gap is the
-        reason this step carries the denominator half at all.
+      - Remove `.claude` from SKIP_DIRS in vault_paths.py: the link checker counts a `.claude/`
+        file in the vault as a note. verify_setup 13/14, test_write_command 11/12 -- and
+        acceptance stays 12/12, because fixture 11 checks the file and the message, not the
+        denominators. That gap is the reason this step carries the denominator half at all.
     """
-    target = root / ".claude" / "commands" / "vaultkit.md"
+    home = root.parent / "FakeHome"
+    home.mkdir(parents=True, exist_ok=True)
+    target = home / ".claude" / "commands" / "vaultkit.md"
     _, links_before, _ = tool(root, "check_links.py", "--vault", ".")
 
-    _, out, _ = tool(root, "write_command.py", "--vault", str(root), "--target", "vault",
-                     "--shell", "posix")
+    _, out, _ = tool(root, "write_command.py", "--vault", str(root),
+                     "--shell", "posix", home=home)
     if not target.is_file():
         raise Failed(f"no /vaultkit command at {target}\n{out}")
     if target.name not in out:
         raise Failed(f"a file was written outside the vault tree without being named:\n{out}")
+    if (root / ".claude" / "commands").exists():
+        raise Failed("a command was written into the vault, where it would not load")
 
     text = target.read_text(encoding="utf-8")
     root_arg = f'--root "{root.as_posix()}"'
@@ -390,33 +405,29 @@ def _s14(root):
 
     edited = text + "\n## 7 · A step the user added\n"
     target.write_text(edited, encoding="utf-8", newline="\n")
-    _, second, _ = tool(root, "write_command.py", "--vault", str(root), "--target", "vault",
-                        "--shell", "posix")
+    _, second, _ = tool(root, "write_command.py", "--vault", str(root),
+                        "--shell", "posix", home=home)
     if second.strip():
         raise Failed(f"the second run reported work it did not do:\n{second}")
     if target.read_text(encoding="utf-8") != edited:
         raise Failed("a rerun overwrote a hand-edited command file")
 
+    # A `.claude/` folder in the vault is ordinary -- the user may keep settings beside their
+    # notes -- and the guards must not count what is in it. Written by hand here, because the
+    # command itself no longer lands in the vault at all.
+    (root / ".claude").mkdir(exist_ok=True)
+    (root / ".claude" / "settings.json").write_text("{}\n", encoding="utf-8", newline="\n")
     _, links_after, _ = tool(root, "check_links.py", "--vault", ".")
     if links_before != links_after:
-        raise Failed(f"the command file entered the note denominators:\n"
+        raise Failed(f"a file under .claude/ entered the note denominators:\n"
                      f"  before: {links_before.strip()}\n  after:  {links_after.strip()}")
 
-    # The .gitignore promise, asked of git rather than read off the file: commands/ is versioned
-    # because it is part of the setup, everything else under .claude/ is the agent's own state.
-    # `.claude/*` plus `!.claude/commands/` only works because the negation re-includes the
-    # DIRECTORY -- drop the trailing slash and git never looks inside it again.
-    (root / ".claude" / "settings.json").write_text("{}\n", encoding="utf-8", newline="\n")
-    code, _, _ = run(["git", "check-ignore", "-q", ".claude/commands/vaultkit.md"],
-                     cwd=root, expect_zero=False, label="git check-ignore command")
-    if code == 0:
-        raise Failed("the /vaultkit command is gitignored -- it is part of the setup and has to "
-                     "travel with the backup and the history")
+    # The .gitignore promise, asked of git rather than read off the file: the agent's own state
+    # stays out of the vault's history.
     code, _, _ = run(["git", "check-ignore", "-q", ".claude/settings.json"],
                      cwd=root, label="git check-ignore settings")
     if code != 0:
-        raise Failed("the agent's own settings are versioned -- .claude/* must stay ignored "
-                     "apart from commands/")
+        raise Failed("the agent's own settings are versioned -- .claude/ must stay ignored")
 
 
 def one_pass(verbose=True):

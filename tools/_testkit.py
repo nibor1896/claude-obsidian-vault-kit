@@ -49,17 +49,27 @@ def write_note(path, title="Ein Titel", summary="Eine Zusammenfassung.", bom=Fal
     return path
 
 
-def run_tool(script, *args, strip_io_encoding=True):
+def run_tool(script, *args, strip_io_encoding=True, home=None):
     """Run a tool as a real subprocess. Returns (returncode, stdout, stderr) as UTF-8 text.
 
     PYTHONIOENCODING is removed on purpose: the tools must force UTF-8 themselves, or the
     same suite goes green under PowerShell and red under Git Bash on one machine.
+
+    `home` redirects what `Path.home()` resolves to inside the subprocess, which is the only way
+    to test a tool that writes into the user's own config folder without writing into it. Both
+    variables are set because Python reads USERPROFILE on Windows and HOME elsewhere; setting one
+    on the wrong platform is a no-op that silently leaves the real folder in play.
     """
     env = dict(os.environ)
     env["PYTHONPATH"] = str(TOOLS) + os.pathsep + env.get("PYTHONPATH", "")
     if strip_io_encoding:
         env.pop("PYTHONIOENCODING", None)
         env.pop("PYTHONUTF8", None)
+    if home is not None:
+        env["USERPROFILE"] = str(home)
+        env["HOME"] = str(home)
+        env.pop("HOMEDRIVE", None)
+        env.pop("HOMEPATH", None)
     result = subprocess.run(
         [sys.executable, str(TOOLS / script), *[str(a) for a in args]],
         cwd=str(TOOLS),
