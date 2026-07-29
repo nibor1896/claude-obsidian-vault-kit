@@ -1,4 +1,0 @@
-{
-  "_comment": "Jobs that must show a healthy run in runs.log. Verify with: python check_freshness.py --vault <VaultRoot>",
-  "jobs": ["build_index", "check_links"]
-}
