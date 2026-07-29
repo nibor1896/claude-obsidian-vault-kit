@@ -1,4 +1,4 @@
-<!-- kit-version: ce9774b14ad1 -->
+<!-- kit-version: 44815614f997 -->
 # Claude × Obsidian — Vault Kit
 
 **What this file is:** a setup contract for Claude. Drop it into a Claude conversation and say
@@ -827,7 +827,12 @@ resolves it (SECTION 5). Write it escaped, do not dodge the table.
 ### Tell the user how to use it from here on
 
 - **New insight that belongs to no larger document** → a new file in `00_Notes/`, filename = the
-  insight, frontmatter per SECTION 4. Then rerun `build_index.py`.
+  insight, frontmatter per SECTION 4. Then rerun the generator — **with `--root <VaultRoot>`, which
+  is the one invocation that covers everything.** `--root` walks every project and writes the root
+  hub as well; `--vault <Project>` writes that project's indexes and *never* the root hub. Rerun
+  only `--vault` after adding a note and the root index keeps yesterday's entry count, with no
+  message and a green exit, until someone happens to run `--root`. Measured on a cold run: adding
+  one note that way left the root index reading `5 entries` against a vault holding 6.
 - **New subsystem or feature** → a page in `03_technical_docs/` in the same commit as the code.
   Numbers on that page are either measured or explicitly marked unmeasured.
 - **Stuck on something?** Search `00_Notes/` first. A past procedure that already fits beats a new
