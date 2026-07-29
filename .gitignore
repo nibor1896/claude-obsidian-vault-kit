@@ -3,6 +3,10 @@ wrap*.html
 chrome-profile/
 cp/
 
+# The kit-version stamp upgrade.py writes next to the tools it just installed. It belongs to
+# an installed copy, not to the sources this repo builds from.
+tools/kit-version.txt
+
 # Local experiments and cold-run scratch. Nothing here is part of the kit.
 _scratch/
 *.tmp

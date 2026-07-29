@@ -92,7 +92,7 @@ def build_vault(root):
         write_note(root / project / folder / name, title, summary, body)
     (root / ".gitignore").write_text(
         ".obsidian/plugins/\n.obsidian/workspace.json\n.obsidian/graph.json\n"
-        "**/runs.log\n**/__pycache__/\n*.pyc\n_acceptance/\n",
+        "**/runs.log\n**/__pycache__/\n*.pyc\n",
         encoding="utf-8", newline="\n")
 
 

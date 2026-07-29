@@ -60,7 +60,7 @@ document in order. It is a contract, not a suggestion.
    and waiting for a yes.
 6. **The scripts are inside this file. Write them out; do not rewrite them.** SECTION 10 carries
    every tool, every suite and the three runners verbatim — measured on Windows 11 with Python 3.13
-   under PowerShell 5.1 and Git Bash: **8/8 suites green, 10/10 acceptance checks and 10/10
+   under PowerShell 5.1 and Git Bash: **8/8 suites green, 10/10 acceptance checks and 11/11
    end-to-end setup steps, in ten consecutive runs under each shell.** Write each block to disk
    byte for byte. Retyping them from the contracts in SECTION 5 and SECTION 6 throws that
    measurement away and reintroduces the defects those sections describe — every one was found the
@@ -281,8 +281,9 @@ They are the part that survives; the folder names are cosmetic by comparison.
 
 ## SECTION 3 — Folder structure
 
-Create this once per project. Every project gets the *same* folders, so a path is predictable
-without looking.
+Every project gets the *same* folders, so a path is predictable without looking. You create them
+once during setup; after that the index generator creates any that are missing, including in a
+project folder the user makes themselves later (SECTION 5).
 
 ```
 <VaultRoot>/
@@ -312,6 +313,10 @@ Rules for the tree:
   on the next index run (SECTION 5) — they do not have to ask permission for a folder.
 - If the user changed folder names in a test vault, **their names win** — carry them consistently
   into every project and into every script's config.
+- **A directory at the vault root is a project, and the generator will treat it as one.** It gets
+  the category folders and a hub index on the next run. Say this before the user parks an
+  `attachments/` or a `_scratch/` next to their projects: it is not wrong, but they will get six
+  folders inside it and the run will tell them it made them.
 
 ---
 
@@ -686,9 +691,6 @@ time it mattered.
 # not out of git. Leading **/ on purpose: 06_tools/runs.log anchors to the repo root and would
 # never match 00_Global/06_tools/runs.log -- measured twice, on two different setups.
 **/runs.log
-
-# Throwaway fixtures from the acceptance run.
-_acceptance/
 
 **/__pycache__/
 *.pyc
