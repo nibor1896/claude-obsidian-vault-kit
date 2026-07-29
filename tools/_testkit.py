@@ -12,15 +12,10 @@ from pathlib import Path
 
 TOOLS = Path(__file__).resolve().parent
 
-CATEGORY_FOLDERS = [
-    "00_Notes",
-    "01_Issues",
-    "02_docs",
-    "03_technical_docs",
-    "04_feedback",
-    "05_workflows",
-    "06_tools",
-]
+# Imported, never respelled. A second copy of this list makes the fixtures agree with a tree
+# the tools no longer build, and every suite stays green while doing it.
+sys.path.insert(0, str(TOOLS))
+from vault_paths import CATEGORY_FOLDERS  # noqa: E402
 
 
 def make_vault(projects=("ProjektEins",)):

@@ -29,7 +29,7 @@ document in order. It is a contract, not a suggestion.
    software, or write a script before you have the answers you need. If an answer is missing and the
    next step depends on it, ask — do not assume.
    **Measuring the environment does not replace asking.** You may read the OS, shell, Python version
-   and whether `git`/`gh` exist off disk instead of asking — say so when you do. You may not infer any
+   and whether `git` exists off disk instead of asking — say so when you do. You may not infer any
    answer that decides *what* gets written or *where*; SECTION 1 names those explicitly and none of
    them may be skipped, however obvious the disk makes them look.
 3. **EVERY question goes through the structured question UI. Never as prose. No exceptions.**
@@ -58,7 +58,7 @@ document in order. It is a contract, not a suggestion.
    costs the user a failed round trip every time.
 5. **Never touch a path outside the vault and the tool folder** without saying which path and why,
    and waiting for a yes.
-6. **The scripts are inside this file. Write them out; do not rewrite them.** SECTION 11 carries
+6. **The scripts are inside this file. Write them out; do not rewrite them.** SECTION 10 carries
    every tool, every suite and the three runners verbatim — measured on Windows 11 with Python 3.13
    under PowerShell 5.1 and Git Bash: **8/8 suites green, 10/10 acceptance checks and 10/10
    end-to-end setup steps, in ten consecutive runs under each shell.** Write each block to disk
@@ -86,11 +86,10 @@ document in order. It is a contract, not a suggestion.
 - The folder tree from SECTION 3, with real folders on disk.
 - A generated index tree (SECTION 5) — root, project, category.
 - The shipped `tools/` folder copied into the vault, suites and all.
-- Optional: the GitHub issue mirror from SECTION 7.
-- The four starting pages named in SECTION 9 — and **no other notes**. Nothing invented.
-- Backup and git set up per SECTION 8.
-- A verification run per SECTION 9, with its output shown to the user.
-- **The acceptance test from SECTION 10, passed.** The setup is not finished until every guard has
+- The four starting pages named in SECTION 8 — and **no other notes**. Nothing invented.
+- Backup and git set up per SECTION 7.
+- A verification run per SECTION 8, with its output shown to the user.
+- **The acceptance test from SECTION 9, passed.** The setup is not finished until every guard has
   been shown to go red on deliberately bad input on this machine. Clean input proves nothing.
 
 ---
@@ -109,7 +108,7 @@ After each round, restate in **one line** what you now know, then ask the next. 
 user catch a wrong answer while it is still cheap to fix.
 
 **What may be skipped, and what may not.** Skip a question only when it asks about a *prerequisite*
-you can read off disk — OS, shell, Python version, whether `git` and `gh` exist — and then say out
+you can read off disk — OS, shell, Python version, whether `git` exists — and then say out
 loud which questions you skipped and what you measured.
 
 **Never skip, never infer, no matter what the disk shows:**
@@ -120,9 +119,7 @@ loud which questions you skipped and what you measured.
   pointed you at.
 - **1.2 — migration, new production vault, or test vault.**
 - **1.3 — project names, and where their code lives.**
-- **1.4 — whether a tracker gets mirrored, and which repos.** An authenticated `gh` is not consent.
-  Finding credentials on the machine tells you the mirror is *possible*, not that it is wanted.
-- **1.5 — the vault path, the backup, git, and whether a remote may be added.**
+- **1.4 — the vault path, the backup, git, and whether a remote may be added.**
 - **`user.email` — ask, even when an address is sitting right in front of you.** Your session
   context, another repo on the machine, a shell variable, a git credential store: **an address that
   is visible in your environment is not consent to publish it.** It goes into every commit forever,
@@ -203,16 +200,7 @@ elsewhere is untouched — but say so, or they will assume they broke something 
 - **Is there a cross-project or "global" bucket** for things that belong to no single project
   (tooling, personal working rules, cross-cutting decisions)? Most people want one.
 
-### 1.4 GitHub (optional — skip the whole of SECTION 7 if not)
-
-- **Do you track work in GitHub issues?** If no, skip.
-- **Which repos?** `owner/repo` for each.
-- **Is the `gh` CLI installed and authenticated?** Verify with `gh auth status` rather than asking
-  the user to trust their memory. If it is missing, offer the install command and wait.
-- **Private repos?** Then the mirror on disk contains private content — confirm the user knows that
-  before you write it anywhere synced or committed.
-
-### 1.5 Where the vault lives, and how it survives
+### 1.4 Where the vault lives, and how it survives
 
 Four questions, one call:
 
@@ -221,21 +209,25 @@ Four questions, one call:
   Ask which one they use — and if a cloud folder exists on the machine but is out of bounds, say so
   rather than proposing it.
 - **Git as well, and may a remote be added?** Recommend git: cloud sync knows file versions, git knows
-  *states across all notes*. Neither replaces the other. "Yes to git" is not "yes to a remote" — if the
-  vault will hold anything private, and a mirrored issue tracker usually does, the remote must be
-  private, and that needs its own yes.
-- **`user.name` and `user.email`** — ask for both, set them repo-locally, never `--global` (SECTION 8).
+  *states across all notes*. Neither replaces the other. "Yes to git" is not "yes to a remote" — a
+  vault of project knowledge holds things the user would not publish, so the remote must be private,
+  and that needs its own yes.
+- **`user.name` and `user.email`** — ask for both, set them repo-locally, never `--global` (SECTION 7).
   Do not invent them and do not copy them from another repo on the machine. Offer a sensible default as
   the first option so it is one click.
 
-### 1.6 Environment
+### 1.5 Environment
 
 - **OS and shell**, exactly. Every command you emit later depends on this.
 - **Python 3.10+ available?** Check with `python --version` / `python3 --version`. The guard scripts
   are Python. If Python is absent, offer the install and wait.
-- **Do you have agent memory / notes elsewhere** that should be imported (a `memory/` directory,
-  scattered markdown, a Notion export)? If yes, ask for the path — but treat import as a *later*
-  step, after the structure verifies clean.
+
+**The vault this setup hands over is empty.** It is structure, tools and the four starting pages from
+SECTION 8 — no imported notes, no migrated memory, no example content. If the user has knowledge
+elsewhere they want in here, that is their own step afterwards, against the frontmatter contract in
+SECTION 4. Do not offer to do it as part of the setup: an import that runs before the structure has
+verified clean makes a failure of the structure indistinguishable from a failure of the import.
+
 ---
 
 ## SECTION 2 — The doctrine (why the structure is shaped this way)
@@ -299,8 +291,7 @@ without looking.
 │   └── (same subfolders as a project)
 └── <ProjectName>/
     ├── INDEX - <ProjectName>.md     generated — one line per category
-    ├── 00_Notes/                    insights with no ticket attached
-    ├── 01_Issues/                   GENERATED mirror of the tracker (SECTION 7) — never hand-edit
+    ├── 00_Notes/                    insights that belong to no larger document
     ├── 02_docs/                     product, project and decision documentation
     ├── 03_technical_docs/           the subsystem handbook — one page per subsystem
     ├── 04_feedback/                 working rules the user has given the agent
@@ -311,13 +302,14 @@ without looking.
 Rules for the tree:
 
 - **The numeric prefixes exist for sort order only.** Keep them; they make Obsidian's file pane match
-  the mental order.
+  the mental order. `01` is deliberately unused — closing the gap would rename every category index
+  file in every project for no gain, and the prefix carries no meaning to close.
 - **Tools live in exactly one place.** Put the scripts under one project's `06_tools/` (or under
   `00_Global/06_tools/`) and have every other project supply only its own small config file. Two
   copies of a script means one of them is silently out of date.
 - **Optional extras**, add only if the user has the need: `07_reports/` (one report per
-  investigation), `08_issue_notes/` (hand-condensed notes about tickets, when the raw mirror is too
-  long to read).
+  investigation) is the common one. Any folder the user adds by hand becomes a category of its own
+  on the next index run (SECTION 5) — they do not have to ask permission for a folder.
 - If the user changed folder names in a test vault, **their names win** — carry them consistently
   into every project and into every script's config.
 
@@ -335,7 +327,7 @@ summary: "One plain sentence. No markdown, no blockquote, no heading marks, no l
 project: "<ProjectName>"
 created: 2026-01-15
 updated: 2026-02-03          # optional; the index prefers this over `created`
-issues: "#12, #14"           # optional; plain text on purpose — see below
+issues: "#12, #14"           # optional; a plain-text citation, never a link — see below
 generator: "<source-file>"   # optional; presence means "the next rebuild overwrites this note"
 retired: "<reason or date>"  # optional; the note is kept for history, not as current truth
 stale: "2026-02-10"          # optional; source is newer than this condensation
@@ -349,9 +341,10 @@ Field semantics that matter:
 - **`summary` is required and must be plain.** If markdown debris ends up here — a leading `>`, a
   `#`, a `**` — the index line renders as garbage. The generator strips it, names the file, and
   exits non-zero.
-- **`issues:` is deliberately not a wikilink.** A mention is a citation, not a membership. Making it
-  a link pulls hundreds of note→ticket edges into the graph and turns it into a hairball. Membership
-  is expressed once, in the tracker's own parent/child relation (SECTION 7).
+- **`issues:` is optional, free text, and deliberately not a wikilink.** It exists so a note can cite
+  a ticket number the user tracks somewhere else; this kit reads no tracker and writes none. Making
+  it a link would pull hundreds of note→ticket edges into the graph and turn it into a hairball, and
+  every one of them would be permanently unresolved — there is no note on the other end.
 - **`generator:` is the overwrite marker.** A note without it survives every rebuild — it is an
   original. A note with it is derived and replaceable. If a source document is deleted, retire it
   properly (remove the marker, drop the entry from the config) or the next run deletes the note with
@@ -376,7 +369,7 @@ navigable at around 150 entries:
 
 - **Every index filename carries the name of what it indexes — at all three levels.** Every project
   has identically named folders, so without the project in the filename the graph shows five nodes
-  called `INDEX - Issues` and the quick switcher becomes a coin toss.
+  called `INDEX - docs` and the quick switcher becomes a coin toss.
 - **This applies to the project and root hubs too, and that is easy to miss.** Naming them all
   `INDEX.md` produces one `INDEX` node per project plus one for the root — measured on a real vault:
   six files called `INDEX.md`, indistinguishable in the graph. The reasoning that forced the project
@@ -417,11 +410,11 @@ navigable at around 150 entries:
 
 ### Two mechanics that produce output depending on how the script was called
 
-Both were found by the acceptance test in SECTION 10, on a first real setup:
+Both were found by the acceptance test in SECTION 9, on a first real setup:
 
 - **Derive every name from a resolved absolute path.** `Path(".").name` is the empty string, so
   `--root .` writes `# — Index` while `--root C:/…/Vault` writes `# Vault — Index`. Two correct
-  invocations then produce a diff against each other, which is exactly the drift SECTION 9 forbids.
+  invocations then produce a diff against each other, which is exactly the drift SECTION 8 forbids.
   Resolve first (`Path(p).resolve()`), then take `.name`.
 - **A `[[wikilink]]` inside a code span or fenced block is not a link.** Obsidian does not resolve it,
   so the checker must not count it. Without this, every page that *documents* the wikilink syntax
@@ -559,48 +552,7 @@ error message ever mentions. Tell the user this when you set up any schedule.
 
 ---
 
-## SECTION 7 — Optional: mirror an issue tracker into the vault
-
-Skip entirely if the user answered no in 1.4.
-
-### The direction is one-way, and it is not negotiable
-
-```
-GitHub Issues  →  sync_issues.py  →  <Project>/01_Issues/*.md  →  read locally
-     ↑
-   writes go here only, via `gh issue comment` / `gh issue edit`
-```
-
-Every sync run **overwrites** the mirror. Anything typed into `01_Issues/` by hand is lost at the
-next run, without warning. Say this to the user in exactly these terms, and repeat it in the
-workflow file.
-
-### `sync_issues.py` contract
-
-- Fetch every issue **plus all comments** via `gh`, one file per issue:
-  `<Project>/01_Issues/ISSUE-<N> - <Title>.md`.
-- **Own the filenames.** Do not accept a tracker plugin's naming. Strip or replace `[`, `]`, `#`,
-  `|`, `^` — a `[` in a filename breaks every wikilink pointing at it, and the graph loses the whole
-  issue layer without a single error message.
-- **Do not mangle the body.** Verify explicitly that code fences and backticks survive the round
-  trip: count backticks in the API response, count them in the written file, and compare. A mirror
-  that silently strips code snippets is worse than no mirror.
-- **Membership comes from the tracker's own parent/child relation**, drawn as a wikilink in a
-  `## Sub-Issues` section. A plain mention stays a plain link with no graph edge (SECTION 4).
-- Frontmatter per mirrored issue: `title`, `summary`, `project`, `created`, `updated`, `issues`,
-  plus a state field. Set `stale:` when the source is newer than a hand-written condensation of it.
-- Write a run line to the freshness log every time, healthy or not.
-- Pull the issue category index afterwards so the index never lags the mirror.
-
-### Rate limits and caching
-
-The API caches. A comment posted seconds ago may not appear in the next read. When a response looks
-one step behind reality, that is the likely cause — do not conclude the write failed. Note this in
-the workflow file so the next session does not rediscover it.
-
----
-
-## SECTION 8 — Backup, git, and the two failure modes
+## SECTION 7 — Backup, git, and the two failure modes
 
 Set up **both**, and tell the user why neither replaces the other: cloud sync knows file versions but
 has no notion of a coherent state across all notes; git knows states but lives on the same disk.
@@ -722,7 +674,7 @@ Two more things to tell the user:
 
 ---
 
-## SECTION 9 — Verify, then hand over
+## SECTION 8 — Verify, then hand over
 
 ### Verification run — all of it, no exceptions
 
@@ -792,7 +744,7 @@ unquotable, because nobody can say which page holds it.
 |---|---|---|
 | `the-rules-this-vault-runs-on.md` | global bucket, `03_technical_docs` | the doctrine from SECTION 2, in the user's own words |
 | `tooling-<Bucket>.md` | global bucket, `03_technical_docs` | the tools table: what each guard does and what it refuses |
-| `acceptance-test.md` | global bucket, `03_technical_docs` | the fixtures and required behaviour from SECTION 10, repeatable |
+| `acceptance-test.md` | global bucket, `03_technical_docs` | the fixtures and required behaviour from SECTION 9, repeatable |
 | `knowledge-transfer-<Project>.md` | each project, `05_workflows` | the workflow below, one per project |
 
 If there is no global bucket, they go in the first project instead — and say so, so nobody hunts for
@@ -800,7 +752,7 @@ them later.
 
 **Create no other notes.** No example notes, no demo content, no page restating a rule that already
 has one. An empty category is correct on day one: it still gets its index file, which is what proves
-the structure works. Acceptance fixtures live in the throwaway folder from SECTION 10 and are deleted
+the structure works. Acceptance fixtures live in the throwaway folder from SECTION 9 and are deleted
 with it.
 
 ### Write the workflow file
@@ -829,10 +781,8 @@ resolves it (SECTION 5). Write it escaped, do not dodge the table.
 
 ### Tell the user how to use it from here on
 
-- **New insight with no ticket** → a new file in `00_Notes/`, filename = the insight, frontmatter per
-  SECTION 4. Then rerun `build_index.py`.
-- **Insight tied to a ticket** → write it on the ticket via `gh`, let the sync bring it back. Never
-  into `01_Issues/` by hand.
+- **New insight that belongs to no larger document** → a new file in `00_Notes/`, filename = the
+  insight, frontmatter per SECTION 4. Then rerun `build_index.py`.
 - **New subsystem or feature** → a page in `03_technical_docs/` in the same commit as the code.
   Numbers on that page are either measured or explicitly marked unmeasured.
 - **Stuck on something?** Search `00_Notes/` first. A past procedure that already fits beats a new
@@ -840,7 +790,7 @@ resolves it (SECTION 5). Write it escaped, do not dodge the table.
 
 ---
 
-## SECTION 10 — Acceptance test: prove the guards fail when they should
+## SECTION 9 — Acceptance test: prove the guards fail when they should
 
 **Do not skip this, and do not report the setup as working before it passes.** Everything up to here
 proves the scripts run on clean input. That is the half that cannot fail. A guard is only worth

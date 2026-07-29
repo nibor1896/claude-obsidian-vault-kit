@@ -34,7 +34,7 @@ class BuildIndexTest(unittest.TestCase):
                    title="Eine Erkenntnis", summary="Genau ein Satz.", created="2026-07-01")
         code, out, err = run_tool("build_index.py", "--vault", self.project)
         self.assertEqual(code, 0, err)
-        self.assertIn("1 entries in 7 categories", out)
+        self.assertIn("1 entries in 6 categories", out)
         text = self.index_text()
         self.assertIn("[[ProjektEins/00_Notes/eine-erkenntnis|Eine Erkenntnis]]", text)
         self.assertIn("Genau ein Satz.", text)
@@ -42,7 +42,7 @@ class BuildIndexTest(unittest.TestCase):
     def test_empty_category_still_gets_an_index(self):
         code, _, err = run_tool("build_index.py", "--vault", self.project)
         self.assertEqual(code, 0, err)
-        for folder in ("00_Notes", "01_Issues", "06_tools"):
+        for folder in ("00_Notes", "02_docs", "06_tools"):
             path = self.project / folder / category_index_name("ProjektEins", folder)
             self.assertTrue(path.exists(), f"{path} missing")
 

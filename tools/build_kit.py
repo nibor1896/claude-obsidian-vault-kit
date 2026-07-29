@@ -39,7 +39,7 @@ DRIVERS = ["acceptance.py", "verify_setup.py", "upgrade.py"]
 HEADER = """
 ---
 
-## SECTION 11 — The scripts, verbatim
+## SECTION 10 — The scripts, verbatim
 
 Everything below is the finished implementation. **Write each block to disk exactly as it stands —
 byte for byte, same filename — into the vault's tool folder** (`<VaultRoot>/00_Global/06_tools/`,
@@ -78,7 +78,7 @@ def source_version(body):
 
     A date would answer "how old is this" and nothing else; two people with different files
     could still read the same date. Hashing the *sources* instead looked equivalent and was
-    not: the SECTION 11 header lives in this script, so editing it changed what users receive
+    not: the SECTION 10 header lives in this script, so editing it changed what users receive
     while the version stayed put -- two different files claiming to be the same one. Hash what
     is shipped.
     """

@@ -3,15 +3,13 @@
 A setup contract for Claude that builds you a project-knowledge vault in Obsidian: predictable
 structure, a **generated** index, and a set of guards that go red instead of quietly passing.
 
-![Vault Kit](assets/vault-kit-social-en.png)
-
 ## Use it
 
 1. Download [`claude-obsidian-vault-kit.md`](claude-obsidian-vault-kit.md) — one file, nothing else.
 2. Drop it into a Claude conversation.
 3. Say **"set this up for me"**.
 
-The tools are shipped, not generated: the file carries every script verbatim in SECTION 11, and
+The tools are shipped, not generated: the file carries every script verbatim in SECTION 10, and
 the setup writes them to disk instead of composing its own. Measured on Windows 11, Python 3.13, under PowerShell 5.1 **and** Git Bash —
 **8/8 suites green and 10/10 acceptance checks correct, ten consecutive runs under each shell.**
 Reproduce it yourself before you trust it:
@@ -23,10 +21,12 @@ python tools/verify_setup.py --repeat 10
 ```
 
 Claude interviews you first — do you already use Obsidian, install it or will you, do you want a
-throwaway test vault to rearrange before it becomes real, which projects, which repos, which backup,
-which shell — and only then writes anything to disk.
+throwaway test vault to rearrange before it becomes real, which projects, which backup, which shell
+— and only then writes anything to disk.
 
-The file contains no vault content and no personal data. Structure, contracts, and rules only.
+The file contains no vault content and no personal data. Structure, contracts, and rules only. The
+vault you end up with is **empty**: the tree, the tools, and four pages describing them. No example
+notes, no demo content, nothing invented.
 
 ## What you end up with
 
@@ -36,7 +36,6 @@ The file contains no vault content and no personal data. Structure, contracts, a
   the index.
 - Guard scripts that each refuse a silent zero: link resolution, duplicate detection, freshness of
   scheduled jobs, and a test runner that will not report green over zero collected suites.
-- Optionally, a one-way mirror of a GitHub issue tracker into the vault: write via `gh`, read locally.
 - A workflow document in your own words, so the next session reads it instead of re-deriving
   everything.
 
@@ -53,7 +52,7 @@ The folder names are cosmetic. These are not:
 - **A number written into a versioned file carries the command that reproduces it.** Otherwise it
   goes stale and gets quoted anyway.
 
-Section 10 of the kit is an **acceptance test**: Claude has to feed each guard deliberately broken
+Section 9 of the kit is an **acceptance test**: Claude has to feed each guard deliberately broken
 input on your machine and show that it goes red. Clean input proves nothing, so the setup is not
 reported as finished until that passes.
 
@@ -62,7 +61,7 @@ reported as finished until that passes.
 - Claude with file access to the folder you want the vault in
 - Obsidian ([obsidian.md](https://obsidian.md)) — the kit offers to install it if you have not
 - Python 3.10+ for the guard scripts
-- Optional: `git` for history, a cloud-synced folder for backup, `gh` for the issue mirror
+- Optional: `git` for history, a cloud-synced folder for backup
 
 ## Maintainer notes
 

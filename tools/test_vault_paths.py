@@ -28,7 +28,7 @@ class VaultPathsTest(unittest.TestCase):
         self.assertNotEqual(root_index_name("."), "INDEX - .md")
 
     def test_every_index_name_carries_what_it_indexes(self):
-        self.assertEqual(category_index_name("ProjektEins", "01_Issues"), "INDEX - ProjektEins Issues.md")
+        self.assertEqual(category_index_name("ProjektEins", "02_docs"), "INDEX - ProjektEins docs.md")
         self.assertEqual(project_index_name("C:/x/ProjektEins"), "INDEX - ProjektEins.md")
         self.assertNotEqual(project_index_name("C:/x/ProjektEins"), "INDEX.md")
 

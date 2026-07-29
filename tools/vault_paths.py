@@ -16,10 +16,10 @@ for _stream in (sys.stdout, sys.stderr):
 import re
 from pathlib import Path
 
-# The category folders every project gets. Numeric prefixes exist for sort order only.
+# The category folders every project gets when it is created. Numeric prefixes exist for sort
+# order only; 01 is deliberately unused, closing the gap would rename every index file.
 CATEGORY_FOLDERS = [
     "00_Notes",
-    "01_Issues",
     "02_docs",
     "03_technical_docs",
     "04_feedback",

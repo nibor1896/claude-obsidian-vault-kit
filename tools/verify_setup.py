@@ -30,8 +30,9 @@ for _stream in (sys.stdout, sys.stderr):
     except (AttributeError, ValueError):
         pass
 
-CATEGORY_FOLDERS = ["00_Notes", "01_Issues", "02_docs", "03_technical_docs",
-                    "04_feedback", "05_workflows", "06_tools"]
+# Imported, never respelled: a second copy verifies a tree the tools no longer build.
+from vault_paths import CATEGORY_FOLDERS  # noqa: E402
+
 PROJECTS = ["ProjektEins", "ProjektZwei"]
 
 NOTES = [
