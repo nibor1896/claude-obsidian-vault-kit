@@ -1,4 +1,4 @@
-<!-- kit-version: 46e33fab27ae -->
+<!-- kit-version: c66a5b44a78a -->
 # Claude × Obsidian — Vault Kit
 
 **What this file is:** a setup contract for Claude. Drop it into a Claude conversation and say
@@ -58,7 +58,12 @@ document in order. It is a contract, not a suggestion.
    only. PowerShell has no `&&` and no `export`; POSIX shells have no `Get-ChildItem`. Mixing them
    costs the user a failed round trip every time.
 5. **Never touch a path outside the vault and the tool folder** without saying which path and why,
-   and waiting for a yes.
+   and waiting for a yes. **One exception, and it is the only one:**
+   `~/.claude/commands/vaultkit.md`, written in SECTION 8. That file is part of this setup, not an
+   extra — it is how the verification chain gets run from then on, and it works nowhere else. Name
+   the path out loud before writing it, then write it. Do **not** turn it into a question: an offer
+   with a "no" in it produces a vault whose own maintenance command does not exist. The tool never
+   overwrites, so the only thing a yes could protect is a file it already refuses to touch.
 6. **The scripts are inside this file. Write them out; do not rewrite them.** SECTION 10 carries
    every tool, every suite and the three runners verbatim — measured on Windows 11 with Python 3.13
    under PowerShell 5.1 and Git Bash: **9/9 suites green, 12/12 acceptance checks and 14/14
@@ -809,7 +814,18 @@ the one question the update path exists to answer. Nothing else writes it at set
 
 ### Write the `/vaultkit` command
 
-Run this once, before the verification run:
+**After git, and before the verification run.** The order matters and it is not cosmetic: the
+generated file states whether this vault has a repository, because with one the last step is
+`git status --porcelain` and without one it is a paragraph telling the user to compare index files
+by hand. Write the command before `git init` from SECTION 7 has run and that paragraph is true for
+about a minute, then wrong for the life of the vault — and nothing later reads the file again to
+notice. Measured on a cold run: the command was written first and carried
+*"this vault has no git repository"* into a vault that got one two minutes later.
+
+The tool never overwrites, so if the order does slip, the fix is to delete the file it wrote and run
+it again — not to edit it by hand.
+
+Run this once:
 
 ```bash
 python <VaultRoot>/00_Global/06_tools/write_command.py --vault <VaultRoot> \
@@ -818,8 +834,13 @@ python <VaultRoot>/00_Global/06_tools/write_command.py --vault <VaultRoot> \
 
 It writes `~/.claude/commands/vaultkit.md` — the user's own commands folder, which is the only
 destination and takes no flag — with this vault's real paths already in it, and prints the path it
-wrote. **Show the user that line.** The file lands **outside the vault**, so operating rule 5
-applies: name the path and say what it is for *before* the run, not after.
+wrote. **Show the user that line.**
+
+**Announce it, do not ask.** The file lands outside the vault, which is why operating rule 5 names
+this one path as its single exception: say where it goes and what it is for, then run the command.
+A question with a "no" in it hands the user a vault whose maintenance command does not exist, and
+nothing further down works around that. The tool never overwrites anything, so there is no damage a
+yes would have prevented.
 
 There is no in-vault alternative, and the reason belongs here so nobody re-adds one: a command
 under `<VaultRoot>/.claude/commands/` loads only in a session started at that exact folder, and a
