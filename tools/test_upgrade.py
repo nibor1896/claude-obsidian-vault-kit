@@ -74,6 +74,33 @@ class UpgradeTest(unittest.TestCase):
         self.assertEqual((self.tools / "kit-version.txt").read_text(encoding="utf-8").strip(),
                          "abcdef012345")
 
+    def test_stamp_records_the_version_without_writing_anything_else(self):
+        """The first install's only writer. Nothing else puts a version beside a fresh folder.
+
+        `--apply` above covers the second kit onwards. Until --stamp existed, the first one was
+        covered by nobody: the contract told the agent to type the twelve characters by hand,
+        and verify_setup's step 13 read back a value its own fixture had written.
+        """
+        kit = kit_file(self.tmp / "kit.md", {"build_index.py": "print('new')"},
+                       version="0f1e2d3c4b5a")
+        code, out, err = run_upgrade(self.tools, "--stamp", kit)
+        self.assertEqual(code, 0, err)
+        self.assertEqual((self.tools / "kit-version.txt").read_text(encoding="utf-8").strip(),
+                         "0f1e2d3c4b5a")
+        self.assertEqual((self.tools / "build_index.py").read_text(encoding="utf-8"),
+                         "print('old')\n", "--stamp wrote a script file")
+
+    def test_stamp_refuses_a_file_with_no_version_line(self):
+        """`unversioned` would be compared against every future kit and never match."""
+        kit = self.tmp / "old-kit.md"
+        kit.write_text("### `build_index.py`\n\n```python\nprint('new')\n```\n",
+                       encoding="utf-8", newline="\n")
+        code, out, err = run_upgrade(self.tools, "--stamp", kit)
+        self.assertNotEqual(code, 0, "a file with no stamp must not produce one")
+        self.assertFalse((self.tools / "kit-version.txt").exists(),
+                         "a refused stamp still landed on disk")
+        self.assertIn("kit-version", out + err)
+
     def test_a_file_only_the_kit_has_is_reported_as_added(self):
         kit = kit_file(self.tmp / "kit.md",
                        {"build_index.py": "print('old')", "check_links.py": "print('new tool')"})

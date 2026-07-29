@@ -60,7 +60,7 @@ document in order. It is a contract, not a suggestion.
    and waiting for a yes.
 6. **The scripts are inside this file. Write them out; do not rewrite them.** SECTION 10 carries
    every tool, every suite and the three runners verbatim — measured on Windows 11 with Python 3.13
-   under PowerShell 5.1 and Git Bash: **8/8 suites green, 11/11 acceptance checks and 13/13
+   under PowerShell 5.1 and Git Bash: **9/9 suites green, 12/12 acceptance checks and 14/14
    end-to-end setup steps, in ten consecutive runs under each shell.** Write each block to disk
    byte for byte. Retyping them from the contracts in SECTION 5 and SECTION 6 throws that
    measurement away and reintroduces the defects those sections describe — every one was found the
@@ -90,6 +90,8 @@ document in order. It is a contract, not a suggestion.
 - The shipped `tools/` folder copied into the vault, suites and all.
 - The four starting pages named in SECTION 8 — and **no other notes**. Nothing invented.
 - Backup and git set up per SECTION 7.
+- **A `/vaultkit` command, if and only if 1.6 asked for one** — in the location they picked, with
+  the path it went to shown to them. If they said no, nothing, and no second offer.
 - A verification run per SECTION 8, with its output shown to the user.
 - **The acceptance test from SECTION 9, passed.** The setup is not finished until every guard has
   been shown to go red on deliberately bad input on this machine. Clean input proves nothing.
@@ -122,6 +124,9 @@ loud which questions you skipped and what you measured.
 - **1.2 — migration, new production vault, or test vault.**
 - **1.3 — project names, and where their code lives.**
 - **1.4 — the vault path, the backup, git, and whether a remote may be added.**
+- **1.6 — whether to write a `/vaultkit` command, and where.** One of its answers writes outside
+  the vault. A `~/.claude/` folder already on disk answers a different question than this one, the
+  same way an installed Obsidian does in 1.1.
 - **`user.email` — ask, even when an address is sitting right in front of you.** Your session
   context, another repo on the machine, a shell variable, a git credential store: **an address that
   is visible in your environment is not consent to publish it.** It goes into every commit forever,
@@ -223,6 +228,34 @@ Four questions, one call:
 - **OS and shell**, exactly. Every command you emit later depends on this.
 - **Python 3.10+ available?** Check with `python --version` / `python3 --version`. The guard scripts
   are Python. If Python is absent, offer the install and wait.
+
+### 1.6 A `/vaultkit` command — where, or not at all
+
+Ask this in the same round as 1.5. It is the one question in this interview whose "yes" can write
+**outside the vault**, so it falls under operating rule 5 and cannot be inferred, however obvious a
+`~/.claude/` folder on disk makes it look. Same shape as 1.4's "yes to git is not yes to a remote":
+yes to the command is not yes to a location.
+
+```
+Claude Code can run the whole verification chain as one command, /vaultkit.
+Where should it live?
+  1  In the vault           <VaultRoot>/.claude/commands/ — fires only when you start Claude
+                            in this folder, and travels with your backup and your git history
+  2  For every project      ~/.claude/commands/ — works everywhere, but SILENTLY replaces a
+                            command of the same name if you already have one
+  3  Don't create one       the chain stays in the workflow page, as prose
+```
+
+- **Option 1 first, and it is the recommendation.** The command holds this vault's absolute paths,
+  so it is about this vault; keeping it inside means a restored backup restores it too.
+- **Option 2 needs the collision said out loud before they pick it**, not after. Nothing warns
+  them, and a replaced command is not something they will connect to this setup weeks later.
+- **Option 3 is a real answer.** Do not re-offer it later, and do not build it anyway.
+- **This is a Claude Code feature.** If the user works with Claude in a browser, say so and expect
+  option 3 — the workflow page carries the same chain either way, so nothing is lost.
+
+`write_command.py` writes the file (SECTION 8). Do not hand-write it: it fills in every project
+path from the vault as it actually is, which is the part a person retyping gets wrong.
 
 **The vault this setup hands over is empty.** It is structure, tools and the four starting pages from
 SECTION 8 — no imported notes, no migrated memory, no example content. If the user has knowledge
@@ -563,6 +596,7 @@ only ever sees good input cannot tell you the check still works.
 | `check_freshness.py` | age of the last **healthy** run of each scheduled job | treating "no log" as "fine" |
 | `run_suites.py` | discovers and runs every `test_*.py` | reporting green when it collected zero suites |
 | `count_tokens.py` | size of what was read, for cost | inventing a precision — output `exact` or `estimated` |
+| `write_command.py` | the `/vaultkit` command, with this vault's real paths in it | overwriting a command the user has edited, or writing one without naming the path |
 
 ### The one rule all of them share
 
@@ -769,22 +803,55 @@ Two more things to tell the user:
 
 ### Stamp the tool folder with the version that wrote it
 
-Before the verification run, write one file next to the tools:
+Before the verification run, run this once — it is a command, not a file you write:
+
+```
+python <VaultRoot>/00_Global/06_tools/upgrade.py --stamp <path to this kit file>
+```
+
+It writes
 
 ```
 <VaultRoot>/00_Global/06_tools/kit-version.txt
 ```
 
-Its whole content is the twelve hex characters from the `<!-- kit-version: … -->` comment on line 1
-of this file, plus a newline. UTF-8, no BOM, nothing else in the file — no date, no label, no
-sentence around it; `upgrade.py` reads the file and strips it, and anything else in there becomes
-part of the version.
+whose whole content is the twelve hex characters from the `<!-- kit-version: … -->` comment on
+line 1 of this file, plus a newline. UTF-8, no BOM, nothing else in the file — no date, no label,
+no sentence around it; `upgrade.py` reads the file and strips it, and anything else in there
+becomes part of the version. `--stamp` writes that one file and touches nothing else; it needs no
+`--apply`.
+
+**Do not type those twelve characters yourself**, even though you can see them. They already exist
+verbatim in a file on disk, which makes copying them mechanical work — operating rule 7. If the kit
+file carries no stamp line, `--stamp` refuses instead of recording `unversioned`: that string would
+be compared against every future kit and never match.
 
 This is the value the entire update path compares against. `upgrade.py` prints
 `installed: <version> · kit file: <version>`, and until this file exists it prints
 `installed: unknown` — so a user cannot tell an outdated tool folder from a current one, which is
 the one question the update path exists to answer. Nothing else writes it at setup time:
-`upgrade.py` writes it when it applies an update, i.e. from the *second* version onwards.
+`upgrade.py` writes it again when it applies an update, i.e. from the *second* version onwards.
+
+### Write the `/vaultkit` command — only if 1.6 said to
+
+If the user picked a location in **1.6**, run this once, with the location they chose:
+
+```bash
+python <VaultRoot>/00_Global/06_tools/write_command.py --vault <VaultRoot> \
+       --target vault|home --shell powershell|posix
+```
+
+It writes `<location>/.claude/commands/vaultkit.md` with this vault's real paths already in it,
+prints the path it wrote, and **never overwrites** — a second run says nothing because there is
+nothing to say. Show the user the line it printed; with `--target home` the file lands **outside
+the vault**, and operating rule 5 applies. If they chose "none", skip this and say so; nothing
+downstream depends on it.
+
+The command exists because the chain below has three traps in it, and a chain typed from memory
+hits them: `--vault` means one project after `build_index.py` and the vault root after
+`check_links.py`; the tool folder is a full path, not `06_tools/`; and the sweep is `--root`.
+**This is a Claude Code convenience, not a deliverable.** The workflow page in `05_workflows`
+carries the same chain in prose, so a user working in a browser loses nothing.
 
 ### Verification run — all of it, no exceptions
 
@@ -938,19 +1005,27 @@ user's notes, and it takes its verdict from process exit codes and files on disk
 wraps at the terminal width and differs per shell, so **it never stands alone as evidence** — a
 fixture that only greps stdout passes a tool which prints the right sentence and does the wrong
 thing. **Where the message itself is the specified behaviour, the message is what gets checked** —
-in addition to the exit code, never instead of it. Every row below that requires the run to *name*
-the file, or to show a denominator, is that case: "it is reported" is the requirement, and a guard
-that goes red without saying which file has not met it. The shipped driver reads output at exactly
-those places and nowhere else; fixture 9 carries the reasoning in its docstring. Expect
-`11/11 checks behaved as specified`. Anything less is a defect in a script, not in the expectation.
+in addition to the exit code, never instead of it. Three kinds of row below are that case, and the
+third is easy to forget:
+
+- the ones that require the run to **name the file**,
+- the ones that require it to **show a denominator**,
+- and the ones that require a **particular phrase** — *"did not run"*, *"0 suites collected"*,
+  *"adopted"* — **including the requirement to stay silent**, which is a claim about output that
+  nothing but the output can settle.
+
+"It is reported" is the requirement, and a guard that goes red without saying which file has not
+met it. The shipped driver reads output only where a row below asks it to; fixture 9 carries the
+reasoning in its docstring. Expect
+`12/12 checks behaved as specified`. Anything less is a defect in a script, not in the expectation.
 `--repeat 10` runs ten full passes; use it after any change to a guard.
 
 The table below is what the driver checks, and it is the specification a changed script must still
-meet. **Nine fixtures require red, two require green** — fixture 0 is the healthy control and
-fixture 9 is input the structure explicitly allows. A suite that only ever sees bad input is exactly
-as blind as one that only ever sees good input. The driver counts the two kinds from the fixture
-list rather than printing a fixed sentence, so a fixture that changes sides changes the summary with
-it.
+meet. **Fixtures 0, 9 and 11 require green; every other row requires red** — the healthy control, a
+folder the structure allows, and a file the setup itself writes. A suite that only ever sees bad
+input is exactly as blind as one that only ever sees good input. The driver counts the two kinds
+from the fixture list rather than printing a fixed sentence, so a fixture that changes sides changes
+the summary with it.
 
 | # | Fixture | Required behaviour | Fails how, if broken |
 |---|---|---|---|
@@ -965,6 +1040,7 @@ it.
 | 8 | remove or blank a scheduled job's run log | freshness check says **"did not run"**, not "fine" | a scheduler that stopped is indistinguishable from a healthy one |
 | 9 | a folder made by hand — `<Project>/99_extra/` with one note in it | folder survives, gets its own index containing the note, run exits **0** and **names it on stdout** | either half alone is the failure: red on a folder the structure allows, or green while the note reaches no index — measured on a real setup, a renamed `06_tools` took the count from 21 categories to 20 without a word |
 | 10 | note with `project:` naming a different project than its folder, then the agreeing and the absent case | index run exits **non-zero** on the contradiction and names both values; **exit 0 and silent** when the field agrees or is missing | the field reads as if it placed the note, places nothing, and says nothing either way — measured on a real vault before the guard existed: 339 notes, 204 of them carrying `project:`, no run had ever compared one against its folder |
+| 11 | run `write_command.py` twice against a vault, hand-editing the command in between | the file appears, spells `--root` and `--vault` as the two different things they are, the run **names it on stdout**, and the second run writes nothing and **says nothing** | a tool that writes a file into a config folder without naming it — the destination can be outside the vault, which is the one place operating rule 5 forbids anything quiet |
 
 The driver leaves nothing behind — every fixture vault lives under the system temp directory and is
 deleted in a `finally` block. After the run, `git status --porcelain` in the real vault must still be
@@ -977,8 +1053,8 @@ is invisible from inside a single shell.
 Report it like this, one line per check, and **name any check you did not run**:
 
 ```
-Acceptance: 11/11 checks behaved as specified (9 red on bad input, 2 green on allowed input)
-            (or) 9/11 — #5 non-ASCII filename NOT caught, #9 not run
+Acceptance: 12/12 checks behaved as specified (<n> red on bad input, <n> green on allowed input)
+            (or) 10/12 — #5 non-ASCII filename NOT caught, #9 not run
 ```
 
 If a check does not behave as specified, the generated script is wrong — fix the script, not the

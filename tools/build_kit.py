@@ -33,9 +33,51 @@ for _stream in (sys.stdout, sys.stderr):
 
 # Order matters for a human reading top to bottom: shared modules, then tools, then suites.
 SHARED = ["vault_paths.py", "_testkit.py", "jobs.json"]
-TOOLS_ORDER = ["build_index.py", "check_links.py", "check_duplicates.py",
+TOOLS_ORDER = ["build_index.py", "write_command.py", "check_links.py", "check_duplicates.py",
                "check_freshness.py", "count_tokens.py", "run_suites.py"]
 DRIVERS = ["acceptance.py", "verify_setup.py", "upgrade.py"]
+
+
+def delivered_suites():
+    """The suites that ship: `test_X.py` where `X.py` is one of the scripts above.
+
+    THE REPOSITORY HAS MORE SUITES THAN THE USER DOES, AND THAT IS NOT A DISAGREEMENT. The three
+    lists above are maintained by hand; the suites used to be picked up by a bare
+    `glob("test_*.py")`. So a suite written for a repo-side tool delivered *itself* into the
+    user's folder, without anyone deciding to, and then sat there testing a tool that is not
+    there. `test_build_kit.py` is the case that made this visible: build_kit.py is the generator,
+    it is not in any list above, and it is not something a vault needs.
+
+    So: a suite ships only with its tool. In this repository `run_suites.py` reports one more
+    than the delivered file carries -- workshop, not product. **The `n/m suites` in the contract,
+    in HEADER and in README.md describe the PRODUCT**, which is why check_prose_claims() counts
+    this list and not the folder. Do not raise those numbers because the repo grew a suite.
+
+    Undo recipes, both measured on this machine 2026-07-29:
+
+      1. Write an empty `tools/test_dummy.py` with no `dummy.py` beside it. It must not appear in
+         claude-obsidian-vault-kit.md and `--check` must stay green -- the counted number does
+         not move. Delete the file afterwards.
+      2. Drop `count_tokens.py` from TOOLS_ORDER. `test_count_tokens.py` leaves the delivery with
+         it, the counted number falls by one, and `--check` exits 1 against prose that still
+         states the old one -- in all three sources at once, which is what tells you a tool left
+         rather than one sentence rotting.
+
+    Both recipes are also `test_build_kit.py`, which is where they run on every acceptance pass.
+    """
+    shipped = set(SHARED + TOOLS_ORDER + DRIVERS)
+    return [path.name for path in sorted(TOOLS.glob("test_*.py"))
+            if path.name[len("test_"):] in shipped]
+
+
+def delivered_files():
+    """Every file SECTION 10 writes into the user's tool folder, in reading order.
+
+    One list, asked by everything: the renderer, the round-trip verifier, the number the prose is
+    held to, and the tree verify_setup.py builds. Before this existed there were three counters
+    for one question and no run ever compared them.
+    """
+    return SHARED + TOOLS_ORDER + DRIVERS + delivered_suites()
 
 HEADER = """
 ---
@@ -48,8 +90,8 @@ created in SECTION 3). Do not retype them from the contracts above, do not "impr
 copying, and do not skip the suites: they are the only reason the numbers in SECTION 0 mean
 anything.
 
-Measured on Windows 11, Python 3.13, under PowerShell 5.1 **and** Git Bash: 8/8 suites green,
-11/11 acceptance checks correct, 13/13 end-to-end setup steps -- ten consecutive runs under each
+Measured on Windows 11, Python 3.13, under PowerShell 5.1 **and** Git Bash: 9/9 suites green,
+12/12 acceptance checks correct, 14/14 end-to-end setup steps -- ten consecutive runs under each
 shell. Copy them and that measurement still applies to what you handed the user. Rewrite them and
 it does not.
 
@@ -61,9 +103,9 @@ pointed at the wrong line.
 After writing them, prove it on this machine before you report anything:
 
 ```
-python <vault>/00_Global/06_tools/run_suites.py       expect 8/8 suites green
-python <vault>/00_Global/06_tools/acceptance.py       expect 11/11 checks
-python <vault>/00_Global/06_tools/verify_setup.py     expect 13/13 steps
+python <vault>/00_Global/06_tools/run_suites.py       expect 9/9 suites green
+python <vault>/00_Global/06_tools/acceptance.py       expect 12/12 checks
+python <vault>/00_Global/06_tools/verify_setup.py     expect 14/14 steps
 ```
 """
 
@@ -71,9 +113,13 @@ python <vault>/00_Global/06_tools/verify_setup.py     expect 13/13 steps
 # Every "n/m <thing>" the prose is allowed to state, and the code that owns the m. The wording
 # varies on purpose ("expect 11/11 checks", "11/11 acceptance checks"), so each pattern has to
 # cover the phrasings actually in use -- a claim the pattern misses is a claim nothing counts.
-CLAIMS = ((r"(\d+)/\d+ suites", "suites"),
-          (r"(\d+)/\d+ (?:acceptance )?checks", "acceptance checks"),
-          (r"(\d+)/\d+ (?:end-to-end )?(?:setup )?steps", "end-to-end setup steps"))
+#
+# `\s+`, not a literal space, everywhere a word follows: prose wraps. `13/13` sat at the end of
+# one line in src/contract.md with `end-to-end setup steps` on the next, and a pattern spelling
+# that gap as " " saw no claim there at all -- which this file used to treat as agreement.
+CLAIMS = ((r"(\d+)/\d+\s+suites", "suites"),
+          (r"(\d+)/\d+\s+(?:acceptance\s+)?checks", "acceptance checks"),
+          (r"(\d+)/\d+\s+(?:end-to-end\s+)?(?:setup\s+)?steps", "end-to-end setup steps"))
 
 
 def check_prose_claims():
@@ -86,19 +132,33 @@ def check_prose_claims():
     same objects the drivers count for their own summary lines, so the guard cannot disagree with
     the run it claims to summarise.
 
-    Undo recipe -- the run that has to go red: set README.md back to `11/11 end-to-end setup
-    steps`, then `python tools/build_kit.py --check` prints
-    `README.md: says 11/11 end-to-end setup steps, counted 13` and exits 1.
+    WHY ZERO MATCHES IS ITSELF A DEFECT (2026-07-29): the three patterns used to spell the gap
+    between the number and the word as a literal space, and prose wraps. `13/13` ended a line in
+    src/contract.md with `end-to-end setup steps` beginning the next, so that pattern matched
+    nothing in the one file the user actually reads -- and no match read as no disagreement.
+    Measured: contract set to `99/99`, rebuilt, `--check` exit 0, line 64 of the delivered file
+    saying `99/99 end-to-end setup steps`. `\\s+` fixes the wrapping; the minimum-hit loop below
+    fixes the class, because a pattern that stops seeing its claim can never disagree with it.
 
-    Known wart: README.md's maintainer notes quote an older Linux run (`8/8 suites`) as history,
-    not as a current claim, and this guard cannot tell the two apart. It agrees today. If a suite
-    is ever added, that line will be reported -- rephrase the history so it carries no bare n/m,
-    do not bump a measurement nobody repeated.
+    Undo recipes -- the two runs that have to go red, each on its own:
+
+      1. Set src/contract.md's step claim to `99/99`. `python tools/build_kit.py --check` prints
+         `src/contract.md: says "99/99 end-to-end setup steps", counted 13` and exits 1. Before
+         the `\\s+` change this printed nothing and exited 0.
+      2. Delete the word `steps` from README.md's measurement sentence (line 15). `--check` then
+         prints `README.md: states no end-to-end setup steps claim at all` and exits 1.
+
+    Known wart, and it is load-bearing: README.md's maintainer notes quote an older Linux run as
+    history, not as a current claim, and this guard cannot tell the two apart -- so that
+    paragraph carries no bare `n/m` at all. Rephrase history, never bump a measurement nobody
+    repeated.
     """
     sys.path.insert(0, str(TOOLS))
     import acceptance
     import verify_setup
-    counted = {"suites": len(list(TOOLS.glob("test_*.py"))),
+    # delivered_suites(), not the folder: the prose describes what the user receives, and this
+    # repository carries suites for its own tools that no vault ever gets.
+    counted = {"suites": len(delivered_suites()),
                "acceptance checks": len(acceptance.FIXTURES),
                "end-to-end setup steps": len(verify_setup.STEPS)}
     # Prose only. The embedded suites contain strings like "0/2 suites" as test data, and counting
@@ -108,17 +168,32 @@ def check_prose_claims():
                ("README.md", README.read_text(encoding="utf-8")))
 
     wrong = []
+    unseen = []
     for label, text in sources:
         for pattern, what in CLAIMS:
+            found_any = False
             for found in re.finditer(pattern, text):
+                found_any = True
                 if int(found.group(1)) != counted[what]:
                     wrong.append(f'  {label}: says "{found.group(0)}", counted {counted[what]}')
+            if not found_any:
+                unseen.append(f"  {label}: states no {what} claim at all")
     if wrong:
         print(f"{OUT.name}: the prose states a number the code does not count.\n"
               + "\n".join(sorted(set(wrong)))
               + "\n  A number in prose goes stale the moment a suite, a fixture or a step is "
                 "added -- this check exists because three of them shipped that way.",
               file=sys.stderr)
+    if unseen:
+        # Every source is a place the reader takes the measurement from, so every source has to
+        # carry every claim. A missing one is either prose that dropped a promise or a pattern
+        # that stopped seeing it, and both look exactly like agreement from here.
+        print(f"{OUT.name}: a source no longer carries a claim the others do.\n"
+              + "\n".join(sorted(set(unseen)))
+              + "\n  Zero matches is not agreement. A wrapped line already turned one claim "
+                "invisible once, and --check stayed green over a delivered file saying 99/99.",
+              file=sys.stderr)
+    if wrong or unseen:
         return 1
 
     # Same class of defect, one level nastier: a real hash quoted in the prose as an example.
@@ -159,7 +234,7 @@ def render():
         parts.append(f"#### {title}\n")
         for name in group:
             parts.append(block(name))
-    for name in sorted(p.name for p in TOOLS.glob("test_*.py")):
+    for name in delivered_suites():
         parts.append(block(name))
     parts.append("---\n\n*Generated by `tools/build_kit.py`. Edit the sources, never this file.*\n"
                  "*Source and newest published copy: "
@@ -184,7 +259,7 @@ def verify():
         print(f"{OUT.name}: missing -- run build_kit.py", file=sys.stderr)
         return 1
     blocks = BLOCK_RE.findall(OUT.read_text(encoding="utf-8"))
-    expected = SHARED + TOOLS_ORDER + DRIVERS + sorted(p.name for p in TOOLS.glob("test_*.py"))
+    expected = delivered_files()
     names = [n for n, _ in blocks]
     if names != expected:
         print(f"{OUT.name}: embedded {len(names)} blocks, expected {len(expected)}\n"
@@ -263,7 +338,7 @@ def main(argv=None):
     OUT.write_text(rendered, encoding="utf-8", newline="\n")
     kb = len(rendered.encode("utf-8")) / 1024
     print(f"{OUT.name}: {len(rendered.splitlines())} lines · {kb:.0f} KB · "
-          f"{len(SHARED) + len(TOOLS_ORDER) + len(DRIVERS) + len(list(TOOLS.glob('test_*.py')))} files embedded")
+          f"{len(delivered_files())} files embedded")
     return 0
 
 

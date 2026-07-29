@@ -1,18 +1,22 @@
 """Acceptance test: prove each guard reacts as specified to one input, on this machine.
 
-Eleven fixtures, each built in a throwaway vault under the system temp directory. Nine hand a
-guard bad input and require it to go red; two hand the tools input the structure explicitly
-allows and require them to stay green. Both halves are needed: a suite that only ever sees
-bad input is exactly as blind as one that only ever sees good input.
+Each fixture is built in its own throwaway vault under the system temp directory. Most hand a
+guard bad input and require it to go red; the rest hand the tools input or behaviour the
+structure explicitly allows and require them to stay green. Both halves are needed: a suite that
+only ever sees bad input is exactly as blind as one that only ever sees good input. The counts
+are derived from FIXTURES below, never written into a sentence here -- one of them changed sides
+once, and a sentence would have gone on being wrong.
 
 The verdict comes from process exit codes and from files on disk -- never from parsing console
-text, which wraps at the terminal width and differs per shell. The one exception is fixture 9,
-where the printed line *is* the specified behaviour.
+text alone, which wraps at the terminal width and differs per shell. Where a printed line *is*
+the specified behaviour it is read as well, never instead: fixtures 9 and 11 require a run to
+name what it touched, and several red fixtures require a particular phrase or require silence.
+SECTION 9 of the contract lists the three kinds.
 
     python acceptance.py            one pass
     python acceptance.py --repeat 10
 
-Exit 0 only when all eleven behaved as specified in every pass.
+Exit 0 only when every fixture behaved as specified in every pass.
 """
 
 import argparse
@@ -146,6 +150,36 @@ def fixture_9_hand_made_folder_is_adopted(vault, project):
     return "verlorene-notiz" in index_text(project, "99_extra")
 
 
+def fixture_11_command_is_written_named_and_left_alone(vault, project):
+    """The third green-expected check, and all three parts of it are load-bearing.
+
+    Fixture 9 established the shape: an effect on disk, an effect in the content, and the line
+    that says so. Here the same three are the whole specification of write_command.py -- the
+    file appears, it distinguishes `--root` from `--vault` (the trap the command exists for),
+    and the run names what it wrote. Drop the third and a tool that writes into
+    `~/.claude/commands/` without a word passes this. That path is outside the vault, which is
+    the one place operating rule 5 says nothing may happen quietly.
+    """
+    code, out, _ = run_tool("write_command.py", "--vault", vault, "--target", "vault",
+                            "--shell", "posix")
+    target = vault / ".claude" / "commands" / "vaultkit.md"
+    if code != 0 or not target.is_file():
+        return False
+    if target.name not in out:
+        return False
+    text = target.read_text(encoding="utf-8")
+    if f'--root "{vault.as_posix()}"' not in text:
+        return False
+    if f'--vault "{project.as_posix()}"' not in text:
+        return False
+    # Second run: nothing said, nothing written, the hand edit still there.
+    edited = text + "\nA line the user added.\n"
+    target.write_text(edited, encoding="utf-8", newline="\n")
+    _, second, _ = run_tool("write_command.py", "--vault", vault, "--target", "vault",
+                            "--shell", "posix")
+    return not second.strip() and target.read_text(encoding="utf-8") == edited
+
+
 def fixture_10_project_disagrees_with_folder(vault, project):
     """The field that looked like it worked: nothing reads it, so only a guard can say so.
 
@@ -212,6 +246,8 @@ FIXTURES = [
     ("8 freshness check without a run log", fixture_8_freshness_without_log, "red"),
     ("9 hand-made folder is adopted, indexed and named", fixture_9_hand_made_folder_is_adopted, "green"),
     ("10 project: disagreeing with its folder", fixture_10_project_disagrees_with_folder, "red"),
+    ("11 /vaultkit command written, named and never overwritten",
+     fixture_11_command_is_written_named_and_left_alone, "green"),
 ]
 
 RED = sum(1 for _, _, kind in FIXTURES if kind == "red")

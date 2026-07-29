@@ -6,10 +6,14 @@ would change. Nothing is written without `--apply`.
 
     python upgrade.py <path-to-kit.md>              show what would change
     python upgrade.py <path-to-kit.md> --apply      write the changes, then prove them
+    python upgrade.py --stamp <path-to-kit.md>      record which kit installed this folder
 
 `--apply` reruns the suites and the acceptance driver afterwards and fails loudly if either
 goes red, because a tool folder that was updated but never re-proven is the state this kit
 exists to prevent.
+
+`--stamp` is the other end of the same path: it writes `kit-version.txt` and nothing else, so a
+folder knows its own version from the first install onwards instead of from the first update.
 
 Local edits are overwritten. They are listed first, by name, so that is a decision and not a
 surprise.
@@ -51,6 +55,40 @@ def installed_version():
     return stamp.read_text(encoding="utf-8-sig").strip() if stamp.exists() else "unknown"
 
 
+def write_stamp(version):
+    """The one place kit-version.txt is spelled. Both writers go through here."""
+    target = TOOLS / "kit-version.txt"
+    target.write_text(version + "\n", encoding="utf-8", newline="\n")
+    return target
+
+
+def stamp(kit_path):
+    """Write kit-version.txt from the kit file's own stamp line. Nothing else, no --apply.
+
+    WHY THIS IS A COMMAND AND NOT A SENTENCE IN THE CONTRACT (2026-07-29): SECTION 8 used to
+    tell the agent to type twelve hex characters into a file, copied by eye from line 1 of the
+    kit. Operating rule 7 of that same contract says the scripts do the mechanical work, and
+    copying a value that already exists verbatim in a file on disk is the most mechanical work
+    there is. It also left a hole: `--apply` below is the only other writer, so until a *second*
+    kit ever shipped, nothing wrote the file and a fresh folder answered `installed: unknown` --
+    the one question the whole update path exists to answer.
+
+    A file with no stamp line is refused rather than recorded as "unversioned". That string
+    would then be compared against every future kit forever and never match, which is a wrong
+    answer wearing a right answer's clothes.
+    """
+    text = Path(kit_path).read_text(encoding="utf-8-sig")
+    found = VERSION_RE.search(text)
+    if not found:
+        print(f"{kit_path}: no `<!-- kit-version: … -->` line — nothing to stamp. An unstamped "
+              f"file cannot say which kit this folder came from, and a guessed value is worse "
+              f"than none.", file=sys.stderr)
+        return 1
+    target = write_stamp(found.group(1))
+    print(f"wrote {target.name}: {found.group(1)}")
+    return 0
+
+
 def classify(blocks):
     same, changed, added = [], [], []
     for name, body in sorted(blocks.items()):
@@ -83,9 +121,16 @@ def prove():
 
 def main(argv=None):
     parser = argparse.ArgumentParser(description=__doc__)
-    parser.add_argument("kit", help="path to a newer claude-obsidian-vault-kit.md")
+    parser.add_argument("kit", nargs="?", help="path to a newer claude-obsidian-vault-kit.md")
     parser.add_argument("--apply", action="store_true", help="write the changes")
+    parser.add_argument("--stamp", metavar="KITFILE",
+                        help="write kit-version.txt from KITFILE's stamp line and do nothing else")
     args = parser.parse_args(argv)
+
+    if args.stamp:
+        return stamp(args.stamp)
+    if not args.kit:
+        parser.error("give a kit file to compare against, or --stamp <kitfile> to record one")
 
     blocks, new_version = read_kit(args.kit)
     same, changed, added = classify(blocks)
@@ -106,7 +151,7 @@ def main(argv=None):
 
     for name in changed + added:
         (TOOLS / name).write_text(blocks[name], encoding="utf-8", newline="\n")
-    (TOOLS / "kit-version.txt").write_text(new_version + "\n", encoding="utf-8", newline="\n")
+    write_stamp(new_version)
     print(f"\nwrote {len(changed) + len(added)} files. Proving them:")
     if not prove():
         print("the updated folder does not pass its own checks -- restore it from git.",

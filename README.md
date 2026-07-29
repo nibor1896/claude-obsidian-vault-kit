@@ -11,8 +11,8 @@ structure, a **generated** index, and a set of guards that go red instead of qui
 
 The tools are shipped, not generated: the file carries every script verbatim in SECTION 10, and
 the setup writes them to disk instead of composing its own. Measured on Windows 11, Python 3.13,
-under PowerShell 5.1 **and** Git Bash — **8/8 suites green, 11/11 acceptance checks correct and
-13/13 end-to-end setup steps, ten consecutive runs under each shell.**
+under PowerShell 5.1 **and** Git Bash — **9/9 suites green, 12/12 acceptance checks correct and
+14/14 end-to-end setup steps, ten consecutive runs under each shell.**
 Reproduce it yourself before you trust it:
 
 ```
@@ -70,8 +70,11 @@ reported as finished until that passes.
 a Mac are the most useful thing you can open an issue about.
 
 **Linux was verified once, on the kit as it stood before this rewrite** — Ubuntu under WSL2 with
-Python 3.14 and git 2.53: a cold run built the vault, 8/8 suites, 10/10 acceptance, 10/10 setup
-flow, 64/64 links, no drift on the second index run. That run measured code that has since changed
+Python 3.14 and git 2.53: a cold run built the vault, every suite green, every acceptance fixture
+and every setup step passing, every wikilink resolving, no drift on the second index run. The
+counts that run reported are left out on purpose — they belong to a smaller kit, and a bare `n/m`
+sitting in a paragraph of history gets quoted as a current measurement sooner or later. That run
+measured code that has since changed
 (the tracker is gone, projects are scaffolded, every reader is `utf-8-sig`), so it is history, not a
 current claim. One shell only — WSL ships bash, so the PowerShell/Git-Bash comparison that catches
 encoding defects was not available there. `flatpak` and a desktop Obsidian were not part of it.

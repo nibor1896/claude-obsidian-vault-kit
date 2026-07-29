@@ -35,6 +35,10 @@ from vault_paths import CATEGORY_FOLDERS, TEMPLATES_DIR, template_name  # noqa: 
 
 PROJECTS = ["ProjektEins", "ProjektZwei"]
 
+# The stamp on the throwaway kit file this run "installs" from. Step 13 requires the folder to
+# come out carrying exactly this, so the value has to be named once and read, never written twice.
+SETUP_KIT_VERSION = "abcabcabcabc"
+
 NOTES = [
     ("00_Global", "03_technical_docs", "the-rules-this-vault-runs-on.md", "The rules this vault runs on",
      "Twelve rules and the frontmatter contract.",
@@ -80,18 +84,42 @@ def write_note(path, title, summary, body):
                     encoding="utf-8", newline="\n")
 
 
+def delivered_scripts():
+    """The files a real install ends up with -- not whatever happens to sit next to this one.
+
+    WHY THIS IS NOT A GLOB (2026-07-29): it was one, `TOOLS.glob("*.py")`, and in the repository
+    that folder holds tools the user never receives. The verified tree was therefore richer than
+    the delivered one, which is precisely why none of the thirteen steps could see a script
+    leaking into or out of the delivery. build_kit.py owns that list; here it is asked.
+
+    In an installed vault build_kit.py is absent -- it is not shipped either -- and there the
+    folder *is* the answer, so the fallback is the folder. Two branches, one meaning.
+    """
+    try:
+        import build_kit
+    except ImportError:
+        return sorted(p.name for p in TOOLS.glob("*.py")) + ["jobs.json"]
+    return build_kit.delivered_files()
+
+
 def build_vault(root):
     """Step 1-3: the folder tree, the shipped tools, the starting pages."""
     for project in ["00_Global"] + PROJECTS:
         for folder in CATEGORY_FOLDERS:
             (root / project / folder).mkdir(parents=True, exist_ok=True)
     dst = root / "00_Global" / "06_tools"
-    for src in list(TOOLS.glob("*.py")) + [TOOLS / "jobs.json"]:
-        shutil.copy2(src, dst / src.name)
-    # The stamp SECTION 8 writes during setup, taken there from the kit file's first line. This
-    # tree has no kit file, so the value is a stand-in; what step 13 tests is that the folder
-    # carries a version at all and that upgrade.py reads that value back.
-    (dst / "kit-version.txt").write_text("abcabcabcabc\n", encoding="utf-8", newline="\n")
+    for name in delivered_scripts():
+        shutil.copy2(TOOLS / name, dst / name)
+    # The stamp SECTION 8 writes during setup -- by running the shipped tool, exactly as the
+    # contract now tells the agent to. This function used to write the file itself, which made
+    # step 13 read back a value this file had just typed and call that a pass. The kit file is a
+    # stand-in with a made-up stamp; what is under test is that `--stamp` puts that stamp on
+    # disk and that upgrade.py reads it back.
+    kit = root.parent / "the-kit-the-user-dropped-in.md"
+    kit.write_text(f"<!-- kit-version: {SETUP_KIT_VERSION} -->\n\n# Kit\n",
+                   encoding="utf-8", newline="\n")
+    run([sys.executable, str(dst / "upgrade.py"), "--stamp", str(kit)],
+        cwd=root, label="upgrade.py --stamp")
     for project, folder, name, title, summary, body in NOTES:
         write_note(root / project / folder / name, title, summary, body)
     (root / ".gitignore").write_text(
@@ -274,19 +302,30 @@ def _s12(root):
 def _s13(root):
     """The one value the whole update path compares against, and nothing used to write it.
 
-    WHY THIS EXISTS (2026-07-29): kit-version.txt was only ever written by upgrade.py itself
-    (upgrade.py:109), which means from the *second* version onwards. A freshly installed folder
-    answered `installed: unknown`, and steps 1-12 stayed green through it -- not one of them
-    looks at the update path. SECTION 8 now writes the stamp during setup; this holds it to that.
+    WHY THIS EXISTS (2026-07-29): kit-version.txt was only ever written by upgrade.py's --apply
+    branch, which means from the *second* version onwards. A freshly installed folder answered
+    `installed: unknown`, and steps 1-12 stayed green through it -- not one of them looks at the
+    update path.
 
-    Undo recipe, to watch it go red: remove the kit-version.txt write in build_vault() and this
-    step fails with `no kit-version.txt beside the tools`.
+    WHY IT STOPPED TESTING ITSELF (same day): the first version of this step passed because
+    build_vault() had typed the value it then read back. SECTION 8 now runs
+    `upgrade.py --stamp <kitfile>`, build_vault() does the same, and the value under test comes
+    out of a file the tool parsed -- step 12's shape, not step 13's old one.
+
+    Undo recipe, to watch it go red: copy tools/ somewhere, delete the two `if args.stamp:` lines
+    from upgrade.py's main(), and run both drivers there. Measured on this machine 2026-07-29 --
+    verify_setup 12/13, failing in step 1 with `upgrade.py --stamp exited 2`, and test_upgrade
+    7/9. Both, which is the point of covering it in two places: the driver proves the setup does
+    it, the suite proves the tool can.
     """
     tools = root / "00_Global" / "06_tools"
     stamp = tools / "kit-version.txt"
     if not stamp.is_file():
         raise Failed("no kit-version.txt beside the tools -- upgrade.py cannot say what is installed")
     installed = stamp.read_text(encoding="utf-8-sig").strip()
+    if installed != SETUP_KIT_VERSION:
+        raise Failed(f"the stamp beside the tools reads {installed!r}, not the "
+                     f"{SETUP_KIT_VERSION!r} the kit file it was installed from carried")
 
     # A kit file carrying one block byte-identical to what is installed: upgrade.py then has
     # nothing to write, and the only thing under test is the line it prints first. It lives
@@ -299,6 +338,61 @@ def _s13(root):
                     label="upgrade.py")
     if f"installed: {installed}" not in out or "unknown" in out:
         raise Failed(f"upgrade.py did not read the installed stamp back:\n{out}")
+
+
+@step("14 a /vaultkit command is written once, carries this vault's own paths, and is left alone")
+def _s14(root):
+    """The convenience the setup offers, held to the same three things as step 12.
+
+    The command exists because `--vault` means a PROJECT after build_index.py and the ROOT after
+    check_links.py, and a chain typed from memory gets that wrong. So the file existing proves
+    nothing on its own -- what is checked is that the two invocations differ, that the second run
+    leaves a hand edit alone, and that the guards' denominators do not move because of it.
+
+    Undo recipes, both measured on this machine 2026-07-29 against a copy of tools/:
+
+      - Delete the `if target.exists():` block in write_command.py's main(): the hand edit is
+        eaten and the second run reports work. verify_setup 13/14, acceptance 11/12,
+        test_write_command 8/10.
+      - Remove `.claude` from SKIP_DIRS in vault_paths.py: the last half here fails instead,
+        with the link checker scanning one file more after the command was written than before.
+        verify_setup 13/14, test_write_command 9/10 -- and acceptance stays 12/12, because
+        fixture 11 checks the file and the message, not the denominators. That gap is the
+        reason this step carries the denominator half at all.
+    """
+    target = root / ".claude" / "commands" / "vaultkit.md"
+    _, links_before, _ = tool(root, "check_links.py", "--vault", ".")
+
+    _, out, _ = tool(root, "write_command.py", "--vault", str(root), "--target", "vault",
+                     "--shell", "posix")
+    if not target.is_file():
+        raise Failed(f"no /vaultkit command at {target}\n{out}")
+    if target.name not in out:
+        raise Failed(f"a file was written outside the vault tree without being named:\n{out}")
+
+    text = target.read_text(encoding="utf-8")
+    root_arg = f'--root "{root.as_posix()}"'
+    if root_arg not in text:
+        raise Failed(f"the command never sweeps the whole vault with --root:\n{text[:400]}")
+    for project in ["00_Global"] + PROJECTS:
+        if f'--vault "{(root / project).as_posix()}"' not in text:
+            raise Failed(f"no index line for {project} in the command")
+    if f'--vault "{root.as_posix()}"' not in text:
+        raise Failed("nothing in the command hands the vault root to the link checker")
+
+    edited = text + "\n## 7 · A step the user added\n"
+    target.write_text(edited, encoding="utf-8", newline="\n")
+    _, second, _ = tool(root, "write_command.py", "--vault", str(root), "--target", "vault",
+                        "--shell", "posix")
+    if second.strip():
+        raise Failed(f"the second run reported work it did not do:\n{second}")
+    if target.read_text(encoding="utf-8") != edited:
+        raise Failed("a rerun overwrote a hand-edited command file")
+
+    _, links_after, _ = tool(root, "check_links.py", "--vault", ".")
+    if links_before != links_after:
+        raise Failed(f"the command file entered the note denominators:\n"
+                     f"  before: {links_before.strip()}\n  after:  {links_after.strip()}")
 
 
 def one_pass(verbose=True):

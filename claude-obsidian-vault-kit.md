@@ -1,4 +1,4 @@
-<!-- kit-version: 6feadbb8db35 -->
+<!-- kit-version: 5a03ca758ee0 -->
 # Claude × Obsidian — Vault Kit
 
 **What this file is:** a setup contract for Claude. Drop it into a Claude conversation and say
@@ -61,7 +61,7 @@ document in order. It is a contract, not a suggestion.
    and waiting for a yes.
 6. **The scripts are inside this file. Write them out; do not rewrite them.** SECTION 10 carries
    every tool, every suite and the three runners verbatim — measured on Windows 11 with Python 3.13
-   under PowerShell 5.1 and Git Bash: **8/8 suites green, 11/11 acceptance checks and 13/13
+   under PowerShell 5.1 and Git Bash: **9/9 suites green, 12/12 acceptance checks and 14/14
    end-to-end setup steps, in ten consecutive runs under each shell.** Write each block to disk
    byte for byte. Retyping them from the contracts in SECTION 5 and SECTION 6 throws that
    measurement away and reintroduces the defects those sections describe — every one was found the
@@ -91,6 +91,8 @@ document in order. It is a contract, not a suggestion.
 - The shipped `tools/` folder copied into the vault, suites and all.
 - The four starting pages named in SECTION 8 — and **no other notes**. Nothing invented.
 - Backup and git set up per SECTION 7.
+- **A `/vaultkit` command, if and only if 1.6 asked for one** — in the location they picked, with
+  the path it went to shown to them. If they said no, nothing, and no second offer.
 - A verification run per SECTION 8, with its output shown to the user.
 - **The acceptance test from SECTION 9, passed.** The setup is not finished until every guard has
   been shown to go red on deliberately bad input on this machine. Clean input proves nothing.
@@ -123,6 +125,9 @@ loud which questions you skipped and what you measured.
 - **1.2 — migration, new production vault, or test vault.**
 - **1.3 — project names, and where their code lives.**
 - **1.4 — the vault path, the backup, git, and whether a remote may be added.**
+- **1.6 — whether to write a `/vaultkit` command, and where.** One of its answers writes outside
+  the vault. A `~/.claude/` folder already on disk answers a different question than this one, the
+  same way an installed Obsidian does in 1.1.
 - **`user.email` — ask, even when an address is sitting right in front of you.** Your session
   context, another repo on the machine, a shell variable, a git credential store: **an address that
   is visible in your environment is not consent to publish it.** It goes into every commit forever,
@@ -224,6 +229,34 @@ Four questions, one call:
 - **OS and shell**, exactly. Every command you emit later depends on this.
 - **Python 3.10+ available?** Check with `python --version` / `python3 --version`. The guard scripts
   are Python. If Python is absent, offer the install and wait.
+
+### 1.6 A `/vaultkit` command — where, or not at all
+
+Ask this in the same round as 1.5. It is the one question in this interview whose "yes" can write
+**outside the vault**, so it falls under operating rule 5 and cannot be inferred, however obvious a
+`~/.claude/` folder on disk makes it look. Same shape as 1.4's "yes to git is not yes to a remote":
+yes to the command is not yes to a location.
+
+```
+Claude Code can run the whole verification chain as one command, /vaultkit.
+Where should it live?
+  1  In the vault           <VaultRoot>/.claude/commands/ — fires only when you start Claude
+                            in this folder, and travels with your backup and your git history
+  2  For every project      ~/.claude/commands/ — works everywhere, but SILENTLY replaces a
+                            command of the same name if you already have one
+  3  Don't create one       the chain stays in the workflow page, as prose
+```
+
+- **Option 1 first, and it is the recommendation.** The command holds this vault's absolute paths,
+  so it is about this vault; keeping it inside means a restored backup restores it too.
+- **Option 2 needs the collision said out loud before they pick it**, not after. Nothing warns
+  them, and a replaced command is not something they will connect to this setup weeks later.
+- **Option 3 is a real answer.** Do not re-offer it later, and do not build it anyway.
+- **This is a Claude Code feature.** If the user works with Claude in a browser, say so and expect
+  option 3 — the workflow page carries the same chain either way, so nothing is lost.
+
+`write_command.py` writes the file (SECTION 8). Do not hand-write it: it fills in every project
+path from the vault as it actually is, which is the part a person retyping gets wrong.
 
 **The vault this setup hands over is empty.** It is structure, tools and the four starting pages from
 SECTION 8 — no imported notes, no migrated memory, no example content. If the user has knowledge
@@ -564,6 +597,7 @@ only ever sees good input cannot tell you the check still works.
 | `check_freshness.py` | age of the last **healthy** run of each scheduled job | treating "no log" as "fine" |
 | `run_suites.py` | discovers and runs every `test_*.py` | reporting green when it collected zero suites |
 | `count_tokens.py` | size of what was read, for cost | inventing a precision — output `exact` or `estimated` |
+| `write_command.py` | the `/vaultkit` command, with this vault's real paths in it | overwriting a command the user has edited, or writing one without naming the path |
 
 ### The one rule all of them share
 
@@ -770,22 +804,55 @@ Two more things to tell the user:
 
 ### Stamp the tool folder with the version that wrote it
 
-Before the verification run, write one file next to the tools:
+Before the verification run, run this once — it is a command, not a file you write:
+
+```
+python <VaultRoot>/00_Global/06_tools/upgrade.py --stamp <path to this kit file>
+```
+
+It writes
 
 ```
 <VaultRoot>/00_Global/06_tools/kit-version.txt
 ```
 
-Its whole content is the twelve hex characters from the `<!-- kit-version: … -->` comment on line 1
-of this file, plus a newline. UTF-8, no BOM, nothing else in the file — no date, no label, no
-sentence around it; `upgrade.py` reads the file and strips it, and anything else in there becomes
-part of the version.
+whose whole content is the twelve hex characters from the `<!-- kit-version: … -->` comment on
+line 1 of this file, plus a newline. UTF-8, no BOM, nothing else in the file — no date, no label,
+no sentence around it; `upgrade.py` reads the file and strips it, and anything else in there
+becomes part of the version. `--stamp` writes that one file and touches nothing else; it needs no
+`--apply`.
+
+**Do not type those twelve characters yourself**, even though you can see them. They already exist
+verbatim in a file on disk, which makes copying them mechanical work — operating rule 7. If the kit
+file carries no stamp line, `--stamp` refuses instead of recording `unversioned`: that string would
+be compared against every future kit and never match.
 
 This is the value the entire update path compares against. `upgrade.py` prints
 `installed: <version> · kit file: <version>`, and until this file exists it prints
 `installed: unknown` — so a user cannot tell an outdated tool folder from a current one, which is
 the one question the update path exists to answer. Nothing else writes it at setup time:
-`upgrade.py` writes it when it applies an update, i.e. from the *second* version onwards.
+`upgrade.py` writes it again when it applies an update, i.e. from the *second* version onwards.
+
+### Write the `/vaultkit` command — only if 1.6 said to
+
+If the user picked a location in **1.6**, run this once, with the location they chose:
+
+```bash
+python <VaultRoot>/00_Global/06_tools/write_command.py --vault <VaultRoot> \
+       --target vault|home --shell powershell|posix
+```
+
+It writes `<location>/.claude/commands/vaultkit.md` with this vault's real paths already in it,
+prints the path it wrote, and **never overwrites** — a second run says nothing because there is
+nothing to say. Show the user the line it printed; with `--target home` the file lands **outside
+the vault**, and operating rule 5 applies. If they chose "none", skip this and say so; nothing
+downstream depends on it.
+
+The command exists because the chain below has three traps in it, and a chain typed from memory
+hits them: `--vault` means one project after `build_index.py` and the vault root after
+`check_links.py`; the tool folder is a full path, not `06_tools/`; and the sweep is `--root`.
+**This is a Claude Code convenience, not a deliverable.** The workflow page in `05_workflows`
+carries the same chain in prose, so a user working in a browser loses nothing.
 
 ### Verification run — all of it, no exceptions
 
@@ -939,19 +1006,27 @@ user's notes, and it takes its verdict from process exit codes and files on disk
 wraps at the terminal width and differs per shell, so **it never stands alone as evidence** — a
 fixture that only greps stdout passes a tool which prints the right sentence and does the wrong
 thing. **Where the message itself is the specified behaviour, the message is what gets checked** —
-in addition to the exit code, never instead of it. Every row below that requires the run to *name*
-the file, or to show a denominator, is that case: "it is reported" is the requirement, and a guard
-that goes red without saying which file has not met it. The shipped driver reads output at exactly
-those places and nowhere else; fixture 9 carries the reasoning in its docstring. Expect
-`11/11 checks behaved as specified`. Anything less is a defect in a script, not in the expectation.
+in addition to the exit code, never instead of it. Three kinds of row below are that case, and the
+third is easy to forget:
+
+- the ones that require the run to **name the file**,
+- the ones that require it to **show a denominator**,
+- and the ones that require a **particular phrase** — *"did not run"*, *"0 suites collected"*,
+  *"adopted"* — **including the requirement to stay silent**, which is a claim about output that
+  nothing but the output can settle.
+
+"It is reported" is the requirement, and a guard that goes red without saying which file has not
+met it. The shipped driver reads output only where a row below asks it to; fixture 9 carries the
+reasoning in its docstring. Expect
+`12/12 checks behaved as specified`. Anything less is a defect in a script, not in the expectation.
 `--repeat 10` runs ten full passes; use it after any change to a guard.
 
 The table below is what the driver checks, and it is the specification a changed script must still
-meet. **Nine fixtures require red, two require green** — fixture 0 is the healthy control and
-fixture 9 is input the structure explicitly allows. A suite that only ever sees bad input is exactly
-as blind as one that only ever sees good input. The driver counts the two kinds from the fixture
-list rather than printing a fixed sentence, so a fixture that changes sides changes the summary with
-it.
+meet. **Fixtures 0, 9 and 11 require green; every other row requires red** — the healthy control, a
+folder the structure allows, and a file the setup itself writes. A suite that only ever sees bad
+input is exactly as blind as one that only ever sees good input. The driver counts the two kinds
+from the fixture list rather than printing a fixed sentence, so a fixture that changes sides changes
+the summary with it.
 
 | # | Fixture | Required behaviour | Fails how, if broken |
 |---|---|---|---|
@@ -966,6 +1041,7 @@ it.
 | 8 | remove or blank a scheduled job's run log | freshness check says **"did not run"**, not "fine" | a scheduler that stopped is indistinguishable from a healthy one |
 | 9 | a folder made by hand — `<Project>/99_extra/` with one note in it | folder survives, gets its own index containing the note, run exits **0** and **names it on stdout** | either half alone is the failure: red on a folder the structure allows, or green while the note reaches no index — measured on a real setup, a renamed `06_tools` took the count from 21 categories to 20 without a word |
 | 10 | note with `project:` naming a different project than its folder, then the agreeing and the absent case | index run exits **non-zero** on the contradiction and names both values; **exit 0 and silent** when the field agrees or is missing | the field reads as if it placed the note, places nothing, and says nothing either way — measured on a real vault before the guard existed: 339 notes, 204 of them carrying `project:`, no run had ever compared one against its folder |
+| 11 | run `write_command.py` twice against a vault, hand-editing the command in between | the file appears, spells `--root` and `--vault` as the two different things they are, the run **names it on stdout**, and the second run writes nothing and **says nothing** | a tool that writes a file into a config folder without naming it — the destination can be outside the vault, which is the one place operating rule 5 forbids anything quiet |
 
 The driver leaves nothing behind — every fixture vault lives under the system temp directory and is
 deleted in a `finally` block. After the run, `git status --porcelain` in the real vault must still be
@@ -978,8 +1054,8 @@ is invisible from inside a single shell.
 Report it like this, one line per check, and **name any check you did not run**:
 
 ```
-Acceptance: 11/11 checks behaved as specified (9 red on bad input, 2 green on allowed input)
-            (or) 9/11 — #5 non-ASCII filename NOT caught, #9 not run
+Acceptance: 12/12 checks behaved as specified (<n> red on bad input, <n> green on allowed input)
+            (or) 10/12 — #5 non-ASCII filename NOT caught, #9 not run
 ```
 
 If a check does not behave as specified, the generated script is wrong — fix the script, not the
@@ -1028,8 +1104,8 @@ created in SECTION 3). Do not retype them from the contracts above, do not "impr
 copying, and do not skip the suites: they are the only reason the numbers in SECTION 0 mean
 anything.
 
-Measured on Windows 11, Python 3.13, under PowerShell 5.1 **and** Git Bash: 8/8 suites green,
-11/11 acceptance checks correct, 13/13 end-to-end setup steps -- ten consecutive runs under each
+Measured on Windows 11, Python 3.13, under PowerShell 5.1 **and** Git Bash: 9/9 suites green,
+12/12 acceptance checks correct, 14/14 end-to-end setup steps -- ten consecutive runs under each
 shell. Copy them and that measurement still applies to what you handed the user. Rewrite them and
 it does not.
 
@@ -1041,9 +1117,9 @@ pointed at the wrong line.
 After writing them, prove it on this machine before you report anything:
 
 ```
-python <vault>/00_Global/06_tools/run_suites.py       expect 8/8 suites green
-python <vault>/00_Global/06_tools/acceptance.py       expect 11/11 checks
-python <vault>/00_Global/06_tools/verify_setup.py     expect 13/13 steps
+python <vault>/00_Global/06_tools/run_suites.py       expect 9/9 suites green
+python <vault>/00_Global/06_tools/acceptance.py       expect 12/12 checks
+python <vault>/00_Global/06_tools/verify_setup.py     expect 14/14 steps
 ```
 
 #### Shared
@@ -1088,7 +1164,15 @@ TEMPLATES_DIR = "_templates"
 # Directories that are never notes and never walked. _templates belongs here for two reasons at
 # once: without it the folder becomes a project with six category folders of its own, and the
 # templates inside would be read as notes and go red for having no summary.
-SKIP_DIRS = {".git", ".obsidian", "__pycache__", ".trash", ".venv", "node_modules", TEMPLATES_DIR}
+#
+# `.claude` is the agent's own configuration, the same class as `.obsidian`, and it holds the
+# `/vaultkit` command write_command.py writes. Measured 2026-07-29 before it was listed: writing
+# that one file took check_links.py from 26 files scanned to 27, check_duplicates.py from 4 notes
+# to 5 and from 6 pairs to 10, and the generator from 26 distinct filenames to 27. Nothing went
+# red -- the vault simply began counting its own configuration as knowledge, which is worse,
+# because every denominator it reports is then slightly wrong and nobody has a reason to look.
+SKIP_DIRS = {".git", ".obsidian", ".claude", "__pycache__", ".trash", ".venv", "node_modules",
+             TEMPLATES_DIR}
 
 # Characters Obsidian cannot carry inside a [[wikilink]] target.
 FORBIDDEN_LINK_CHARS = set("#[]|^")
@@ -1817,6 +1901,195 @@ if __name__ == "__main__":
     raise SystemExit(main())
 ```
 
+### `write_command.py`
+
+```python
+"""Write a `/vaultkit` slash command for Claude Code, with this vault's real paths already in it.
+
+The verification chain in SECTION 8 is five commands with three traps in them, and every one of
+the three was hit on a real run:
+
+  1. `--vault` means two different things. `check_links.py` wants the vault ROOT,
+     `build_index.py` wants ONE PROJECT, `check_duplicates.py` takes either. Typing the same
+     path after every `--vault` is wrong in two places out of three.
+  2. The tool folder is `<VaultRoot>/00_Global/06_tools/`, not `06_tools/`. A relative prefix is
+     an invitation to run it from a directory where it does not resolve.
+  3. `--root`, not `--vault`, for the sweep. Rerunning only `--vault` after adding a note leaves
+     the root index on yesterday's count -- green, silent, and wrong. Measured on a cold run:
+     one added note left the root index reading 5 entries against a vault holding 6.
+
+A command file removes all three by spelling out the answers once, per vault, with the paths
+filled in. It is a convenience for Claude Code and nothing depends on it: the workflow page in
+`05_workflows` carries the same chain in prose for anyone working in a browser.
+
+    python write_command.py --vault <VaultRoot> --target vault --shell powershell
+    python write_command.py --vault <VaultRoot> --target home  --shell posix
+
+CREATED WHEN MISSING, NEVER OVERWRITTEN, same as the note templates. A command file is there to
+be edited -- the user adds their own steps -- and a tool that rewrites it every run eats that
+edit without saying so. The second run therefore prints nothing at all: there is no news, and
+`runs.log` carries the run either way, so silence here never means "did not run".
+
+Undo recipe for that guard, measured on this machine 2026-07-29: copy tools/ somewhere, delete
+the `if target.exists():` block in main(), and run the three drivers there --
+test_write_command 8/10, acceptance 11/12, verify_setup 13/14.
+"""
+
+import argparse
+import sys
+from pathlib import Path
+
+TOOLS = Path(__file__).resolve().parent
+sys.path.insert(0, str(TOOLS))
+
+for _stream in (sys.stdout, sys.stderr):
+    try:
+        _stream.reconfigure(encoding="utf-8", errors="replace")
+    except (AttributeError, ValueError):
+        pass
+
+from vault_paths import log_run, project_dirs  # noqa: E402
+
+COMMAND_NAME = "vaultkit"
+
+DESCRIPTION = ("Rebuild this vault's index and run every guard, in the order that leaves "
+               "nothing stale")
+
+
+def show(path, shell):
+    """A path as the user's own shell writes it.
+
+    Cosmetic, and deliberately so: Python takes forward slashes on Windows too, so nothing here
+    breaks if it is wrong. It is done because a command file that spells paths in a foreign
+    syntax reads as though it were meant for someone else's machine.
+    """
+    text = Path(path).as_posix() if shell == "posix" else str(Path(path)).replace("/", "\\")
+    return f'"{text}"'
+
+
+def command_text(vault_root, projects, shell):
+    vault_root = Path(vault_root).resolve()
+    tools = vault_root / "00_Global" / "06_tools"
+
+    def tool(name):
+        return show(tools / name, shell)
+
+    root = show(vault_root, shell)
+    lines = [
+        "---",
+        f"description: {DESCRIPTION}",
+        "---",
+        "",
+        f"Synchronise the Obsidian vault at {root} completely. Its tools are in "
+        f"{show(tools, shell)} — the full path, because `06_tools/` alone resolves only from the "
+        f"vault root and nowhere else.",
+        "",
+        "Run every step below, in this order, and report what each one printed — with its "
+        "numbers. Name any step you did not run; an unmeasured step and a passing one look "
+        "identical from the outside.",
+        "",
+        "**Before you start:** `build_index.py` writes. Say so, and check `git status` first, so "
+        "its output is not mistaken for someone else's uncommitted work.",
+        "",
+        "## 1 · Index each project",
+        "",
+        "`--vault` here means ONE PROJECT DIRECTORY, not the vault root. One line per project:",
+        "",
+    ]
+    for project in projects:
+        lines.append(f"- `python {tool('build_index.py')} --vault {show(project, shell)}`")
+    lines += [
+        "",
+        "## 2 · Index the vault root",
+        "",
+        "`--root`, not `--vault`. This is the one invocation that walks every project *and* "
+        "writes the root hub. Running only step 1 after adding a note leaves the root index "
+        "holding yesterday's entry count, with no message and a green exit — measured on a cold "
+        "run: one added note left it reading `5 entries` against a vault holding 6.",
+        "",
+        f"- `python {tool('build_index.py')} --root {root}`",
+        "",
+        "## 3 · Check the links",
+        "",
+        "`--vault` here means THE VAULT ROOT — the same flag, the other meaning. The project "
+        "hubs link back to the root index, so anything narrower reports a broken link that is "
+        "not broken:",
+        "",
+        f"- `python {tool('check_links.py')} --vault {root}`",
+        "",
+        "## 4 · Check for duplicates",
+        "",
+        "`--vault` here takes either the root or a single project:",
+        "",
+        f"- `python {tool('check_duplicates.py')} --vault {root}`",
+        "",
+        "## 5 · Run the suites",
+        "",
+        f"- `python {tool('run_suites.py')}`",
+        "",
+        "## 6 · Prove the second run changes nothing",
+        "",
+        "Repeat step 2, then the working tree must be clean. A generator that drifts on every "
+        "run is indistinguishable from a clean one after a single pass, and it turns every later "
+        "`git status` into noise nobody reads.",
+        "",
+        f"- `python {tool('build_index.py')} --root {root}`",
+        f"- `git -C {root} status --porcelain`  — must print nothing",
+        "",
+        "## Report",
+        "",
+        "One line per step, each with its denominator. `Open:` lists what you did **not** "
+        "measure, not only what is unfinished.",
+        "",
+    ]
+    return "\n".join(lines)
+
+
+def target_path(vault_root, target):
+    if target == "home":
+        return Path.home() / ".claude" / "commands" / f"{COMMAND_NAME}.md"
+    return Path(vault_root).resolve() / ".claude" / "commands" / f"{COMMAND_NAME}.md"
+
+
+def main(argv=None):
+    parser = argparse.ArgumentParser(description=__doc__)
+    parser.add_argument("--vault", required=True, help="vault root")
+    parser.add_argument("--target", choices=("vault", "home"), default="vault",
+                        help="vault: <VaultRoot>/.claude/commands · home: ~/.claude/commands")
+    parser.add_argument("--shell", choices=("powershell", "posix"), default="powershell",
+                        help="the syntax the paths are written in")
+    args = parser.parse_args(argv)
+
+    vault_root = Path(args.vault).resolve()
+    if not vault_root.is_dir():
+        print(f"not a directory: {vault_root}", file=sys.stderr)
+        return 2
+
+    target = target_path(vault_root, args.target)
+    projects = project_dirs(vault_root)
+    if not projects:
+        # Not a silent skip: a vault with no projects means the wrong path was given, and a
+        # command file listing no projects would be a working file that does nothing.
+        print(f"no projects under {vault_root} — nothing to write a command for", file=sys.stderr)
+        return 1
+
+    if target.exists():
+        log_run(vault_root, "write_command", "ok", f"{target} already there · nothing written")
+        return 0
+
+    target.parent.mkdir(parents=True, exist_ok=True)
+    target.write_text(command_text(vault_root, projects, args.shell),
+                      encoding="utf-8", newline="\n")
+    print(f"wrote {target} — /{COMMAND_NAME} covers {len(projects)} projects; "
+          f"edit it freely, no run overwrites it")
+    log_run(vault_root, "write_command", "ok", f"{target} written · {len(projects)} projects")
+    return 0
+
+
+if __name__ == "__main__":
+    raise SystemExit(main())
+```
+
 ### `check_links.py`
 
 ```python
@@ -2403,19 +2676,23 @@ if __name__ == "__main__":
 ```python
 """Acceptance test: prove each guard reacts as specified to one input, on this machine.
 
-Eleven fixtures, each built in a throwaway vault under the system temp directory. Nine hand a
-guard bad input and require it to go red; two hand the tools input the structure explicitly
-allows and require them to stay green. Both halves are needed: a suite that only ever sees
-bad input is exactly as blind as one that only ever sees good input.
+Each fixture is built in its own throwaway vault under the system temp directory. Most hand a
+guard bad input and require it to go red; the rest hand the tools input or behaviour the
+structure explicitly allows and require them to stay green. Both halves are needed: a suite that
+only ever sees bad input is exactly as blind as one that only ever sees good input. The counts
+are derived from FIXTURES below, never written into a sentence here -- one of them changed sides
+once, and a sentence would have gone on being wrong.
 
 The verdict comes from process exit codes and from files on disk -- never from parsing console
-text, which wraps at the terminal width and differs per shell. The one exception is fixture 9,
-where the printed line *is* the specified behaviour.
+text alone, which wraps at the terminal width and differs per shell. Where a printed line *is*
+the specified behaviour it is read as well, never instead: fixtures 9 and 11 require a run to
+name what it touched, and several red fixtures require a particular phrase or require silence.
+SECTION 9 of the contract lists the three kinds.
 
     python acceptance.py            one pass
     python acceptance.py --repeat 10
 
-Exit 0 only when all eleven behaved as specified in every pass.
+Exit 0 only when every fixture behaved as specified in every pass.
 """
 
 import argparse
@@ -2549,6 +2826,36 @@ def fixture_9_hand_made_folder_is_adopted(vault, project):
     return "verlorene-notiz" in index_text(project, "99_extra")
 
 
+def fixture_11_command_is_written_named_and_left_alone(vault, project):
+    """The third green-expected check, and all three parts of it are load-bearing.
+
+    Fixture 9 established the shape: an effect on disk, an effect in the content, and the line
+    that says so. Here the same three are the whole specification of write_command.py -- the
+    file appears, it distinguishes `--root` from `--vault` (the trap the command exists for),
+    and the run names what it wrote. Drop the third and a tool that writes into
+    `~/.claude/commands/` without a word passes this. That path is outside the vault, which is
+    the one place operating rule 5 says nothing may happen quietly.
+    """
+    code, out, _ = run_tool("write_command.py", "--vault", vault, "--target", "vault",
+                            "--shell", "posix")
+    target = vault / ".claude" / "commands" / "vaultkit.md"
+    if code != 0 or not target.is_file():
+        return False
+    if target.name not in out:
+        return False
+    text = target.read_text(encoding="utf-8")
+    if f'--root "{vault.as_posix()}"' not in text:
+        return False
+    if f'--vault "{project.as_posix()}"' not in text:
+        return False
+    # Second run: nothing said, nothing written, the hand edit still there.
+    edited = text + "\nA line the user added.\n"
+    target.write_text(edited, encoding="utf-8", newline="\n")
+    _, second, _ = run_tool("write_command.py", "--vault", vault, "--target", "vault",
+                            "--shell", "posix")
+    return not second.strip() and target.read_text(encoding="utf-8") == edited
+
+
 def fixture_10_project_disagrees_with_folder(vault, project):
     """The field that looked like it worked: nothing reads it, so only a guard can say so.
 
@@ -2615,6 +2922,8 @@ FIXTURES = [
     ("8 freshness check without a run log", fixture_8_freshness_without_log, "red"),
     ("9 hand-made folder is adopted, indexed and named", fixture_9_hand_made_folder_is_adopted, "green"),
     ("10 project: disagreeing with its folder", fixture_10_project_disagrees_with_folder, "red"),
+    ("11 /vaultkit command written, named and never overwritten",
+     fixture_11_command_is_written_named_and_left_alone, "green"),
 ]
 
 RED = sum(1 for _, _, kind in FIXTURES if kind == "red")
@@ -2710,6 +3019,10 @@ from vault_paths import CATEGORY_FOLDERS, TEMPLATES_DIR, template_name  # noqa: 
 
 PROJECTS = ["ProjektEins", "ProjektZwei"]
 
+# The stamp on the throwaway kit file this run "installs" from. Step 13 requires the folder to
+# come out carrying exactly this, so the value has to be named once and read, never written twice.
+SETUP_KIT_VERSION = "abcabcabcabc"
+
 NOTES = [
     ("00_Global", "03_technical_docs", "the-rules-this-vault-runs-on.md", "The rules this vault runs on",
      "Twelve rules and the frontmatter contract.",
@@ -2755,18 +3068,42 @@ def write_note(path, title, summary, body):
                     encoding="utf-8", newline="\n")
 
 
+def delivered_scripts():
+    """The files a real install ends up with -- not whatever happens to sit next to this one.
+
+    WHY THIS IS NOT A GLOB (2026-07-29): it was one, `TOOLS.glob("*.py")`, and in the repository
+    that folder holds tools the user never receives. The verified tree was therefore richer than
+    the delivered one, which is precisely why none of the thirteen steps could see a script
+    leaking into or out of the delivery. build_kit.py owns that list; here it is asked.
+
+    In an installed vault build_kit.py is absent -- it is not shipped either -- and there the
+    folder *is* the answer, so the fallback is the folder. Two branches, one meaning.
+    """
+    try:
+        import build_kit
+    except ImportError:
+        return sorted(p.name for p in TOOLS.glob("*.py")) + ["jobs.json"]
+    return build_kit.delivered_files()
+
+
 def build_vault(root):
     """Step 1-3: the folder tree, the shipped tools, the starting pages."""
     for project in ["00_Global"] + PROJECTS:
         for folder in CATEGORY_FOLDERS:
             (root / project / folder).mkdir(parents=True, exist_ok=True)
     dst = root / "00_Global" / "06_tools"
-    for src in list(TOOLS.glob("*.py")) + [TOOLS / "jobs.json"]:
-        shutil.copy2(src, dst / src.name)
-    # The stamp SECTION 8 writes during setup, taken there from the kit file's first line. This
-    # tree has no kit file, so the value is a stand-in; what step 13 tests is that the folder
-    # carries a version at all and that upgrade.py reads that value back.
-    (dst / "kit-version.txt").write_text("abcabcabcabc\n", encoding="utf-8", newline="\n")
+    for name in delivered_scripts():
+        shutil.copy2(TOOLS / name, dst / name)
+    # The stamp SECTION 8 writes during setup -- by running the shipped tool, exactly as the
+    # contract now tells the agent to. This function used to write the file itself, which made
+    # step 13 read back a value this file had just typed and call that a pass. The kit file is a
+    # stand-in with a made-up stamp; what is under test is that `--stamp` puts that stamp on
+    # disk and that upgrade.py reads it back.
+    kit = root.parent / "the-kit-the-user-dropped-in.md"
+    kit.write_text(f"<!-- kit-version: {SETUP_KIT_VERSION} -->\n\n# Kit\n",
+                   encoding="utf-8", newline="\n")
+    run([sys.executable, str(dst / "upgrade.py"), "--stamp", str(kit)],
+        cwd=root, label="upgrade.py --stamp")
     for project, folder, name, title, summary, body in NOTES:
         write_note(root / project / folder / name, title, summary, body)
     (root / ".gitignore").write_text(
@@ -2949,19 +3286,30 @@ def _s12(root):
 def _s13(root):
     """The one value the whole update path compares against, and nothing used to write it.
 
-    WHY THIS EXISTS (2026-07-29): kit-version.txt was only ever written by upgrade.py itself
-    (upgrade.py:109), which means from the *second* version onwards. A freshly installed folder
-    answered `installed: unknown`, and steps 1-12 stayed green through it -- not one of them
-    looks at the update path. SECTION 8 now writes the stamp during setup; this holds it to that.
+    WHY THIS EXISTS (2026-07-29): kit-version.txt was only ever written by upgrade.py's --apply
+    branch, which means from the *second* version onwards. A freshly installed folder answered
+    `installed: unknown`, and steps 1-12 stayed green through it -- not one of them looks at the
+    update path.
 
-    Undo recipe, to watch it go red: remove the kit-version.txt write in build_vault() and this
-    step fails with `no kit-version.txt beside the tools`.
+    WHY IT STOPPED TESTING ITSELF (same day): the first version of this step passed because
+    build_vault() had typed the value it then read back. SECTION 8 now runs
+    `upgrade.py --stamp <kitfile>`, build_vault() does the same, and the value under test comes
+    out of a file the tool parsed -- step 12's shape, not step 13's old one.
+
+    Undo recipe, to watch it go red: copy tools/ somewhere, delete the two `if args.stamp:` lines
+    from upgrade.py's main(), and run both drivers there. Measured on this machine 2026-07-29 --
+    verify_setup 12/13, failing in step 1 with `upgrade.py --stamp exited 2`, and test_upgrade
+    7/9. Both, which is the point of covering it in two places: the driver proves the setup does
+    it, the suite proves the tool can.
     """
     tools = root / "00_Global" / "06_tools"
     stamp = tools / "kit-version.txt"
     if not stamp.is_file():
         raise Failed("no kit-version.txt beside the tools -- upgrade.py cannot say what is installed")
     installed = stamp.read_text(encoding="utf-8-sig").strip()
+    if installed != SETUP_KIT_VERSION:
+        raise Failed(f"the stamp beside the tools reads {installed!r}, not the "
+                     f"{SETUP_KIT_VERSION!r} the kit file it was installed from carried")
 
     # A kit file carrying one block byte-identical to what is installed: upgrade.py then has
     # nothing to write, and the only thing under test is the line it prints first. It lives
@@ -2974,6 +3322,61 @@ def _s13(root):
                     label="upgrade.py")
     if f"installed: {installed}" not in out or "unknown" in out:
         raise Failed(f"upgrade.py did not read the installed stamp back:\n{out}")
+
+
+@step("14 a /vaultkit command is written once, carries this vault's own paths, and is left alone")
+def _s14(root):
+    """The convenience the setup offers, held to the same three things as step 12.
+
+    The command exists because `--vault` means a PROJECT after build_index.py and the ROOT after
+    check_links.py, and a chain typed from memory gets that wrong. So the file existing proves
+    nothing on its own -- what is checked is that the two invocations differ, that the second run
+    leaves a hand edit alone, and that the guards' denominators do not move because of it.
+
+    Undo recipes, both measured on this machine 2026-07-29 against a copy of tools/:
+
+      - Delete the `if target.exists():` block in write_command.py's main(): the hand edit is
+        eaten and the second run reports work. verify_setup 13/14, acceptance 11/12,
+        test_write_command 8/10.
+      - Remove `.claude` from SKIP_DIRS in vault_paths.py: the last half here fails instead,
+        with the link checker scanning one file more after the command was written than before.
+        verify_setup 13/14, test_write_command 9/10 -- and acceptance stays 12/12, because
+        fixture 11 checks the file and the message, not the denominators. That gap is the
+        reason this step carries the denominator half at all.
+    """
+    target = root / ".claude" / "commands" / "vaultkit.md"
+    _, links_before, _ = tool(root, "check_links.py", "--vault", ".")
+
+    _, out, _ = tool(root, "write_command.py", "--vault", str(root), "--target", "vault",
+                     "--shell", "posix")
+    if not target.is_file():
+        raise Failed(f"no /vaultkit command at {target}\n{out}")
+    if target.name not in out:
+        raise Failed(f"a file was written outside the vault tree without being named:\n{out}")
+
+    text = target.read_text(encoding="utf-8")
+    root_arg = f'--root "{root.as_posix()}"'
+    if root_arg not in text:
+        raise Failed(f"the command never sweeps the whole vault with --root:\n{text[:400]}")
+    for project in ["00_Global"] + PROJECTS:
+        if f'--vault "{(root / project).as_posix()}"' not in text:
+            raise Failed(f"no index line for {project} in the command")
+    if f'--vault "{root.as_posix()}"' not in text:
+        raise Failed("nothing in the command hands the vault root to the link checker")
+
+    edited = text + "\n## 7 · A step the user added\n"
+    target.write_text(edited, encoding="utf-8", newline="\n")
+    _, second, _ = tool(root, "write_command.py", "--vault", str(root), "--target", "vault",
+                        "--shell", "posix")
+    if second.strip():
+        raise Failed(f"the second run reported work it did not do:\n{second}")
+    if target.read_text(encoding="utf-8") != edited:
+        raise Failed("a rerun overwrote a hand-edited command file")
+
+    _, links_after, _ = tool(root, "check_links.py", "--vault", ".")
+    if links_before != links_after:
+        raise Failed(f"the command file entered the note denominators:\n"
+                     f"  before: {links_before.strip()}\n  after:  {links_after.strip()}")
 
 
 def one_pass(verbose=True):
@@ -3036,10 +3439,14 @@ would change. Nothing is written without `--apply`.
 
     python upgrade.py <path-to-kit.md>              show what would change
     python upgrade.py <path-to-kit.md> --apply      write the changes, then prove them
+    python upgrade.py --stamp <path-to-kit.md>      record which kit installed this folder
 
 `--apply` reruns the suites and the acceptance driver afterwards and fails loudly if either
 goes red, because a tool folder that was updated but never re-proven is the state this kit
 exists to prevent.
+
+`--stamp` is the other end of the same path: it writes `kit-version.txt` and nothing else, so a
+folder knows its own version from the first install onwards instead of from the first update.
 
 Local edits are overwritten. They are listed first, by name, so that is a decision and not a
 surprise.
@@ -3081,6 +3488,40 @@ def installed_version():
     return stamp.read_text(encoding="utf-8-sig").strip() if stamp.exists() else "unknown"
 
 
+def write_stamp(version):
+    """The one place kit-version.txt is spelled. Both writers go through here."""
+    target = TOOLS / "kit-version.txt"
+    target.write_text(version + "\n", encoding="utf-8", newline="\n")
+    return target
+
+
+def stamp(kit_path):
+    """Write kit-version.txt from the kit file's own stamp line. Nothing else, no --apply.
+
+    WHY THIS IS A COMMAND AND NOT A SENTENCE IN THE CONTRACT (2026-07-29): SECTION 8 used to
+    tell the agent to type twelve hex characters into a file, copied by eye from line 1 of the
+    kit. Operating rule 7 of that same contract says the scripts do the mechanical work, and
+    copying a value that already exists verbatim in a file on disk is the most mechanical work
+    there is. It also left a hole: `--apply` below is the only other writer, so until a *second*
+    kit ever shipped, nothing wrote the file and a fresh folder answered `installed: unknown` --
+    the one question the whole update path exists to answer.
+
+    A file with no stamp line is refused rather than recorded as "unversioned". That string
+    would then be compared against every future kit forever and never match, which is a wrong
+    answer wearing a right answer's clothes.
+    """
+    text = Path(kit_path).read_text(encoding="utf-8-sig")
+    found = VERSION_RE.search(text)
+    if not found:
+        print(f"{kit_path}: no `<!-- kit-version: … -->` line — nothing to stamp. An unstamped "
+              f"file cannot say which kit this folder came from, and a guessed value is worse "
+              f"than none.", file=sys.stderr)
+        return 1
+    target = write_stamp(found.group(1))
+    print(f"wrote {target.name}: {found.group(1)}")
+    return 0
+
+
 def classify(blocks):
     same, changed, added = [], [], []
     for name, body in sorted(blocks.items()):
@@ -3113,9 +3554,16 @@ def prove():
 
 def main(argv=None):
     parser = argparse.ArgumentParser(description=__doc__)
-    parser.add_argument("kit", help="path to a newer claude-obsidian-vault-kit.md")
+    parser.add_argument("kit", nargs="?", help="path to a newer claude-obsidian-vault-kit.md")
     parser.add_argument("--apply", action="store_true", help="write the changes")
+    parser.add_argument("--stamp", metavar="KITFILE",
+                        help="write kit-version.txt from KITFILE's stamp line and do nothing else")
     args = parser.parse_args(argv)
+
+    if args.stamp:
+        return stamp(args.stamp)
+    if not args.kit:
+        parser.error("give a kit file to compare against, or --stamp <kitfile> to record one")
 
     blocks, new_version = read_kit(args.kit)
     same, changed, added = classify(blocks)
@@ -3136,7 +3584,7 @@ def main(argv=None):
 
     for name in changed + added:
         (TOOLS / name).write_text(blocks[name], encoding="utf-8", newline="\n")
-    (TOOLS / "kit-version.txt").write_text(new_version + "\n", encoding="utf-8", newline="\n")
+    write_stamp(new_version)
     print(f"\nwrote {len(changed) + len(added)} files. Proving them:")
     if not prove():
         print("the updated folder does not pass its own checks -- restore it from git.",
@@ -4108,6 +4556,33 @@ class UpgradeTest(unittest.TestCase):
         self.assertEqual((self.tools / "kit-version.txt").read_text(encoding="utf-8").strip(),
                          "abcdef012345")
 
+    def test_stamp_records_the_version_without_writing_anything_else(self):
+        """The first install's only writer. Nothing else puts a version beside a fresh folder.
+
+        `--apply` above covers the second kit onwards. Until --stamp existed, the first one was
+        covered by nobody: the contract told the agent to type the twelve characters by hand,
+        and verify_setup's step 13 read back a value its own fixture had written.
+        """
+        kit = kit_file(self.tmp / "kit.md", {"build_index.py": "print('new')"},
+                       version="0f1e2d3c4b5a")
+        code, out, err = run_upgrade(self.tools, "--stamp", kit)
+        self.assertEqual(code, 0, err)
+        self.assertEqual((self.tools / "kit-version.txt").read_text(encoding="utf-8").strip(),
+                         "0f1e2d3c4b5a")
+        self.assertEqual((self.tools / "build_index.py").read_text(encoding="utf-8"),
+                         "print('old')\n", "--stamp wrote a script file")
+
+    def test_stamp_refuses_a_file_with_no_version_line(self):
+        """`unversioned` would be compared against every future kit and never match."""
+        kit = self.tmp / "old-kit.md"
+        kit.write_text("### `build_index.py`\n\n```python\nprint('new')\n```\n",
+                       encoding="utf-8", newline="\n")
+        code, out, err = run_upgrade(self.tools, "--stamp", kit)
+        self.assertNotEqual(code, 0, "a file with no stamp must not produce one")
+        self.assertFalse((self.tools / "kit-version.txt").exists(),
+                         "a refused stamp still landed on disk")
+        self.assertIn("kit-version", out + err)
+
     def test_a_file_only_the_kit_has_is_reported_as_added(self):
         kit = kit_file(self.tmp / "kit.md",
                        {"build_index.py": "print('old')", "check_links.py": "print('new tool')"})
@@ -4203,6 +4678,177 @@ class VaultPathsTest(unittest.TestCase):
             self.assertIn("\tbuild_index\tdefects\t", lines[1])
         finally:
             shutil.rmtree(vault.parent, ignore_errors=True)
+
+
+if __name__ == "__main__":
+    unittest.main(verbosity=1)
+```
+
+### `test_write_command.py`
+
+```python
+"""Suite for write_command.py.
+
+The command file exists to answer three traps in the SECTION 8 chain, so the cases that matter
+are not "a file appeared" but "the file answers them". `--vault` means a PROJECT after
+build_index.py and the ROOT after check_links.py; getting that backwards is the failure the
+command is written to prevent, and a test that only checks the file exists would pass over it.
+
+Nothing here ever writes with `--target home`. That path is outside the vault -- it is the
+machine's real Claude config -- and a suite that writes there to prove it can is a suite that
+edits the user's setup. The home path is checked as a value, not as a side effect.
+"""
+
+import shutil
+import sys
+import unittest
+from pathlib import Path
+
+sys.path.insert(0, str(Path(__file__).resolve().parent))
+
+from _testkit import make_vault, run_tool, write_note  # noqa: E402
+from vault_paths import project_dirs  # noqa: E402
+
+import write_command  # noqa: E402
+
+COMMAND_RELPATH = Path(".claude") / "commands" / "vaultkit.md"
+
+
+class WriteCommandTest(unittest.TestCase):
+    def setUp(self):
+        self.vault = make_vault(("ProjektEins", "ProjektZwei"))
+        self.target = self.vault / COMMAND_RELPATH
+
+    def tearDown(self):
+        shutil.rmtree(self.vault.parent, ignore_errors=True)
+
+    def write(self, *extra):
+        return run_tool("write_command.py", "--vault", self.vault, "--target", "vault", *extra)
+
+    # ------------------------------------------------------------------ control
+
+    def test_healthy_control_a_command_is_written_and_named(self):
+        code, out, err = self.write()
+        self.assertEqual(code, 0, err)
+        self.assertTrue(self.target.is_file(), f"no command file: {out} {err}")
+        self.assertIn("vaultkit.md", out, "it wrote a file outside the vault without saying so")
+
+    def test_the_frontmatter_carries_a_description_and_nothing_else(self):
+        """All five documented fields are optional. Every one that is set is one more thing to
+        keep true, and a command needs exactly one of them to be findable."""
+        self.write()
+        text = self.target.read_text(encoding="utf-8")
+        block = text.split("---")[1]
+        keys = [line.split(":")[0] for line in block.strip().splitlines() if ":" in line]
+        self.assertEqual(keys, ["description"])
+
+    # -------------------------------------------------------------- the traps
+
+    def test_vault_means_a_project_for_the_generator_and_the_root_for_the_link_checker(self):
+        """The trap the command exists for: one flag name, two meanings, three tools.
+
+        check_links.py wants the vault root, build_index.py wants one project directory. A
+        command that puts the same path after every `--vault` is wrong in two places out of
+        three, and both wrong invocations exit non-zero at the user rather than here.
+        """
+        self.write("--shell", "powershell")
+        root = write_command.show(self.vault, "powershell")
+        lines = self.target.read_text(encoding="utf-8").splitlines()
+
+        projects = project_dirs(self.vault)   # counted, never typed -- 00_Global is one of them
+        generator = [line for line in lines if "build_index.py" in line and "--vault" in line]
+        self.assertEqual(len(generator), len(projects),
+                         "one build_index --vault line per project, no more and no fewer")
+        for line in generator:
+            self.assertNotIn(f"--vault {root}", line,
+                             "the generator was handed the vault root, which it refuses")
+        for project in projects:
+            self.assertTrue(any(write_command.show(project, "powershell") in line
+                                for line in generator), f"{project.name} has no index line")
+
+        links = [line for line in lines if "check_links.py" in line]
+        self.assertEqual(len(links), 1)
+        self.assertIn(f"--vault {root}", links[0],
+                      "the link checker was handed something narrower than the vault root")
+
+    def test_the_sweep_uses_root_and_says_why(self):
+        """`--vault` alone leaves the root index on yesterday's count, green and silent."""
+        self.write("--shell", "powershell")
+        text = self.target.read_text(encoding="utf-8")
+        self.assertIn(f"--root {write_command.show(self.vault, 'powershell')}", text)
+        self.assertIn("`--root`, not `--vault`", text)
+
+    def test_the_tool_folder_is_written_as_a_full_path(self):
+        """`06_tools/` resolves from the vault root and nowhere else."""
+        self.write("--shell", "posix")
+        text = self.target.read_text(encoding="utf-8")
+        tools = (self.vault / "00_Global" / "06_tools").as_posix()
+        self.assertIn(tools, text)
+        for line in text.splitlines():
+            if line.startswith("- `python "):
+                self.assertIn(tools, line, f"a bare tool path slipped in: {line}")
+
+    # ------------------------------------------------------------ failure modes
+
+    def test_the_second_run_writes_nothing_and_says_nothing(self):
+        """A command file is there to be edited. Silence on the second run is the whole promise:
+        it means nothing was missing, and runs.log carries the run either way."""
+        self.write()
+        before = self.target.read_bytes()
+        code, out, err = self.write()
+        self.assertEqual(code, 0, err)
+        self.assertEqual(out.strip(), "", "the second run reported work it did not do")
+        self.assertEqual(self.target.read_bytes(), before)
+
+    def test_a_hand_edited_command_survives_the_next_run(self):
+        """One that comes back unchanged proves nothing unless it went in changed."""
+        self.write()
+        mine = self.target.read_text(encoding="utf-8") + "\n## 7 · My own step\n"
+        self.target.write_text(mine, encoding="utf-8", newline="\n")
+        code, _, err = self.write()
+        self.assertEqual(code, 0, err)
+        self.assertEqual(self.target.read_text(encoding="utf-8"), mine)
+
+    def test_the_command_file_does_not_enter_the_note_denominators(self):
+        """It is configuration, not knowledge, and a guard that counts it reports a wrong n/m.
+
+        Measured 2026-07-29 with `.claude` missing from SKIP_DIRS: writing this one file took
+        check_links.py from 26 files scanned to 27, check_duplicates.py from 4 notes to 5 and
+        from 6 compared pairs to 10, and the generator from 26 distinct filenames to 27. Nothing
+        went red, which is exactly why it needs a test -- the numbers were quietly wrong and no
+        run had a reason to mention it.
+        """
+        write_note(self.vault / "ProjektEins" / "00_Notes" / "eine-erkenntnis.md",
+                   title="Eine Erkenntnis")
+        run_tool("build_index.py", "--root", self.vault)
+        before = [run_tool(script, "--vault", self.vault)[1]
+                  for script in ("check_links.py", "check_duplicates.py")]
+
+        self.write()
+        self.assertTrue(self.target.is_file())
+        after = [run_tool(script, "--vault", self.vault)[1]
+                 for script in ("check_links.py", "check_duplicates.py")]
+        self.assertEqual(before, after,
+                         "the command file changed what the guards count as notes")
+
+    def test_a_vault_without_projects_is_refused_not_written_empty(self):
+        """A command listing no projects is a working file that does nothing. It means the wrong
+        path was given, and that has to be said, not written out."""
+        empty = self.vault.parent / "NotAVault"
+        empty.mkdir()
+        code, out, err = run_tool("write_command.py", "--vault", empty, "--target", "vault")
+        self.assertNotEqual(code, 0, "an empty vault produced a command file")
+        self.assertIn("no projects", out + err)
+        self.assertFalse((empty / COMMAND_RELPATH).exists())
+
+    def test_the_home_target_is_outside_the_vault(self):
+        """Checked as a value, never written. `~/.claude/commands/` is the real config folder of
+        whoever runs this suite, and it is also why SECTION 1 has to ask before choosing it: the
+        name collides silently with a command the user may already have."""
+        home = write_command.target_path(self.vault, "home")
+        self.assertEqual(home, Path.home() / ".claude" / "commands" / "vaultkit.md")
+        self.assertNotEqual(home, write_command.target_path(self.vault, "vault"))
+        self.assertFalse(str(home).startswith(str(self.vault)))
 
 
 if __name__ == "__main__":

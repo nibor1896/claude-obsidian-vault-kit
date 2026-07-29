@@ -35,7 +35,15 @@ TEMPLATES_DIR = "_templates"
 # Directories that are never notes and never walked. _templates belongs here for two reasons at
 # once: without it the folder becomes a project with six category folders of its own, and the
 # templates inside would be read as notes and go red for having no summary.
-SKIP_DIRS = {".git", ".obsidian", "__pycache__", ".trash", ".venv", "node_modules", TEMPLATES_DIR}
+#
+# `.claude` is the agent's own configuration, the same class as `.obsidian`, and it holds the
+# `/vaultkit` command write_command.py writes. Measured 2026-07-29 before it was listed: writing
+# that one file took check_links.py from 26 files scanned to 27, check_duplicates.py from 4 notes
+# to 5 and from 6 pairs to 10, and the generator from 26 distinct filenames to 27. Nothing went
+# red -- the vault simply began counting its own configuration as knowledge, which is worse,
+# because every denominator it reports is then slightly wrong and nobody has a reason to look.
+SKIP_DIRS = {".git", ".obsidian", ".claude", "__pycache__", ".trash", ".venv", "node_modules",
+             TEMPLATES_DIR}
 
 # Characters Obsidian cannot carry inside a [[wikilink]] target.
 FORBIDDEN_LINK_CHARS = set("#[]|^")
