@@ -1,4 +1,4 @@
-<!-- kit-version: 2789d4641aac -->
+<!-- kit-version: 9600eaf30104 -->
 # Claude × Obsidian — Vault Kit
 
 **What this file is:** a setup contract for Claude. Drop it into a Claude conversation and say
@@ -61,7 +61,7 @@ document in order. It is a contract, not a suggestion.
    and waiting for a yes.
 6. **The scripts are inside this file. Write them out; do not rewrite them.** SECTION 10 carries
    every tool, every suite and the three runners verbatim — measured on Windows 11 with Python 3.13
-   under PowerShell 5.1 and Git Bash: **8/8 suites green, 11/11 acceptance checks and 11/11
+   under PowerShell 5.1 and Git Bash: **8/8 suites green, 11/11 acceptance checks and 12/12
    end-to-end setup steps, in ten consecutive runs under each shell.** Write each block to disk
    byte for byte. Retyping them from the contracts in SECTION 5 and SECTION 6 throws that
    measurement away and reintroduces the defects those sections describe — every one was found the
@@ -998,7 +998,7 @@ copying, and do not skip the suites: they are the only reason the numbers in SEC
 anything.
 
 Measured on Windows 11, Python 3.13, under PowerShell 5.1 **and** Git Bash: 8/8 suites green,
-11/11 acceptance checks correct, 11/11 end-to-end setup steps -- ten consecutive runs under each
+11/11 acceptance checks correct, 12/12 end-to-end setup steps -- ten consecutive runs under each
 shell. Copy them and that measurement still applies to what you handed the user. Rewrite them and
 it does not.
 
@@ -1012,7 +1012,7 @@ After writing them, prove it on this machine before you report anything:
 ```
 python <vault>/00_Global/06_tools/run_suites.py       expect 8/8 suites green
 python <vault>/00_Global/06_tools/acceptance.py       expect 11/11 checks
-python <vault>/00_Global/06_tools/verify_setup.py     expect 11/11 steps
+python <vault>/00_Global/06_tools/verify_setup.py     expect 12/12 steps
 ```
 
 #### Shared
@@ -2675,7 +2675,7 @@ for _stream in (sys.stdout, sys.stderr):
         pass
 
 # Imported, never respelled: a second copy verifies a tree the tools no longer build.
-from vault_paths import CATEGORY_FOLDERS  # noqa: E402
+from vault_paths import CATEGORY_FOLDERS, TEMPLATES_DIR, template_name  # noqa: E402
 
 PROJECTS = ["ProjektEins", "ProjektZwei"]
 
@@ -2884,6 +2884,30 @@ def _s11(root):
     _, status, _ = run(["git", "status", "--porcelain"], cwd=root, label="git status")
     if status.strip():
         raise Failed(f"tree not clean after scaffolding and a rerun:\n{status}")
+
+
+@step("12 a note template per project, and a hand-edited one survives a rerun")
+def _s12(root):
+    """The two promises write_templates makes, neither of which any earlier step looks at.
+
+    WHY THIS EXISTS (2026-07-29): steps 1-11 only ever inspect index files. A delivery that
+    silently stopped writing templates altogether still reported 11/11 -- the gap was found by
+    reading the tool, not by a red test. The second half matters more than the first: every run
+    prints "edit it freely, no run overwrites it", and until now nothing held the tool to it.
+    """
+    folder = root / TEMPLATES_DIR
+    expected = ["00_Global"] + PROJECTS + ["ProjektDrei"]  # ProjektDrei is added by hand in step 11
+    missing = [p for p in expected if not (folder / template_name(p)).is_file()]
+    if missing:
+        raise Failed(f"no note template written for: {missing}")
+
+    # A template that comes back unchanged proves nothing unless it went in changed.
+    victim = folder / template_name(PROJECTS[0])
+    edited = victim.read_text(encoding="utf-8") + "\nfield the user added by hand\n"
+    victim.write_text(edited, encoding="utf-8", newline="\n")
+    tool(root, "build_index.py", "--root", ".")
+    if victim.read_text(encoding="utf-8") != edited:
+        raise Failed(f"a rerun overwrote a hand-edited template: {victim.name}")
 
 
 def one_pass(verbose=True):

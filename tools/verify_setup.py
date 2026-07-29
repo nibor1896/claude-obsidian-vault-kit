@@ -31,7 +31,7 @@ for _stream in (sys.stdout, sys.stderr):
         pass
 
 # Imported, never respelled: a second copy verifies a tree the tools no longer build.
-from vault_paths import CATEGORY_FOLDERS  # noqa: E402
+from vault_paths import CATEGORY_FOLDERS, TEMPLATES_DIR, template_name  # noqa: E402
 
 PROJECTS = ["ProjektEins", "ProjektZwei"]
 
@@ -240,6 +240,30 @@ def _s11(root):
     _, status, _ = run(["git", "status", "--porcelain"], cwd=root, label="git status")
     if status.strip():
         raise Failed(f"tree not clean after scaffolding and a rerun:\n{status}")
+
+
+@step("12 a note template per project, and a hand-edited one survives a rerun")
+def _s12(root):
+    """The two promises write_templates makes, neither of which any earlier step looks at.
+
+    WHY THIS EXISTS (2026-07-29): steps 1-11 only ever inspect index files. A delivery that
+    silently stopped writing templates altogether still reported 11/11 -- the gap was found by
+    reading the tool, not by a red test. The second half matters more than the first: every run
+    prints "edit it freely, no run overwrites it", and until now nothing held the tool to it.
+    """
+    folder = root / TEMPLATES_DIR
+    expected = ["00_Global"] + PROJECTS + ["ProjektDrei"]  # ProjektDrei is added by hand in step 11
+    missing = [p for p in expected if not (folder / template_name(p)).is_file()]
+    if missing:
+        raise Failed(f"no note template written for: {missing}")
+
+    # A template that comes back unchanged proves nothing unless it went in changed.
+    victim = folder / template_name(PROJECTS[0])
+    edited = victim.read_text(encoding="utf-8") + "\nfield the user added by hand\n"
+    victim.write_text(edited, encoding="utf-8", newline="\n")
+    tool(root, "build_index.py", "--root", ".")
+    if victim.read_text(encoding="utf-8") != edited:
+        raise Failed(f"a rerun overwrote a hand-edited template: {victim.name}")
 
 
 def one_pass(verbose=True):
