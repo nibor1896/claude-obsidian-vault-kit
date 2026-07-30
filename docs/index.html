@@ -1,0 +1,585 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Claude × Obsidian Vault Kit</title>
+<meta name="description" content="A setup contract for Claude that builds a project-knowledge vault in Obsidian: one file, a generated index, and guards that go red instead of quietly passing.">
+<meta property="og:title" content="Claude × Obsidian Vault Kit">
+<meta property="og:description" content="One file builds your vault. A generated index and guards that refuse to pass quietly.">
+<meta property="og:type" content="website">
+<meta property="og:url" content="https://nibor1896.github.io/claude-obsidian-vault-kit/">
+<meta name="twitter:card" content="summary">
+<meta name="theme-color" content="#070708">
+<link rel="icon" href="data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 32 32'%3E%3Cg fill='none' stroke='%23D97757' stroke-width='1.6'%3E%3Cpath d='M8 22 L16 9 L24 20'/%3E%3Cpath d='M8 22 L24 20'/%3E%3C/g%3E%3Ccircle cx='16' cy='9' r='3' fill='%23D97757'/%3E%3Ccircle cx='8' cy='22' r='3' fill='%237C3AED'/%3E%3Ccircle cx='24' cy='20' r='3' fill='%237C3AED'/%3E%3C/svg%3E">
+<link rel="preconnect" href="https://api.fontshare.com">
+<link rel="preconnect" href="https://cdn.fontshare.com" crossorigin>
+<link href="https://api.fontshare.com/v2/css?f[]=cabinet-grotesk@500,700,800&display=swap" rel="stylesheet">
+<style>
+  /* z-scale: 10 hero copy · 40 nav · 60 grain · 100 skip-link */
+  :root{
+    --bg:#070708;
+    --ink:#edebe8;
+    --dim:rgba(237,235,232,.52);
+    --faint:rgba(237,235,232,.24);
+    --hair:rgba(237,235,232,.10);
+    --claude:#D97757;
+    --obsidian:#7C3AED;
+    --accent:#ab59a2; /* live-driven between claude and obsidian */
+  }
+  *{margin:0;padding:0;box-sizing:border-box}
+  html{scroll-behavior:smooth;color-scheme:dark}
+  a,button{touch-action:manipulation;-webkit-tap-highlight-color:transparent}
+  @media (prefers-reduced-motion:reduce){html{scroll-behavior:auto}}
+  body{
+    background:var(--bg);
+    color:var(--ink);
+    font-family:"Cabinet Grotesk",system-ui,-apple-system,"Segoe UI",sans-serif;
+    font-weight:500;
+    line-height:1.5;
+    -webkit-font-smoothing:antialiased;
+    overflow-x:hidden;
+  }
+  ::selection{background:var(--accent);color:#0a0a0a}
+  a{color:inherit;text-decoration:none}
+
+  .skip{position:fixed;left:1rem;top:-4rem;z-index:100;background:var(--ink);color:#0a0a0a;
+    padding:.55rem 1.1rem;border-radius:999px;font-weight:700;transition:top .2s}
+  .skip:focus{top:1rem}
+  :focus-visible{outline:2px solid var(--accent);outline-offset:3px;border-radius:2px}
+
+  /* grain */
+  body::after{content:"";position:fixed;inset:0;z-index:60;pointer-events:none;opacity:.045;
+    background-image:url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='160' height='160'%3E%3Cfilter id='n'%3E%3CfeTurbulence type='fractalNoise' baseFrequency='0.9' numOctaves='2'/%3E%3C/filter%3E%3Crect width='160' height='160' filter='url(%23n)'/%3E%3C/svg%3E")}
+
+  /* ---------- nav ---------- */
+  nav{position:fixed;top:0;left:0;right:0;z-index:40;height:64px;
+    display:flex;align-items:center;justify-content:space-between;
+    padding:0 max(clamp(1.25rem,4vw,3rem),env(safe-area-inset-left));
+    border-bottom:1px solid transparent;transition:border-color .4s,background-color .4s}
+  nav.scrolled{border-bottom-color:var(--hair);background:rgba(7,7,8,.72);
+    backdrop-filter:blur(14px);-webkit-backdrop-filter:blur(14px)}
+  .brand{display:flex;align-items:center;gap:.65rem}
+  .brand svg{width:15px;height:15px;display:block;opacity:.9}
+  .brand .name{font-family:ui-monospace,"Cascadia Mono",Consolas,monospace;
+    font-size:.72rem;letter-spacing:.02em;color:var(--dim)}
+  nav .gh{font-size:.9rem;color:var(--dim);transition:color .25s}
+  nav .gh:hover{color:var(--ink)}
+
+  /* ---------- hero ---------- */
+  .hero{position:relative;min-height:100dvh;overflow:hidden}
+  #web{position:absolute;inset:0;width:100%;height:100%;display:block;pointer-events:none}
+  .glow-fallback{display:none;position:absolute;inset:0;pointer-events:none;
+    background:
+      radial-gradient(42% 46% at 68% 38%,rgba(217,119,87,.22),transparent 70%),
+      radial-gradient(38% 42% at 42% 55%,rgba(124,58,237,.20),transparent 70%)}
+  .no-webgl .glow-fallback{display:block}
+  .hero .scrim{position:absolute;inset:0;pointer-events:none;
+    background:radial-gradient(58% 62% at 22% 78%,rgba(7,7,8,.82),transparent 72%)}
+  .hero-copy{position:absolute;z-index:10;
+    left:max(clamp(1.25rem,4vw,3rem),env(safe-area-inset-left));
+    bottom:clamp(2.5rem,9vh,6.5rem);max-width:44rem}
+  h1{font-weight:800;letter-spacing:-.035em;line-height:.98;
+    font-size:clamp(2.9rem,8.2vw,7rem)}
+  .line{display:block;overflow:hidden}
+  .line>span{display:block;transform:translateY(0)}
+  .sub{margin-top:1.4rem;max-width:34rem;font-size:clamp(1rem,1.5vw,1.2rem);
+    color:var(--dim);line-height:1.55}
+  .cta-row{margin-top:2.1rem;display:flex;align-items:center;gap:1.5rem;flex-wrap:wrap}
+  .btn{display:inline-flex;align-items:center;gap:.6rem;white-space:nowrap;
+    background:var(--ink);color:#0a0a0a;font-weight:700;font-size:1rem;
+    padding:.85rem 1.7rem;border-radius:999px;
+    transition:transform .25s cubic-bezier(.16,1,.3,1)}
+  .btn:hover{transform:translateY(-2px)}
+  .btn:active{transform:scale(.98)}
+  .btn .arr{transition:transform .25s cubic-bezier(.16,1,.3,1)}
+  .btn:hover .arr{transform:translateX(3px)}
+
+  /* ---------- principles ---------- */
+  .principles{padding:clamp(7rem,16vh,12rem) clamp(1.25rem,4vw,3rem)}
+  .statement{font-weight:800;letter-spacing:-.03em;line-height:1.04;
+    text-wrap:balance;
+    font-size:clamp(2rem,5.6vw,4.6rem);max-width:22ch;
+    margin:0 auto clamp(4.5rem,11vh,8rem)}
+  .statement:last-child{margin-bottom:0}
+  .statement:nth-child(odd){margin-left:0}
+  .statement:nth-child(even){margin-right:0;text-align:right}
+  .statement .acc{font-style:normal;color:var(--accent);transition:color .3s linear}
+
+  /* ---------- use it ---------- */
+  .use{padding:clamp(5rem,12vh,9rem) clamp(1.25rem,4vw,3rem) clamp(7rem,14vh,11rem);
+    border-top:1px solid var(--hair)}
+  .use-inner{max-width:72rem;margin:0 auto}
+  .use h2{font-weight:700;font-size:1.05rem;color:var(--dim);letter-spacing:-.01em}
+  .steps{list-style:none;margin-top:2.6rem}
+  .steps li{font-weight:700;letter-spacing:-.02em;line-height:1.15;
+    font-size:clamp(1.6rem,3.8vw,3rem);padding:1.15rem 0;color:var(--ink)}
+  .steps li q{color:var(--accent);transition:color .3s linear;font-style:italic;quotes:"\201C" "\201D"}
+  .steps a{border-bottom:2px solid var(--faint);transition:border-color .25s}
+  .steps a:hover{border-bottom-color:var(--accent)}
+
+  /* ---------- footer ---------- */
+  footer{border-top:1px solid var(--hair);
+    padding:2.4rem clamp(1.25rem,4vw,3rem) 2.8rem;
+    display:flex;flex-wrap:wrap;gap:1.4rem 2.5rem;align-items:center;justify-content:space-between}
+  .marks{display:flex;align-items:center;gap:.8rem}
+  .marks svg{width:20px;height:20px;display:block}
+  .marks .x{color:var(--faint);font-size:.85rem}
+  .foot-links{display:flex;gap:2rem;font-size:.9rem;color:var(--dim)}
+  .foot-links a:hover{color:var(--ink)}
+  .legal{width:100%;font-size:.78rem;color:rgba(237,235,232,.5);line-height:1.6}
+
+  @media (max-width:600px){
+    .brand .name{display:none}
+    .statement:nth-child(even){text-align:left;margin-right:auto;margin-left:0}
+    .hero-copy{right:1.25rem}
+  }
+</style>
+</head>
+<body>
+<noscript><style>.glow-fallback{display:block}</style></noscript>
+<a class="skip" href="#main">Skip to content</a>
+
+<nav id="nav" aria-label="Main">
+  <a class="brand" href="https://github.com/nibor1896/claude-obsidian-vault-kit" aria-label="claude-obsidian-vault-kit on GitHub">
+    <!-- Claude mark (Anthropic), original path via Simple Icons -->
+    <svg viewBox="0 0 24 24" fill="#D97757" aria-hidden="true"><path d="m4.7144 15.9555 4.7174-2.6471.079-.2307-.079-.1275h-.2307l-.7893-.0486-2.6956-.0729-2.3375-.0971-2.2646-.1214-.5707-.1215-.5343-.7042.0546-.3522.4797-.3218.686.0608 1.5179.1032 2.2767.1578 1.6514.0972 2.4468.255h.3886l.0546-.1579-.1336-.0971-.1032-.0972L6.973 9.8356l-2.55-1.6879-1.3356-.9714-.7225-.4918-.3643-.4614-.1578-1.0078.6557-.7225.8803.0607.2246.0607.8925.686 1.9064 1.4754 2.4893 1.8336.3643.3035.1457-.1032.0182-.0728-.164-.2733-1.3539-2.4467-1.445-2.4893-.6435-1.032-.17-.6194c-.0607-.255-.1032-.4674-.1032-.7285L6.287.1335 6.6997 0l.9957.1336.419.3642.6192 1.4147 1.0018 2.2282 1.5543 3.0296.4553.8985.2429.8318.091.255h.1579v-.1457l.1275-1.706.2368-2.0947.2307-2.6957.0789-.7589.3764-.9107.7468-.4918.5828.2793.4797.686-.0668.4433-.2853 1.8517-.5586 2.9021-.3643 1.9429h.2125l.2429-.2429.9835-1.3053 1.6514-2.0643.7286-.8196.85-.9046.5464-.4311h1.0321l.759 1.1293-.34 1.1657-1.0625 1.3478-.8804 1.1414-1.2628 1.7-.7893 1.36.0729.1093.1882-.0183 2.8535-.607 1.5421-.2794 1.8396-.3157.8318.3886.091.3946-.3278.8075-1.967.4857-2.3072.4614-3.4364.8136-.0425.0304.0486.0607 1.5482.1457.6618.0364h1.621l3.0175.2247.7892.522.4736.6376-.079.4857-1.2142.6193-1.6393-.3886-3.825-.9107-1.3113-.3279h-.1822v.1093l1.0929 1.0686 2.0035 1.8092 2.5075 2.3314.1275.5768-.3218.4554-.34-.0486-2.2039-1.6575-.85-.7468-1.9246-1.621h-.1275v.17l.4432.6496 2.3436 3.5214.1214 1.0807-.17.3521-.6071.2125-.6679-.1214-1.3721-1.9246L14.38 17.959l-1.1414-1.9428-.1397.079-.674 7.2552-.3156.3703-.7286.2793-.6071-.4614-.3218-.7468.3218-1.4753.3886-1.9246.3157-1.53.2853-1.9004.17-.6314-.0121-.0425-.1397.0182-1.4328 1.9672-2.1796 2.9446-1.7243 1.8456-.4128.164-.7164-.3704.0667-.6618.4008-.5889 2.386-3.0357 1.4389-1.882.929-1.0868-.0062-.1579h-.0546l-6.3385 4.1164-1.1293.1457-.4857-.4554.0608-.7467.2307-.2429 1.9064-1.3114Z"/></svg>
+    <!-- Obsidian mark, original path via Simple Icons -->
+    <svg viewBox="0 0 24 24" fill="#7C3AED" aria-hidden="true"><path d="M19.355 18.538a68.967 68.959 0 0 0 1.858-2.954.81.81 0 0 0-.062-.9c-.516-.685-1.504-2.075-2.042-3.362-.553-1.321-.636-3.375-.64-4.377a1.707 1.707 0 0 0-.358-1.05l-3.198-4.064a3.744 3.744 0 0 1-.076.543c-.106.503-.307 1.004-.536 1.5-.134.29-.29.6-.446.914l-.31.626c-.516 1.068-.997 2.227-1.132 3.59-.124 1.26.046 2.73.815 4.481.128.011.257.025.386.044a6.363 6.363 0 0 1 3.326 1.505c.916.79 1.744 1.922 2.415 3.5zM8.199 22.569c.073.012.146.02.22.02.78.024 2.095.092 3.16.29.87.16 2.593.64 4.01 1.055 1.083.316 2.198-.548 2.355-1.664.114-.814.33-1.735.725-2.58l-.01.005c-.67-1.87-1.522-3.078-2.416-3.849a5.295 5.295 0 0 0-2.778-1.257c-1.54-.216-2.952.19-3.84.45.532 2.218.368 4.829-1.425 7.531zM5.533 9.938c-.023.1-.056.197-.098.29L2.82 16.059a1.602 1.602 0 0 0 .313 1.772l4.116 4.24c2.103-3.101 1.796-6.02.836-8.3-.728-1.73-1.832-3.081-2.55-3.831zM9.32 14.01c.615-.183 1.606-.465 2.745-.534-.683-1.725-.848-3.233-.716-4.577.154-1.552.7-2.847 1.235-3.95.113-.235.223-.454.328-.664.149-.297.288-.577.419-.86.217-.47.379-.885.46-1.27.08-.38.08-.72-.014-1.043-.095-.325-.297-.675-.68-1.06a1.6 1.6 0 0 0-1.475.36l-4.95 4.452a1.602 1.602 0 0 0-.513.952l-.427 2.83c.672.59 2.328 2.316 3.335 4.711.09.21.175.43.253.653z"/></svg>
+    <span class="name">claude-obsidian-vault-kit</span>
+  </a>
+  <a class="gh" href="https://github.com/nibor1896/claude-obsidian-vault-kit">GitHub</a>
+</nav>
+
+<header class="hero" id="hero">
+  <canvas id="web" aria-hidden="true"></canvas>
+  <div class="glow-fallback" aria-hidden="true"></div>
+  <div class="scrim" aria-hidden="true"></div>
+  <div class="hero-copy">
+    <h1>
+      <span class="line"><span>One file builds</span></span>
+      <span class="line"><span>your vault.</span></span>
+    </h1>
+    <p class="sub">A setup contract for Claude: an Obsidian vault with a generated index and guards that refuse to pass quietly.</p>
+    <div class="cta-row">
+      <a class="btn" href="https://github.com/nibor1896/claude-obsidian-vault-kit/blob/master/claude-obsidian-vault-kit.md">Download the kit <span class="arr" aria-hidden="true">&rarr;</span></a>
+    </div>
+  </div>
+</header>
+
+<main id="main">
+  <section class="principles" aria-label="Principles">
+    <p class="statement">One insight, <em class="acc">one file</em>.</p>
+    <p class="statement">The index is <em class="acc">generated</em>, never written.</p>
+    <p class="statement">A degraded result makes the run <em class="acc">red</em>.</p>
+    <p class="statement">No number without its <em class="acc">denominator</em>.</p>
+  </section>
+
+  <section class="use" aria-label="How to use">
+    <div class="use-inner">
+      <h2>Use it.</h2>
+      <ol class="steps">
+        <li><a href="https://github.com/nibor1896/claude-obsidian-vault-kit/blob/master/claude-obsidian-vault-kit.md">Download the kit</a>.</li>
+        <li>Drop it into a Claude conversation.</li>
+        <li>Say: <q>set this up for me</q></li>
+      </ol>
+    </div>
+  </section>
+</main>
+
+<footer>
+  <div class="marks" aria-hidden="true">
+    <svg viewBox="0 0 24 24" fill="#D97757"><path d="m4.7144 15.9555 4.7174-2.6471.079-.2307-.079-.1275h-.2307l-.7893-.0486-2.6956-.0729-2.3375-.0971-2.2646-.1214-.5707-.1215-.5343-.7042.0546-.3522.4797-.3218.686.0608 1.5179.1032 2.2767.1578 1.6514.0972 2.4468.255h.3886l.0546-.1579-.1336-.0971-.1032-.0972L6.973 9.8356l-2.55-1.6879-1.3356-.9714-.7225-.4918-.3643-.4614-.1578-1.0078.6557-.7225.8803.0607.2246.0607.8925.686 1.9064 1.4754 2.4893 1.8336.3643.3035.1457-.1032.0182-.0728-.164-.2733-1.3539-2.4467-1.445-2.4893-.6435-1.032-.17-.6194c-.0607-.255-.1032-.4674-.1032-.7285L6.287.1335 6.6997 0l.9957.1336.419.3642.6192 1.4147 1.0018 2.2282 1.5543 3.0296.4553.8985.2429.8318.091.255h.1579v-.1457l.1275-1.706.2368-2.0947.2307-2.6957.0789-.7589.3764-.9107.7468-.4918.5828.2793.4797.686-.0668.4433-.2853 1.8517-.5586 2.9021-.3643 1.9429h.2125l.2429-.2429.9835-1.3053 1.6514-2.0643.7286-.8196.85-.9046.5464-.4311h1.0321l.759 1.1293-.34 1.1657-1.0625 1.3478-.8804 1.1414-1.2628 1.7-.7893 1.36.0729.1093.1882-.0183 2.8535-.607 1.5421-.2794 1.8396-.3157.8318.3886.091.3946-.3278.8075-1.967.4857-2.3072.4614-3.4364.8136-.0425.0304.0486.0607 1.5482.1457.6618.0364h1.621l3.0175.2247.7892.522.4736.6376-.079.4857-1.2142.6193-1.6393-.3886-3.825-.9107-1.3113-.3279h-.1822v.1093l1.0929 1.0686 2.0035 1.8092 2.5075 2.3314.1275.5768-.3218.4554-.34-.0486-2.2039-1.6575-.85-.7468-1.9246-1.621h-.1275v.17l.4432.6496 2.3436 3.5214.1214 1.0807-.17.3521-.6071.2125-.6679-.1214-1.3721-1.9246L14.38 17.959l-1.1414-1.9428-.1397.079-.674 7.2552-.3156.3703-.7286.2793-.6071-.4614-.3218-.7468.3218-1.4753.3886-1.9246.3157-1.53.2853-1.9004.17-.6314-.0121-.0425-.1397.0182-1.4328 1.9672-2.1796 2.9446-1.7243 1.8456-.4128.164-.7164-.3704.0667-.6618.4008-.5889 2.386-3.0357 1.4389-1.882.929-1.0868-.0062-.1579h-.0546l-6.3385 4.1164-1.1293.1457-.4857-.4554.0608-.7467.2307-.2429 1.9064-1.3114Z"/></svg>
+    <span class="x">×</span>
+    <svg viewBox="0 0 24 24" fill="#7C3AED"><path d="M19.355 18.538a68.967 68.959 0 0 0 1.858-2.954.81.81 0 0 0-.062-.9c-.516-.685-1.504-2.075-2.042-3.362-.553-1.321-.636-3.375-.64-4.377a1.707 1.707 0 0 0-.358-1.05l-3.198-4.064a3.744 3.744 0 0 1-.076.543c-.106.503-.307 1.004-.536 1.5-.134.29-.29.6-.446.914l-.31.626c-.516 1.068-.997 2.227-1.132 3.59-.124 1.26.046 2.73.815 4.481.128.011.257.025.386.044a6.363 6.363 0 0 1 3.326 1.505c.916.79 1.744 1.922 2.415 3.5zM8.199 22.569c.073.012.146.02.22.02.78.024 2.095.092 3.16.29.87.16 2.593.64 4.01 1.055 1.083.316 2.198-.548 2.355-1.664.114-.814.33-1.735.725-2.58l-.01.005c-.67-1.87-1.522-3.078-2.416-3.849a5.295 5.295 0 0 0-2.778-1.257c-1.54-.216-2.952.19-3.84.45.532 2.218.368 4.829-1.425 7.531zM5.533 9.938c-.023.1-.056.197-.098.29L2.82 16.059a1.602 1.602 0 0 0 .313 1.772l4.116 4.24c2.103-3.101 1.796-6.02.836-8.3-.728-1.73-1.832-3.081-2.55-3.831zM9.32 14.01c.615-.183 1.606-.465 2.745-.534-.683-1.725-.848-3.233-.716-4.577.154-1.552.7-2.847 1.235-3.95.113-.235.223-.454.328-.664.149-.297.288-.577.419-.86.217-.47.379-.885.46-1.27.08-.38.08-.72-.014-1.043-.095-.325-.297-.675-.68-1.06a1.6 1.6 0 0 0-1.475.36l-4.95 4.452a1.602 1.602 0 0 0-.513.952l-.427 2.83c.672.59 2.328 2.316 3.335 4.711.09.21.175.43.253.653z"/></svg>
+  </div>
+  <div class="foot-links">
+    <a href="https://github.com/nibor1896/claude-obsidian-vault-kit">GitHub</a>
+    <a href="https://ko-fi.com/nibor1896">Ko-fi</a>
+  </div>
+  <p class="legal">MIT license. Independent and unofficial: Claude and Obsidian are trademarks of their respective owners.</p>
+</footer>
+
+<script src="https://cdn.jsdelivr.net/npm/gsap@3.12.5/dist/gsap.min.js"></script>
+<script src="https://cdn.jsdelivr.net/npm/gsap@3.12.5/dist/ScrollTrigger.min.js"></script>
+<script type="module">
+import * as THREE from 'https://cdn.jsdelivr.net/npm/three@0.160.0/build/three.module.js';
+
+gsap.registerPlugin(ScrollTrigger);
+const reduced = matchMedia('(prefers-reduced-motion: reduce)').matches;
+
+/* ------------------------------------------------------------------ */
+/* neural map                                                          */
+/* ------------------------------------------------------------------ */
+const canvas = document.getElementById('web');
+let renderer = null;
+try {
+  renderer = new THREE.WebGLRenderer({ canvas, antialias: true, alpha: true, powerPreference: 'high-performance' });
+} catch (e) {
+  document.body.classList.add('no-webgl');
+}
+
+const COL_A = new THREE.Color('#D97757');
+const COL_B = new THREE.Color('#7C3AED');
+
+if (renderer) {
+  renderer.setPixelRatio(Math.min(devicePixelRatio, 2));
+
+  const scene = new THREE.Scene();
+  const camera = new THREE.PerspectiveCamera(38, 1, 0.1, 100);
+  camera.position.set(0, 0, 7.4);
+
+  /* seeded rng so the map is the same sculpture on every visit */
+  const mulberry32 = s => () => {
+    s |= 0; s = (s + 0x6D2B79F5) | 0;
+    let t = Math.imul(s ^ (s >>> 15), 1 | s);
+    t = (t + Math.imul(t ^ (t >>> 7), 61 | t)) ^ t;
+    return ((t ^ (t >>> 14)) >>> 0) / 4294967296;
+  };
+  const rand = mulberry32(20260730);
+  const gauss = () => (rand() + rand() + rand() - 1.5) * 0.816;
+
+  const isSmall = innerWidth < 768;
+  const N_SHELL = isSmall ? 380 : 620;
+  const N_CORE = Math.floor(N_SHELL * 0.14);
+  const N = N_SHELL + N_CORE;
+
+  const pos = new Float32Array(N * 3);
+  const aMix = new Float32Array(N);
+  const aRand = new Float32Array(N);
+  const aScale = new Float32Array(N);
+
+  const GOLDEN = Math.PI * (3 - Math.sqrt(5));
+  for (let i = 0; i < N_SHELL; i++) {
+    const y0 = 1 - (i / (N_SHELL - 1)) * 2;
+    const r0 = Math.sqrt(Math.max(0, 1 - y0 * y0));
+    const th = GOLDEN * i;
+    let x = Math.cos(th) * r0 + gauss() * 0.05;
+    let y = y0 + gauss() * 0.05;
+    let z = Math.sin(th) * r0 + gauss() * 0.05;
+    /* cortical wrinkle: layered trig noise on the radius */
+    const w = 1
+      + 0.12 * Math.sin(x * 3.1 + z * 2.3)
+      + 0.08 * Math.sin(y * 4.7 - x * 1.9)
+      + 0.05 * Math.sin(z * 6.3 + y * 3.7);
+    const l = Math.hypot(x, y, z) || 1;
+    x = (x / l) * w; y = (y / l) * w; z = (z / l) * w;
+    /* hemispheres */
+    x *= 1.38; y *= 0.92; z *= 1.06;
+    x += Math.sign(x) * 0.10;
+    pos.set([x, y, z], i * 3);
+  }
+  for (let i = N_SHELL; i < N; i++) {
+    const r = Math.cbrt(rand()) * 0.85;
+    const u = rand() * 2 - 1, ph = rand() * Math.PI * 2;
+    const s = Math.sqrt(1 - u * u);
+    pos.set([Math.cos(ph) * s * r * 1.38, u * r * 0.92, Math.sin(ph) * s * r * 1.06], i * 3);
+  }
+  for (let i = 0; i < N; i++) {
+    const x = pos[i * 3], y = pos[i * 3 + 1], z = pos[i * 3 + 2];
+    aMix[i] = THREE.MathUtils.clamp((x * 0.55 + y * 0.3 + z * 0.15) * 0.5 + 0.5, 0, 1);
+    aRand[i] = rand();
+    aScale[i] = rand() < 0.06 ? 1.9 + rand() * 0.9 : 0.55 + rand() * 1.0;
+  }
+
+  /* edges: 2 nearest neighbours + a few long association fibres */
+  const edges = [];
+  const adj = Array.from({ length: N }, () => []);
+  const addEdge = (a, b) => {
+    if (a === b) return;
+    const k = a < b ? a * N + b : b * N + a;
+    if (addEdge.seen.has(k)) return;
+    addEdge.seen.add(k);
+    edges.push(a, b); adj[a].push(b); adj[b].push(a);
+  };
+  addEdge.seen = new Set();
+  const d2 = (a, b) => {
+    const dx = pos[a * 3] - pos[b * 3], dy = pos[a * 3 + 1] - pos[b * 3 + 1], dz = pos[a * 3 + 2] - pos[b * 3 + 2];
+    return dx * dx + dy * dy + dz * dz;
+  };
+  for (let i = 0; i < N; i++) {
+    let n1 = -1, n2 = -1, n3 = -1, b1 = Infinity, b2 = Infinity, b3 = Infinity;
+    for (let j = 0; j < N; j++) {
+      if (i === j) continue;
+      const dd = d2(i, j);
+      if (dd < b1) { b3 = b2; n3 = n2; b2 = b1; n2 = n1; b1 = dd; n1 = j; }
+      else if (dd < b2) { b3 = b2; n3 = n2; b2 = dd; n2 = j; }
+      else if (dd < b3) { b3 = dd; n3 = j; }
+    }
+    if (n1 >= 0 && b1 < 0.5) addEdge(i, n1);
+    if (n2 >= 0 && b2 < 0.5) addEdge(i, n2);
+    if (n3 >= 0 && b3 < 0.42) addEdge(i, n3);
+  }
+  for (let k = 0; k < (isSmall ? 22 : 40); k++) {
+    addEdge(Math.floor(rand() * N), Math.floor(rand() * N));
+  }
+  const E = edges.length / 2;
+
+  const uniforms = {
+    uPhase: { value: reduced ? 0.5 : -0.4 },
+    uReveal: { value: reduced ? 1 : 0 },
+    uFade: { value: 1 },
+    uTime: { value: 0 },
+    uPR: { value: Math.min(devicePixelRatio, 2) },
+  };
+  const colorGLSL = `
+    vec3 netColor(float m, float phase) {
+      return mix(vec3(${COL_A.r.toFixed(4)}, ${COL_A.g.toFixed(4)}, ${COL_A.b.toFixed(4)}),
+                 vec3(${COL_B.r.toFixed(4)}, ${COL_B.g.toFixed(4)}, ${COL_B.b.toFixed(4)}),
+                 smoothstep(phase - 0.38, phase + 0.38, m));
+    }
+    float depthCue(float viewZ) { return clamp((9.6 - viewZ) / 4.2, 0.22, 1.0); }
+    float revealAt(float r, float reveal) { return smoothstep(r, r + 0.18, reveal); }
+  `;
+
+  /* nodes */
+  const gPts = new THREE.BufferGeometry();
+  gPts.setAttribute('position', new THREE.BufferAttribute(pos, 3));
+  gPts.setAttribute('aMix', new THREE.BufferAttribute(aMix, 1));
+  gPts.setAttribute('aRand', new THREE.BufferAttribute(aRand, 1));
+  gPts.setAttribute('aScale', new THREE.BufferAttribute(aScale, 1));
+  const mPts = new THREE.ShaderMaterial({
+    uniforms, transparent: true, depthWrite: false, blending: THREE.AdditiveBlending,
+    vertexShader: `
+      attribute float aMix; attribute float aRand; attribute float aScale;
+      uniform float uPR;
+      varying float vMix; varying float vRand; varying float vZ;
+      void main() {
+        vMix = aMix; vRand = aRand;
+        vec4 mv = modelViewMatrix * vec4(position, 1.0);
+        vZ = -mv.z;
+        gl_PointSize = 40.0 * aScale * uPR / vZ;
+        gl_Position = projectionMatrix * mv;
+      }`,
+    fragmentShader: `
+      uniform float uPhase; uniform float uReveal; uniform float uFade;
+      varying float vMix; varying float vRand; varying float vZ;
+      ${colorGLSL}
+      void main() {
+        float d = distance(gl_PointCoord, vec2(0.5));
+        float disc = smoothstep(0.5, 0.14, d);
+        vec3 col = netColor(vMix, uPhase);
+        col += vec3(0.95) * smoothstep(0.17, 0.0, d) * 0.5;
+        float a = disc * revealAt(vRand, uReveal) * depthCue(vZ) * uFade;
+        gl_FragColor = vec4(col, a * 0.85);
+      }`,
+  });
+  const points = new THREE.Points(gPts, mPts);
+
+  /* synapses */
+  const lPos = new Float32Array(E * 2 * 3);
+  const lMix = new Float32Array(E * 2);
+  const lRand = new Float32Array(E * 2);
+  for (let e = 0; e < E; e++) {
+    const a = edges[e * 2], b = edges[e * 2 + 1];
+    lPos.set([pos[a * 3], pos[a * 3 + 1], pos[a * 3 + 2]], e * 6);
+    lPos.set([pos[b * 3], pos[b * 3 + 1], pos[b * 3 + 2]], e * 6 + 3);
+    lMix[e * 2] = aMix[a]; lMix[e * 2 + 1] = aMix[b];
+    const r = Math.min(aRand[a], aRand[b]);
+    lRand[e * 2] = r; lRand[e * 2 + 1] = r;
+  }
+  const gLin = new THREE.BufferGeometry();
+  gLin.setAttribute('position', new THREE.BufferAttribute(lPos, 3));
+  gLin.setAttribute('aMix', new THREE.BufferAttribute(lMix, 1));
+  gLin.setAttribute('aRand', new THREE.BufferAttribute(lRand, 1));
+  const mLin = new THREE.ShaderMaterial({
+    uniforms, transparent: true, depthWrite: false, blending: THREE.AdditiveBlending,
+    vertexShader: `
+      attribute float aMix; attribute float aRand;
+      varying float vMix; varying float vRand; varying float vZ;
+      void main() {
+        vMix = aMix; vRand = aRand;
+        vec4 mv = modelViewMatrix * vec4(position, 1.0);
+        vZ = -mv.z;
+        gl_Position = projectionMatrix * mv;
+      }`,
+    fragmentShader: `
+      uniform float uPhase; uniform float uReveal; uniform float uFade;
+      varying float vMix; varying float vRand; varying float vZ;
+      ${colorGLSL}
+      void main() {
+        vec3 col = netColor(vMix, uPhase);
+        float a = 0.22 * revealAt(vRand, uReveal) * depthCue(vZ) * uFade;
+        gl_FragColor = vec4(col, a);
+      }`,
+  });
+  const lines = new THREE.LineSegments(gLin, mLin);
+
+  /* signal pulses walking the graph */
+  const P = reduced ? 0 : (isSmall ? 42 : 72);
+  const pPos = new Float32Array(Math.max(P, 1) * 3);
+  const pMix = new Float32Array(Math.max(P, 1));
+  const pOff = new Float32Array(Math.max(P, 1));
+  const pulses = [];
+  for (let i = 0; i < P; i++) {
+    const e = Math.floor(rand() * E);
+    pulses.push({ a: edges[e * 2], b: edges[e * 2 + 1], t: rand(), v: 0.5 + rand() * 0.9 });
+    pOff[i] = rand() * Math.PI * 2;
+  }
+  const gPul = new THREE.BufferGeometry();
+  gPul.setAttribute('position', new THREE.BufferAttribute(pPos, 3));
+  gPul.setAttribute('aMix', new THREE.BufferAttribute(pMix, 1));
+  gPul.setAttribute('aOff', new THREE.BufferAttribute(pOff, 1));
+  const mPul = new THREE.ShaderMaterial({
+    uniforms, transparent: true, depthWrite: false, blending: THREE.AdditiveBlending,
+    vertexShader: `
+      attribute float aMix; attribute float aOff;
+      uniform float uPR;
+      varying float vMix; varying float vOff; varying float vZ;
+      void main() {
+        vMix = aMix; vOff = aOff;
+        vec4 mv = modelViewMatrix * vec4(position, 1.0);
+        vZ = -mv.z;
+        gl_PointSize = 66.0 * uPR / vZ;
+        gl_Position = projectionMatrix * mv;
+      }`,
+    fragmentShader: `
+      uniform float uPhase; uniform float uReveal; uniform float uFade; uniform float uTime;
+      varying float vMix; varying float vOff; varying float vZ;
+      ${colorGLSL}
+      void main() {
+        float d = distance(gl_PointCoord, vec2(0.5));
+        float disc = smoothstep(0.5, 0.05, d);
+        vec3 col = netColor(vMix, uPhase) + vec3(1.0) * smoothstep(0.22, 0.0, d) * 0.8;
+        float tw = 0.7 + 0.3 * sin(uTime * 5.0 + vOff);
+        float a = disc * tw * uReveal * depthCue(vZ) * uFade;
+        gl_FragColor = vec4(col, a);
+      }`,
+  });
+  const pulsePts = new THREE.Points(gPul, mPul);
+  pulsePts.visible = P > 0;
+
+  const group = new THREE.Group();
+  group.add(lines, points, pulsePts);
+  scene.add(group);
+
+  /* placement: network sits right of the copy on wide screens */
+  const place = () => {
+    const w = canvas.clientWidth || innerWidth;
+    group.position.x = w > 900 ? 1.15 : 0;
+    group.position.y = w > 900 ? 0.12 : 0.55;
+    group.rotation.z = 0.10;
+    group.scale.setScalar(w < 560 ? 0.8 : 1.14);
+  };
+
+  const resize = () => {
+    const w = canvas.clientWidth || innerWidth;
+    const h = canvas.clientHeight || innerHeight;
+    if (!w || !h) return;
+    renderer.setSize(w, h, false);
+    camera.aspect = w / h;
+    camera.updateProjectionMatrix();
+    uniforms.uPR.value = Math.min(devicePixelRatio, 2);
+    place();
+    if (reduced) renderer.render(scene, camera);
+  };
+  addEventListener('resize', resize);
+  /* background tabs can report 0x0 at module time; observe instead of trusting one shot */
+  new ResizeObserver(resize).observe(canvas);
+  resize();
+
+  /* pointer parallax */
+  let mx = 0, my = 0;
+  addEventListener('pointermove', ev => {
+    mx = (ev.clientX / innerWidth) * 2 - 1;
+    my = (ev.clientY / innerHeight) * 2 - 1;
+  }, { passive: true });
+
+  /* accent variable follows the sweep so the whole page breathes with it */
+  const accent = new THREE.Color();
+  const setAccent = () => {
+    const ph = uniforms.uPhase.value;
+    const t = THREE.MathUtils.smoothstep(0.5, ph - 0.38, ph + 0.38);
+    accent.lerpColors(COL_A, COL_B, t);
+    document.documentElement.style.setProperty('--accent', '#' + accent.getHexString());
+  };
+
+  let spin = 0.35;
+  let inView = true;
+  new IntersectionObserver(([en]) => { inView = en.isIntersecting; }, { threshold: 0 })
+    .observe(document.getElementById('hero'));
+
+  const step = pulse => {
+    const nexts = adj[pulse.b];
+    const next = nexts.length ? nexts[Math.floor(Math.random() * nexts.length)] : pulse.a;
+    pulse.a = pulse.b; pulse.b = next === pulse.a && nexts.length > 1
+      ? nexts[Math.floor(Math.random() * nexts.length)] : next;
+    pulse.t = 0;
+  };
+
+  if (reduced) {
+    setAccent();
+    renderer.render(scene, camera);
+  } else {
+    gsap.fromTo(uniforms.uPhase, { value: -0.4 }, {
+      value: 1.4, duration: 7.5, ease: 'sine.inOut', repeat: -1, yoyo: true,
+    });
+    gsap.to(uniforms.uReveal, { value: 1, duration: 2.6, ease: 'power2.inOut', delay: 0.15 });
+
+    ScrollTrigger.create({
+      trigger: '#hero', start: 'top top', end: 'bottom top', scrub: true,
+      onUpdate: st => {
+        uniforms.uFade.value = 1 - st.progress * 0.9;
+        camera.position.z = 7.4 + st.progress * 1.6;
+      },
+    });
+
+    gsap.ticker.add((time, deltaMS) => {
+      if (document.hidden || (!inView && uniforms.uReveal.value >= 1)) return;
+      const dt = Math.min(deltaMS / 1000, 0.05);
+      spin += dt * 0.05;
+      group.rotation.y = spin + mx * 0.14;
+      group.rotation.x = my * 0.10;
+      uniforms.uTime.value = time;
+      for (let i = 0; i < P; i++) {
+        const p = pulses[i];
+        p.t += dt * p.v;
+        if (p.t >= 1) step(p);
+        const t = p.t;
+        pPos[i * 3]     = pos[p.a * 3]     + (pos[p.b * 3]     - pos[p.a * 3]) * t;
+        pPos[i * 3 + 1] = pos[p.a * 3 + 1] + (pos[p.b * 3 + 1] - pos[p.a * 3 + 1]) * t;
+        pPos[i * 3 + 2] = pos[p.a * 3 + 2] + (pos[p.b * 3 + 2] - pos[p.a * 3 + 2]) * t;
+        pMix[i] = aMix[p.a] + (aMix[p.b] - aMix[p.a]) * t;
+      }
+      if (P > 0) {
+        gPul.attributes.position.needsUpdate = true;
+        gPul.attributes.aMix.needsUpdate = true;
+      }
+      setAccent();
+      renderer.render(scene, camera);
+    });
+  }
+} else {
+  document.body.classList.add('no-webgl');
+}
+
+/* ------------------------------------------------------------------ */
+/* page motion                                                         */
+/* ------------------------------------------------------------------ */
+const nav = document.getElementById('nav');
+ScrollTrigger.create({
+  start: 40, onEnter: () => nav.classList.add('scrolled'),
+  onLeaveBack: () => nav.classList.remove('scrolled'),
+});
+
+if (!reduced) {
+  gsap.from('.line > span', {
+    yPercent: 110, duration: 1.1, stagger: 0.1, ease: 'power4.out', delay: 0.35,
+  });
+  gsap.from('.sub, .cta-row', {
+    opacity: 0, y: 18, duration: 0.9, stagger: 0.12, ease: 'power3.out', delay: 0.9,
+  });
+  gsap.utils.toArray('.statement').forEach(el => {
+    gsap.from(el, {
+      opacity: 0, y: 56, duration: 1.1, ease: 'power4.out',
+      scrollTrigger: { trigger: el, start: 'top 82%', once: true },
+    });
+  });
+  gsap.from('.use h2, .steps li', {
+    opacity: 0, y: 34, duration: 0.9, stagger: 0.1, ease: 'power3.out',
+    scrollTrigger: { trigger: '.use', start: 'top 75%', once: true },
+  });
+}
+</script>
+</body>
+</html>
