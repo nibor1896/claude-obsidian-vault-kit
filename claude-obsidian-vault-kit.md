@@ -1,4 +1,4 @@
-<!-- kit-version: ee38a2f889f9 -->
+<!-- kit-version: a4ba554614b2 -->
 # Claude × Obsidian — Vault Kit
 
 **What this file is:** a setup contract for Claude. Drop it into a Claude conversation and say
@@ -208,8 +208,13 @@ elsewhere is untouched — but say so, or they will assume they broke something 
   folder name and appears in generated filenames — prefer no spaces, no `#`, `[`, `]`, `|`, `^`.)
 - **Where does the code live** for each project? Absolute paths. May I read those repos, or is any
   of them off limits?
-- **Is there a cross-project or "global" bucket** for things that belong to no single project
-  (tooling, personal working rules, cross-cutting decisions)? Most people want one.
+
+**Do not ask whether they want a global bucket.** `00_Global/` is always created — it is where the
+tools go, and the scripts spell that path out. State it in the one-line summary after this round
+("`00_Global/` will hold the tools and anything that belongs to no single project"), and move on.
+This was a question until 2026-07-30, and the answer "no" was never honoured: the first tool run
+recreated the folder through `log_run`, with exit 0 and no message. A question whose answer the code
+overrules is worse than no question — it teaches the user that their answers do not decide anything.
 
 ### 1.4 Where the vault lives, and how it survives
 
@@ -291,7 +296,7 @@ project folder the user makes themselves later (SECTION 5).
 ```
 <VaultRoot>/
 ├── INDEX - <VaultName>.md           generated — one line per project
-├── 00_Global/                       optional: things belonging to no single project
+├── 00_Global/                       ALWAYS created — the tools live here; see the note below
 │   └── (same subfolders as a project)
 └── <ProjectName>/
     ├── INDEX - <ProjectName>.md     generated — one line per category
@@ -308,9 +313,17 @@ Rules for the tree:
 - **The numeric prefixes exist for sort order only.** Keep them; they make Obsidian's file pane match
   the mental order. `01` is deliberately unused — closing the gap would rename every category index
   file in every project for no gain, and the prefix carries no meaning to close.
-- **Tools live in exactly one place.** Put the scripts under one project's `06_tools/` (or under
-  `00_Global/06_tools/`) and have every other project supply only its own small config file. Two
-  copies of a script means one of them is silently out of date.
+- **`00_Global/` is always created, and it is not a question.** The tools live in
+  `00_Global/06_tools/`, and that path is not a preference — it is written into the scripts. The run
+  log is `00_Global/06_tools/runs.log` (`vault_paths.RUN_LOG_RELPATH`), `check_freshness.py` reads it
+  there, `upgrade.py --stamp` writes `00_Global/06_tools/kit-version.txt`, and the `.gitignore`
+  comment names the same path. Offering "no global folder" as a choice was worse than not asking:
+  the first tool run recreated `00_Global/06_tools/` anyway, through `log_run`'s `mkdir(parents=True)`
+  — exit 0, no message, against the user's stated answer. **Tell the user the folder is being created
+  and what it is for; do not ask whether to create it.** Whether they also file *notes* there is
+  entirely theirs — an empty `00_Global/00_Notes/` costs nothing.
+- **Tools live in exactly one place.** Two copies of a script means one of them is silently out of
+  date. Every other project supplies only its own small config file.
 - **Optional extras**, add only if the user has the need: `07_reports/` (one report per
   investigation) is the common one. Any folder the user adds by hand becomes a category of its own
   on the next index run (SECTION 5) — they do not have to ask permission for a folder.
@@ -702,11 +715,18 @@ git -C <VaultRoot> config user.email "<email the user gives you>"
 Ask for both. Do not invent them, and do not copy them from another repo on the machine — an identity
 appears in every commit forever, and if the vault ever gets a remote it becomes public.
 
+**Stage only what exists at this point.** `INDEX - <VaultName>.md` is *not* written yet — the
+generator creates it in SECTION 8, several steps from here. Staging it makes `git add` fail with
+*"did not match any files"*, and an agent that works around the error by running the generator early
+has quietly reordered the setup. Measured on the cold run of 2026-07-30: the operator had to commit
+in two stages to get past it. The tree and the notes are committed in SECTION 8, after the
+verification run, where the index exists.
+
 ```powershell
 # Windows / PowerShell — one command per line, no chaining
 cd <VaultRoot>
 git init
-git add .gitattributes .gitignore "INDEX - <VaultName>.md"
+git add .gitattributes .gitignore
 git commit -m "chore: initialise vault"
 ```
 
@@ -714,7 +734,7 @@ git commit -m "chore: initialise vault"
 # macOS / Linux
 cd <VaultRoot>
 git init
-git add .gitattributes .gitignore "INDEX - <VaultName>.md"
+git add .gitattributes .gitignore
 git commit -m "chore: initialise vault"
 ```
 
@@ -907,6 +927,13 @@ anywhere else.
 present. Run every remaining step regardless, carry its numbers into the report below, and do not
 fold its verdict into a line that claims the vault is in order — the two answer different questions.
 
+**On the very first setup it is red, and that is correct.** No tool has ever run in this vault, so
+the log holds no healthy line for `build_index` or `check_links` and the check reports `0/2`. Say
+this out loud before you run it, or the user reads their brand-new vault as broken in its first
+minute. Run the chain, then run `check_freshness.py` once more at the end: it now reads the lines
+this chain just wrote and reports `2/2`. Observed on the cold run of 2026-07-30 — `0/2` before,
+`2/2` after, same vault, nothing repaired in between.
+
 **`build_index.py` is not a read-only measurement — it writes.** Say so before running it, and check
 `git status` first so its output is not mistaken for someone else's uncommitted work.
 
@@ -914,11 +941,25 @@ fold its verdict into a line that claims the vault is in order — the two answe
 
 ```bash
 python 06_tools/build_index.py --vault <Project>
-git status --porcelain          # must be empty
+git status --porcelain          # no generated file may appear here
 ```
 
 A generator that produces fresh drift on every run is indistinguishable from a clean one after a
 single pass, and it turns every later `git status` into noise nobody reads. One extra run settles it.
+
+**What may legitimately appear, and what may not.** The check is about *generated* files: no
+`INDEX - *.md` may show up. Two other things can, and neither is a defect:
+
+- **`?? .obsidian/`**, once the user has opened the vault in Obsidian. The folder does not exist
+  during setup and is created by the app on first launch. Most of it is worth versioning (see
+  SECTION 7) — commit it and the line is gone.
+- **Notes the user wrote themselves**, and the index entries that now point at them.
+
+If an `INDEX - *.md` differs after the second run *without* a note having been added, that is real
+drift and it stops here. Distinguish the two before reporting: `git diff` on the index file names
+the entry that changed, and hashing the file before and after a third run separates "changed because
+content changed" from "changes on every run". Both cases occurred on 2026-07-30; only the second
+would be a defect.
 
 Then report to the user in exactly this shape:
 
@@ -1022,12 +1063,14 @@ resolves it (SECTION 5). Write it escaped, do not dodge the table.
   that folder by itself. Tell the user, once, in these words: *Settings → Core plugins → Templates →
   Template folder location* = `_templates`. After that, `Ctrl+P → Insert template` in a new note
   fills the frontmatter block, with the project name already correct.
-  **Do not write `.obsidian/templates.json` for them — and not because it would fail.** It works:
-  measured on 2026-07-29 against Obsidian **1.12.7**, a `templates.json` that Obsidian did not
-  write itself is read at startup. The file was `{"folder": "_templates"}` — 23 bytes, UTF-8
-  **without a BOM**, written while Obsidian was closed — and the setting was live on the next
-  start; observed twice. Three things were not tested: the same file *with* a BOM, writing it
-  while Obsidian is running, and any other Obsidian version.
+  **Do not write `.obsidian/templates.json` for them — and not because it would fail.** It works,
+  and it has now been measured three times against Obsidian **1.12.7**, most recently on
+  2026-07-30 with a control probe: delete the file with Obsidian closed and the setting comes back
+  **empty** on the next start; write it from outside and the setting is **live** on the start after
+  that. The file Obsidian writes itself is 28 bytes — `{`, newline, two spaces,
+  `"folder": "_templates"`, newline, `}` — UTF-8, LF, **no BOM, no trailing newline**; a byte-identical
+  copy written from outside is read the same way. Three things remain untested: the same file *with*
+  a BOM, writing it while Obsidian is running, and any other Obsidian version.
   The rule stands on the other reason: `.obsidian/` is the user's application state, and this kit
   does not write into it. Name the setting and let them make it. If they would rather have the
   file than click through Settings, that is theirs to write, with Obsidian closed — one line,
