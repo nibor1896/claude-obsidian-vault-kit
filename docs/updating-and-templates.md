@@ -21,7 +21,7 @@ Every `--root` run of the index generator writes one template per project:
 ```
 
 They are named like the indexes (`INDEX - <Name>.md`) so they sort together in the file tree.
-Each one carries **every field the frontmatter contract knows**, with the rest left empty:
+Each one carries **the four fields every note actually has when it is created**:
 
 ```
 ---
@@ -29,11 +29,6 @@ title: "{{title}}"
 summary:
 project: "ProjectName"
 created: {{date}}
-updated:
-issues:
-generator:
-retired:
-stale:
 ---
 ```
 
@@ -41,6 +36,20 @@ stale:
 from the filename, which is the convention this vault runs on. `project:` is written into each
 template by name, so it can never be guessed wrong; that mismatch is a defect the guards report,
 and this is what stops it happening in the first place.
+
+### Why the other five contract fields are not in it
+
+The frontmatter contract defines nine fields. `updated`, `issues`, `generator`, `retired` and
+`stale` are **situational** — they get set when something has happened, not when a note is started,
+and a template full of empty keys teaches you to leave them empty.
+
+One of them is more than tidiness. **`generator:` must never sit in a template waiting to be
+filled.** A note carrying that field is declaring itself derived output, and a rebuild is then
+entitled to overwrite or delete it. A blank `generator:` in every new note is a trap with your own
+writing in it.
+
+Nothing is hidden by leaving them out: Obsidian's *Add property* offers every field already used
+anywhere in the vault, so they are one click away in any note that needs them.
 
 ### The one setting you have to make yourself
 
@@ -50,10 +59,15 @@ and this is what stops it happening in the first place.
 
 After that, `Ctrl+P → Insert template` in a new note offers one entry per project.
 
-The kit does **not** write this setting for you, and that is deliberate. The key inside
-`.obsidian/templates.json` has not been verified from the outside on a clean install, and a wrong
-key does nothing *quietly* — which is the exact failure class the guards exist to catch. A setting
-you made once and can see is better than one a tool wrote and neither of you can confirm.
+The kit does **not** write this setting for you, and the reason is not that it cannot. Obsidian
+1.12.7 does read an externally written `.obsidian/templates.json` — measured three times, including
+a control probe: delete the file with Obsidian closed and the setting comes back empty on the next
+start; write it from outside and the setting is live on the start after that.
+
+It is left to you because **`.obsidian/` is your application state**, not the vault's content. This
+kit writes notes, indexes and its own tool folder. Reaching into the directory that holds your
+themes, your hotkeys and your plugin config to flip a switch you can flip yourself is a different
+kind of act, and one you would have no reason to expect.
 
 ### What happens if you edit a template
 
