@@ -893,7 +893,7 @@ python 06_tools/check_freshness.py --vault <VaultRoot>   # FIRST, and not as a f
 python 06_tools/build_index.py --vault <Project>     # once per project
 python 06_tools/build_index.py --root  <VaultRoot>
 python 06_tools/check_links.py --vault <VaultRoot>
-python 06_tools/check_duplicates.py --vault <Project>
+python 06_tools/check_duplicates.py --vault <VaultRoot>
 python 06_tools/run_suites.py
 ```
 
