@@ -104,6 +104,44 @@ class WriteCommandTest(unittest.TestCase):
         self.assertIn(f"--vault {root}", links[0],
                       "the link checker was handed something narrower than the vault root")
 
+    def test_the_freshness_check_is_the_first_step_and_the_steps_are_numbered_through(self):
+        """Kit #3. Order is the fourth trap, and the only one that cannot be seen in a single line.
+
+        Every other step in this chain appends an `ok` line to the run log. A freshness check
+        measured after them reads the side effect of its own chain and reports the jobs as fresh
+        -- including a scheduled one that stopped firing a week ago. So its position is the
+        behaviour, not its presence, and both halves are checked here: it comes first, and no
+        writer runs before it.
+
+        The numbering is held too, because renumbering by hand is how a chain ends up with two
+        step 3s and a reader who skips one.
+
+        Recipe without the fix, measured on this machine 2026-07-30: move the check_freshness
+        command line in command_text() below the build_index loop, leaving the headings where
+        they are. test_write_command 13/14 -- this case and nothing else, which is the point of
+        having it: the command still contains every tool, and only the order is wrong.
+        """
+        self.write("--shell", "powershell")
+        lines = self.target.read_text(encoding="utf-8").splitlines()
+
+        headings = [line for line in lines if line.startswith("## ") and " · " in line]
+        numbers = [int(line.split()[1]) for line in headings]
+        self.assertEqual(numbers, list(range(1, len(numbers) + 1)),
+                         f"the steps are not numbered through: {headings}")
+        # Runnable lines only. The prose above step 1 names `build_index.py` as a warning that it
+        # writes, and matching that would have this test pass on the wrong evidence.
+        def first(needle):
+            return next(i for i, line in enumerate(lines)
+                        if line.startswith("- `python ") and needle in line)
+
+        freshness = first("check_freshness.py")
+        self.assertLess(lines.index(headings[0]), freshness)
+        self.assertLess(freshness, lines.index(headings[1]),
+                        f"the freshness command is not inside step 1: {headings[0]}")
+        for writer in ("build_index.py", "check_links.py", "check_duplicates.py", "run_suites.py"):
+            self.assertLess(freshness, first(writer),
+                            f"{writer} logs before the freshness check reads the log")
+
     def test_the_sweep_uses_root_and_says_why(self):
         """`--vault` alone leaves the root index on yesterday's count, green and silent."""
         self.write("--shell", "powershell")
@@ -170,7 +208,7 @@ class WriteCommandTest(unittest.TestCase):
     def test_a_hand_edited_command_survives_the_next_run(self):
         """One that comes back unchanged proves nothing unless it went in changed."""
         self.write()
-        mine = self.target.read_text(encoding="utf-8") + "\n## 7 · My own step\n"
+        mine = self.target.read_text(encoding="utf-8") + "\n## Mein eigener Schritt\n"
         self.target.write_text(mine, encoding="utf-8", newline="\n")
         code, _, err = self.write()
         self.assertEqual(code, 0, err)

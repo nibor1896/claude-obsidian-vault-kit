@@ -1,4 +1,4 @@
-<!-- kit-version: c66a5b44a78a -->
+<!-- kit-version: 2333ba7be79a -->
 # Claude × Obsidian — Vault Kit
 
 **What this file is:** a setup contract for Claude. Drop it into a Claude conversation and say
@@ -561,7 +561,7 @@ only ever sees good input cannot tell you the check still works.
 | `build_index.py` | the index tree (SECTION 5) | a silent fallback on a degraded entry |
 | `check_links.py` | every `[[wikilink]]` resolves to a file | reporting `0 broken` when it scanned 0 files |
 | `check_duplicates.py` | notes whose content overlaps | being ignored — every hit gets a decision |
-| `check_freshness.py` | age of the last **healthy** run of each scheduled job | treating "no log" as "fine" |
+| `check_freshness.py` | age of the last **healthy** run of each scheduled job | treating "no log" as "fine", or a job listed as both watched and on-demand as watched |
 | `run_suites.py` | discovers and runs every `test_*.py` | reporting green when it collected zero suites |
 | `count_tokens.py` | size of what was read, for cost | inventing a precision — output `exact` or `estimated` |
 | `write_command.py` | the `/vaultkit` command, with this vault's real paths in it | overwriting a command the user has edited, or writing one without naming the path |
@@ -641,6 +641,31 @@ Any job on a schedule (task scheduler, cron, launchd) writes a line to an append
 run, including the healthy ones**. `check_freshness.py` reads that log and reports the age of the
 last healthy run per job, against a threshold the user sets. Without this, a scheduler that quietly
 stopped firing looks identical to one that is fine.
+
+**Logging and being watched are two different lists, and `jobs.json` carries both.** Every tool
+writes a line; only a tool that runs on a schedule can be *late*. Put the on-demand ones under an
+age limit and the report is red every single day — which is the fastest way to get the whole check
+switched off, and a check nobody runs is worth less than none. So `jobs` is what must be fresh,
+`on_demand` is what logs and is never late, and each on-demand entry carries its reason as its
+value, because JSON has no comments and an exception without a reason is indistinguishable from an
+oversight.
+
+Three consequences, and each one is a behaviour, not a preference:
+
+- **A name in both lists stops the tool with exit 2.** Not "watched wins": that would be an
+  invisible decision, with the on-demand entry sitting there doing nothing and no run able to show
+  which of the two statements applies.
+- **A name in neither is reported, and does not change the exit code.** That line is the only real
+  signal in this area — somebody built a tool and nobody decided whether it is watched. Turning it
+  red would make the chain permanently red for every user who adds a tool of their own.
+- **The check itself logs, and stands in `on_demand`.** Without its own line, "the freshness check
+  runs in the chain" is a claim about a command file: delete the step and it looks exactly like a
+  check that runs and finds nothing. Watching the watcher would be the regress; logging is not
+  watching.
+
+**It runs FIRST in any chain that also runs other tools** — see the verification run in SECTION 8.
+Every other tool appends an `ok` line, so a freshness check measured afterwards sees the side effect
+of the chain it belongs to and reports fresh over a job that died a week ago.
 
 Note for scheduled jobs on laptops: default task settings often include *do not start on battery*
 and *do not catch up on missed runs*. That combination produces multi-hour gaps overnight that no
@@ -865,12 +890,22 @@ carries the same chain in prose, so a user working in a browser loses nothing.
 ### Verification run — all of it, no exceptions
 
 ```bash
+python 06_tools/check_freshness.py --vault <VaultRoot>   # FIRST, and not as a formality
 python 06_tools/build_index.py --vault <Project>     # once per project
 python 06_tools/build_index.py --root  <VaultRoot>
 python 06_tools/check_links.py --vault <VaultRoot>
 python 06_tools/check_duplicates.py --vault <Project>
 python 06_tools/run_suites.py
 ```
+
+**The freshness check goes first because every line below it writes to the run log.** Measured
+after them, it sees the side effect of this very chain and reports the jobs as fresh — including a
+scheduled one that stopped firing a week ago. There is no reading of the order that puts it
+anywhere else.
+
+**Red there is a report, not a stop.** It judges the past; the rest of the chain produces the
+present. Run every remaining step regardless, carry its numbers into the report below, and do not
+fold its verdict into a line that claims the vault is in order — the two answer different questions.
 
 **`build_index.py` is not a read-only measurement — it writes.** Say so before running it, and check
 `git status` first so its output is not mistaken for someone else's uncommitted work.
@@ -892,6 +927,7 @@ Created:   <folders> · <n> projects · <n> categories
 Index:     <n> entries in <m> categories        (exit 0 | defects: …)
 Links:     <n>/<m> resolve
 Duplicates: <n> flagged
+Freshness: <n>/<m> jobs fresh · <k> on demand · <u> unclassified
 Tests:     <n>/<m> suites green
 Commit:    <hash>
 Open:      <what is not done, AND what you did not measure>
@@ -901,6 +937,11 @@ Rules for that report:
 
 - **"Synchronised" appears only when every check is clean.** Otherwise the line names what is
   broken. A success message that also appears on failure is not a message.
+- **`Freshness:` is its own line and is printed every time, denominators included** — also when
+  everything is fresh, and also when the check went red. It never merges into a line claiming the
+  vault is in order: that one is about the state this run just produced, and freshness is about the
+  past that led up to it. Folding the two together makes a healthy vault look like proof that the
+  scheduler is alive, which is the one thing it cannot show.
 - **`Open:` lists what you did not measure**, not only what is unfinished. Unmeasured and working
   look identical from the outside — that is the entire reason for measuring.
 - If nothing was transferred, write `nothing new`, not an empty success.
@@ -1405,8 +1446,13 @@ def run_tool(script, *args, strip_io_encoding=True, home=None):
 
 ```json
 {
-  "_comment": "Jobs that must show a healthy run in runs.log. Verify with: python check_freshness.py --vault <VaultRoot>",
-  "jobs": ["build_index", "check_links"]
+  "_comment": "Two lists, and a name belongs to exactly one of them. \"jobs\" must show a healthy run inside the threshold -- these are the ones a dead scheduler would silently take with it. \"on_demand\" logs like everything else but is never late, because it runs when someone asks. A name in both stops the tool with exit 2. A name in neither is reported, never guessed at. Verify with: python check_freshness.py --vault <VaultRoot>",
+  "jobs": ["build_index", "check_links"],
+  "on_demand": {
+    "check_duplicates": "runs in the verification chain and by hand, never on a schedule",
+    "write_command": "runs once during setup, and again only if the command file is gone",
+    "check_freshness": "this tool itself -- logged, never watched: an age limit on the watcher is a regress"
+  }
 }
 ```
 
@@ -1924,7 +1970,7 @@ if __name__ == "__main__":
 ```python
 """Write a `/vaultkit` slash command for Claude Code, with this vault's real paths already in it.
 
-The verification chain in SECTION 8 is five commands with three traps in them, and every one of
+The verification chain in SECTION 8 is six commands with three traps in them, and every one of
 the three was hit on a real run:
 
   1. `--vault` means two different things. `check_links.py` wants the vault ROOT,
@@ -1935,6 +1981,10 @@ the three was hit on a real run:
   3. `--root`, not `--vault`, for the sweep. Rerunning only `--vault` after adding a note leaves
      the root index on yesterday's count -- green, silent, and wrong. Measured on a cold run:
      one added note left the root index reading 5 entries against a vault holding 6.
+
+There is a fourth thing the file gets right and a typed chain cannot: ORDER. `check_freshness.py`
+stands first, because every other step appends an `ok` line and a freshness check measured after
+them reports the side effect of its own chain as health.
 
 A command file removes all three by spelling out the answers once, per vault, with the paths
 filled in. It is a convenience for Claude Code and nothing depends on it: the workflow page in
@@ -2048,7 +2098,20 @@ def command_text(vault_root, projects, shell):
         "**Before you start:** `build_index.py` writes. Say so, and check `git status` first, so "
         "its output is not mistaken for someone else's uncommitted work.",
         "",
-        "## 1 · Index each project",
+        "## 1 · Read the run log before anything writes to it",
+        "",
+        "**First, and the order is the whole point.** Every step below appends an `ok` line to "
+        "the run log. Measured after them, this check sees the side effect of the very chain it "
+        "belongs to and reports the jobs as fresh — including one that stopped firing a week "
+        "ago.",
+        "",
+        "**Red here is a report, never a reason to stop.** It judges the past; the rest of this "
+        "chain produces the present. Carry its numbers into the report and run the other steps "
+        "either way.",
+        "",
+        f"- `python {tool('check_freshness.py')} --vault {root}`",
+        "",
+        "## 2 · Index each project",
         "",
         "`--vault` here means ONE PROJECT DIRECTORY, not the vault root. One line per project:",
         "",
@@ -2057,7 +2120,7 @@ def command_text(vault_root, projects, shell):
         lines.append(f"- `python {tool('build_index.py')} --vault {show(project, shell)}`")
     lines += [
         "",
-        "## 2 · Index the vault root",
+        "## 3 · Index the vault root",
         "",
         "`--root`, not `--vault`. This is the one invocation that walks every project *and* "
         "writes the root hub. Running only step 1 after adding a note leaves the root index "
@@ -2066,7 +2129,7 @@ def command_text(vault_root, projects, shell):
         "",
         f"- `python {tool('build_index.py')} --root {root}`",
         "",
-        "## 3 · Check the links",
+        "## 4 · Check the links",
         "",
         "`--vault` here means THE VAULT ROOT — the same flag, the other meaning. The project "
         "hubs link back to the root index, so anything narrower reports a broken link that is "
@@ -2074,17 +2137,17 @@ def command_text(vault_root, projects, shell):
         "",
         f"- `python {tool('check_links.py')} --vault {root}`",
         "",
-        "## 4 · Check for duplicates",
+        "## 5 · Check for duplicates",
         "",
         "`--vault` here takes either the root or a single project:",
         "",
         f"- `python {tool('check_duplicates.py')} --vault {root}`",
         "",
-        "## 5 · Run the suites",
+        "## 6 · Run the suites",
         "",
         f"- `python {tool('run_suites.py')}`",
         "",
-        "## 6 · Prove the second run changes nothing",
+        "## 7 · Prove the second run changes nothing",
         "",
         "A generator that drifts on every run is indistinguishable from a clean one after a "
         "single pass, and it turns every later `git status` into noise nobody reads.",
@@ -2462,6 +2525,21 @@ Without this, a scheduler that quietly stopped firing looks identical to one tha
 Log format, one line per run, appended by every tool (see vault_paths.log_run):
 
     2026-07-27T09:15:00+00:00\tbuild_index\tok\t0 defects
+
+LOGGING AND BEING WATCHED ARE TWO DIFFERENT THINGS, AND jobs.json CARRIES BOTH LISTS. Every tool
+writes a line; only a tool that runs on a schedule can be *late*. Put the on-demand ones under an
+age limit and the report is red every single day, which is the fastest way to get the whole check
+switched off. So `jobs` is what must be fresh, `on_demand` is what logs and is never late, and a
+name in neither is reported as unclassified rather than assumed into one of them.
+
+This tool logs itself and stands in `on_demand`. Without its own line, "the freshness check runs in
+the chain" is a claim about a command file: delete the step and it looks exactly like a check that
+runs and finds nothing. Watching itself would be the regress -- logging is not watching, and that
+separation is the whole point.
+
+RUN IT FIRST, BEFORE ANYTHING ELSE IN THE CHAIN. Every other tool appends an `ok` line, so a run
+measured afterwards sees the side effect of the chain it is part of and reports fresh over a job
+that died a week ago.
 """
 
 import sys
@@ -2477,7 +2555,7 @@ import json
 from datetime import datetime, timezone
 from pathlib import Path
 
-from vault_paths import RUN_LOG_RELPATH
+from vault_paths import RUN_LOG_RELPATH, log_run
 
 DEFAULT_MAX_AGE_HOURS = 24.0
 HEALTHY = {"ok"}
@@ -2485,29 +2563,58 @@ HEALTHY = {"ok"}
 
 DEFAULT_JOBS = ["build_index", "check_links"]
 
+# Tools that log but deliberately have no age limit, name -> why. Kept in step with the shipped
+# jobs.json, and used only when no config file exists at all.
+#
+# THE REASON PER ENTRY IS NOT DECORATION: an exception without one is indistinguishable from an
+# oversight, and JSON has no comments, so the value carries it.
+DEFAULT_ON_DEMAND = {
+    "check_duplicates": "runs in the verification chain and by hand, never on a schedule",
+    "write_command": "runs once during setup, and again only if the command file is gone",
+    "check_freshness": "this tool itself -- logged, never watched: an age limit on the watcher "
+                       "is a regress",
+}
 
-def expected_jobs(vault_root):
-    """Jobs that must have a healthy run. Configured per vault, defaulted here.
 
-    No config file is normal -- a project-only run has none, and the default stands. A config
+def job_lists(vault_root):
+    """(watched, on_demand) — read once, so the two can never disagree about the fallback.
+
+    No config file is normal -- a project-only run has none, and both defaults stand. A config
     that exists and cannot be read is not normal, and falling back to the default over it
     checks a job list the user never chose while printing nothing about it. utf-8-sig is how
     that used to happen: Notepad writes a BOM, json.loads raises, the except swallowed it.
+
+    A config that exists and has no `on_demand` key gets an EMPTY on-demand list, not the
+    default above. That is the same rule one line further: substituting a classification the
+    user never made is the silent fallback this docstring is about. Empty is honest, and the
+    unclassified line then names the tools instead of guessing at them.
+
+    Either shape is accepted for `on_demand`: the mapping that ships (name -> reason) or a bare
+    list, which a user mirroring `jobs` will write. A list simply carries no reasons; refusing
+    it would hard-fail an honest config over cosmetics.
     """
     config = Path(vault_root).resolve() / "00_Global" / "06_tools" / "jobs.json"
     if not config.exists():
-        return DEFAULT_JOBS
+        return list(DEFAULT_JOBS), dict(DEFAULT_ON_DEMAND)
     try:
         data = json.loads(config.read_text(encoding="utf-8-sig"))
-        return list(data["jobs"])
+        watched = list(data["jobs"])
+        raw = data.get("on_demand") or {}
+        on_demand = dict(raw) if isinstance(raw, dict) else {name: "" for name in raw}
+        return watched, on_demand
     except (OSError, ValueError, KeyError, TypeError) as exc:
         print(f"{config}: unreadable ({exc}) — falling back to {DEFAULT_JOBS}", file=sys.stderr)
-        return DEFAULT_JOBS
+        return list(DEFAULT_JOBS), dict(DEFAULT_ON_DEMAND)
 
 
 def parse_log(log_path):
-    """job -> newest healthy datetime. Malformed lines are counted, not swallowed."""
+    """(newest healthy per job, every job name seen, lines, malformed).
+
+    `seen` covers failed runs too: a tool that only ever fails is still either classified or
+    not, and leaving it out of that question would hide the tool that needs the decision most.
+    """
     healthy = {}
+    seen = set()
     malformed = 0
     lines = 0
     with open(log_path, "r", encoding="utf-8", errors="replace") as fh:
@@ -2525,13 +2632,14 @@ def parse_log(log_path):
             except ValueError:
                 malformed += 1
                 continue
+            seen.add(job)
             if when.tzinfo is None:
                 when = when.replace(tzinfo=timezone.utc)
             if status not in HEALTHY:
                 continue
             if job not in healthy or when > healthy[job]:
                 healthy[job] = when
-    return healthy, lines, malformed
+    return healthy, seen, lines, malformed
 
 
 def main(argv=None):
@@ -2544,10 +2652,28 @@ def main(argv=None):
 
     vault_root = Path(args.vault).resolve()
     log_path = Path(args.log).resolve() if args.log else vault_root / RUN_LOG_RELPATH
-    jobs = args.jobs if args.jobs else expected_jobs(vault_root)
+    configured, on_demand = job_lists(vault_root)
+    jobs = args.jobs if args.jobs else configured
+
+    # Before any measurement, because the answer to "which list wins" is neither of them. Letting
+    # the watched list win would be an invisible decision: the on-demand entry would sit there
+    # doing nothing, and no run could show which of the two statements applies.
+    #
+    # The CONFIGURED list, not the effective one: the defect is in the file, so `--jobs` must not
+    # be able to dodge it -- and `--jobs check_duplicates` is a deliberate one-off watch of an
+    # on-demand tool, which is not a contradiction and must not be treated as one.
+    both = sorted(set(configured) & set(on_demand))
+    if both:
+        print(f"{', '.join(both)}: in the watched list AND in the on-demand list. A job is one or "
+              f"the other — watched means it may be late, on demand means it cannot be. Take it "
+              f"out of one of them in {vault_root / '00_Global' / '06_tools' / 'jobs.json'}.",
+              file=sys.stderr)
+        log_run(vault_root, "check_freshness", "did-not-run", f"{len(both)} jobs in both lists")
+        return 2
 
     if not jobs:
         print("did not run: no expected jobs configured", file=sys.stderr)
+        log_run(vault_root, "check_freshness", "did-not-run", "no expected jobs configured")
         return 1
 
     if not log_path.exists() or log_path.stat().st_size == 0:
@@ -2555,9 +2681,10 @@ def main(argv=None):
         for job in jobs:
             print(f"{job}: did not run — no log", file=sys.stderr)
         print(f"0/{len(jobs)} jobs have a healthy run", file=sys.stderr)
+        log_run(vault_root, "check_freshness", "did-not-run", f"no run log at {log_path}")
         return 1
 
-    healthy, lines, malformed = parse_log(log_path)
+    healthy, seen, lines, malformed = parse_log(log_path)
     now = datetime.now(timezone.utc)
     fresh = []
     problems = []
@@ -2573,12 +2700,27 @@ def main(argv=None):
         else:
             fresh.append((job, age_h))
 
+    # In neither list. The only real signal at this point: somebody built a tool and nobody
+    # decided whether it is watched. It does NOT change the exit code -- an unclassified tool has
+    # not failed, and a chain that goes red the first time a user adds a tool of their own is one
+    # they will stop running.
+    # `configured` is subtracted as well as `jobs`, so a `--jobs` override does not turn the rest
+    # of the user's own watch list into news.
+    unclassified = sorted(seen - set(jobs) - set(configured) - set(on_demand))
+
     print(
-        f"{len(fresh)}/{len(jobs)} jobs fresh · {lines} log lines · "
+        f"{len(fresh)}/{len(jobs)} jobs fresh · {len(on_demand)} on demand · "
+        f"{len(unclassified)} unclassified · {lines} log lines · "
         f"{malformed} malformed · threshold {args.max_age_hours}h"
     )
     for job, age_h in fresh:
         print(f"  {job}: {age_h:.1f}h ago")
+    if unclassified:
+        print(f"  neither watched nor listed as on demand: {', '.join(unclassified)}")
+
+    status = "defects" if (problems or malformed) else "ok"
+    log_run(vault_root, "check_freshness", status,
+            f"{len(fresh)}/{len(jobs)} fresh · {len(unclassified)} unclassified")
 
     if problems or malformed:
         for problem in problems:
@@ -4316,7 +4458,7 @@ class CheckFreshnessTest(unittest.TestCase):
         self.assertIn("malformed", err)
 
     def test_jobs_config_written_with_a_bom_is_still_read(self):
-        """#12. Recipe without the fix: put encoding="utf-8" back in expected_jobs.
+        """#12. Recipe without the fix: put encoding="utf-8" back in job_lists.
 
         json.loads then raises on the BOM, the except returned the default job list, and the
         check measured a set of jobs the user never configured -- without a word. Measured
@@ -4345,6 +4487,140 @@ class CheckFreshnessTest(unittest.TestCase):
         code, _, err = run_tool("check_freshness.py", "--vault", self.vault, "--jobs", "Zählung")
         self.assertEqual(code, 1)
         self.assertIn("Zählung", err)
+
+    # ------------------------------------------------- the second list (#3)
+
+    def write_config(self, text):
+        config = self.vault / "00_Global" / "06_tools" / "jobs.json"
+        config.parent.mkdir(parents=True, exist_ok=True)
+        config.write_text(text, encoding="utf-8", newline="\n")
+        return config
+
+    def test_an_on_demand_tool_stays_out_of_the_unclassified_line(self):
+        """The reason the second list exists at all.
+
+        Every tool logs, so without it the "nobody watches this" line names every tool in the
+        vault on every run -- noise, and a report nobody reads is one that gets dropped from the
+        chain. Classified means silent here, and only here.
+
+        Recipe without the fix, measured on this machine 2026-07-30: drop the `- set(on_demand)`
+        term from `unclassified` in check_freshness.py. test_check_freshness 13/15 -- this case
+        and the bare-list one, which asserts the same count from the other shape. The healthy
+        control stays green, which is why the control alone could never have caught it.
+        """
+        self.write_config('{"jobs": ["build_index"], '
+                          '"on_demand": {"mein_werkzeug": "laeuft von Hand"}}')
+        self.write_log(f"{stamp(1)}\tbuild_index\tok\t0 defects",
+                       f"{stamp(5)}\tmein_werkzeug\tok\tetwas getan")
+        code, out, err = run_tool("check_freshness.py", "--vault", self.vault)
+        self.assertEqual(code, 0, out + err)
+        self.assertIn("1/1 jobs fresh", out)
+        self.assertIn("1 on demand", out)
+        self.assertIn("0 unclassified", out)
+        self.assertNotIn("mein_werkzeug", out)
+
+    def test_an_unclassified_tool_is_named_and_does_not_change_the_exit_code(self):
+        """The only real signal here: somebody built a tool and nobody decided about it.
+
+        It must be loud enough to see and cheap enough to ignore. Red would be neither -- the
+        first tool a user writes for themselves would make the chain red every run, and a check
+        that is always red gets switched off rather than answered.
+
+        Recipe without the fix, measured on this machine 2026-07-30: return 1 when `unclassified`
+        is non-empty. test_check_freshness 13/15 -- this case and the missing-key one, both on
+        the exit code alone and with their output unchanged, which is the distinction they are
+        here to hold.
+        """
+        self.write_log(f"{stamp(1)}\tbuild_index\tok\t0 defects",
+                       f"{stamp(2)}\tmein_werkzeug\tok\tetwas getan")
+        code, out, err = run_tool("check_freshness.py", "--vault", self.vault,
+                                  "--jobs", "build_index")
+        self.assertEqual(code, 0, out + err)
+        self.assertIn("1 unclassified", out)
+        self.assertIn("mein_werkzeug", out)
+
+    def test_a_job_in_both_lists_stops_the_run_instead_of_picking_one(self):
+        """Exit 2, and deliberately not "watched wins".
+
+        Picking a winner leaves the losing entry sitting in the file doing nothing, and no run
+        can then show which of the two statements applies. Stopping is the only outcome that
+        makes the contradiction visible where it lives, which is the config file.
+
+        Recipe without the fix, measured on this machine 2026-07-30: delete the `both` block from
+        main(). test_check_freshness 14/15 -- this case and nothing else. The tool then reports
+        the job as watched and never says that its own config says otherwise.
+        """
+        self.write_config('{"jobs": ["build_index", "mein_werkzeug"], '
+                          '"on_demand": {"mein_werkzeug": "laeuft von Hand"}}')
+        self.write_log(f"{stamp(1)}\tbuild_index\tok\t0 defects")
+        code, out, err = run_tool("check_freshness.py", "--vault", self.vault)
+        self.assertEqual(code, 2, out + err)
+        self.assertIn("mein_werkzeug", err)
+        self.assertIn("jobs.json", err)
+        self.assertNotIn("jobs fresh", out, "it measured anyway over a config it called broken")
+
+    def test_a_config_without_the_second_key_does_not_borrow_the_built_in_one(self):
+        """A present config that gets silently completed measures a list the user never chose.
+
+        That is the same defect as the BOM case two tests up, one level quieter: the file is
+        readable, so nothing warns, and the tool would classify three tools on the strength of a
+        default the user cannot see. Empty is the honest reading, and the unclassified line then
+        names them so the decision is theirs.
+
+        Recipe without the fix, measured on this machine 2026-07-30: make the missing key fall
+        back to DEFAULT_ON_DEMAND in job_lists(). test_check_freshness 14/15 -- this case and
+        nothing else. check_duplicates disappears from the output and the count reads
+        `3 on demand` against a config that says nothing about any of them.
+        """
+        self.write_config('{"jobs": ["build_index"]}')
+        self.write_log(f"{stamp(1)}\tbuild_index\tok\t0 defects",
+                       f"{stamp(3)}\tcheck_duplicates\tok\t0 flagged")
+        code, out, err = run_tool("check_freshness.py", "--vault", self.vault)
+        self.assertEqual(code, 0, out + err)
+        self.assertIn("0 on demand", out)
+        self.assertIn("check_duplicates", out)
+
+    def test_the_second_list_may_also_be_written_as_a_bare_list(self):
+        """A user mirroring the shape of `jobs` writes a list. It carries no reasons, and that
+        is the only thing it loses -- refusing it would hard-fail an honest config over
+        cosmetics.
+
+        Recipe without the fix, measured on this machine 2026-07-30: drop the
+        `isinstance(raw, dict)` branch from job_lists(). test_check_freshness 14/15 -- this case
+        and nothing else. `dict(["mein_werkzeug"])` raises ValueError, which the config reader
+        already catches, so the whole file is declared unreadable and BOTH lists fall back to
+        the built-in ones: the run then demands check_links, which the log never mentions, and
+        exits 1 over a config that was merely written in the other shape.
+        """
+        self.write_config('{"jobs": ["build_index"], "on_demand": ["mein_werkzeug"]}')
+        self.write_log(f"{stamp(1)}\tbuild_index\tok\t0 defects",
+                       f"{stamp(2)}\tmein_werkzeug\tok\tetwas getan")
+        code, out, err = run_tool("check_freshness.py", "--vault", self.vault)
+        self.assertEqual(code, 0, out + err)
+        self.assertIn("1 on demand", out)
+        self.assertIn("0 unclassified", out)
+
+    def test_the_check_logs_its_own_run_like_every_other_tool(self):
+        """Otherwise "the freshness check runs in the chain" is a claim about a command file.
+
+        Delete the step from `/vaultkit` and a log with no check_freshness line in it looks
+        exactly like a check that ran and found nothing. The line is what tells those two apart,
+        and it is why check_freshness stands in the on-demand list rather than nowhere.
+
+        Recipe without the fix, measured on this machine 2026-07-30: remove the log_run call from
+        the success path in main(). test_check_freshness 14/15 -- this case and nothing else,
+        because no other case reads the log back after the run.
+        """
+        self.write_log(f"{stamp(1)}\tbuild_index\tok\t0 defects")
+        code, out, err = run_tool("check_freshness.py", "--vault", self.vault,
+                                  "--jobs", "build_index")
+        self.assertEqual(code, 0, out + err)
+        written = self.log.read_text(encoding="utf-8").splitlines()
+        mine = [line for line in written if "\tcheck_freshness\t" in line]
+        self.assertEqual(len(mine), 1, f"no line of its own in {written}")
+        self.assertIn("\tok\t", mine[0])
+        # It reads before it writes, so its own line must not be in the denominator it reports.
+        self.assertIn("1 log lines", out)
 
 
 if __name__ == "__main__":
@@ -4926,6 +5202,44 @@ class WriteCommandTest(unittest.TestCase):
         self.assertIn(f"--vault {root}", links[0],
                       "the link checker was handed something narrower than the vault root")
 
+    def test_the_freshness_check_is_the_first_step_and_the_steps_are_numbered_through(self):
+        """Kit #3. Order is the fourth trap, and the only one that cannot be seen in a single line.
+
+        Every other step in this chain appends an `ok` line to the run log. A freshness check
+        measured after them reads the side effect of its own chain and reports the jobs as fresh
+        -- including a scheduled one that stopped firing a week ago. So its position is the
+        behaviour, not its presence, and both halves are checked here: it comes first, and no
+        writer runs before it.
+
+        The numbering is held too, because renumbering by hand is how a chain ends up with two
+        step 3s and a reader who skips one.
+
+        Recipe without the fix, measured on this machine 2026-07-30: move the check_freshness
+        command line in command_text() below the build_index loop, leaving the headings where
+        they are. test_write_command 13/14 -- this case and nothing else, which is the point of
+        having it: the command still contains every tool, and only the order is wrong.
+        """
+        self.write("--shell", "powershell")
+        lines = self.target.read_text(encoding="utf-8").splitlines()
+
+        headings = [line for line in lines if line.startswith("## ") and " · " in line]
+        numbers = [int(line.split()[1]) for line in headings]
+        self.assertEqual(numbers, list(range(1, len(numbers) + 1)),
+                         f"the steps are not numbered through: {headings}")
+        # Runnable lines only. The prose above step 1 names `build_index.py` as a warning that it
+        # writes, and matching that would have this test pass on the wrong evidence.
+        def first(needle):
+            return next(i for i, line in enumerate(lines)
+                        if line.startswith("- `python ") and needle in line)
+
+        freshness = first("check_freshness.py")
+        self.assertLess(lines.index(headings[0]), freshness)
+        self.assertLess(freshness, lines.index(headings[1]),
+                        f"the freshness command is not inside step 1: {headings[0]}")
+        for writer in ("build_index.py", "check_links.py", "check_duplicates.py", "run_suites.py"):
+            self.assertLess(freshness, first(writer),
+                            f"{writer} logs before the freshness check reads the log")
+
     def test_the_sweep_uses_root_and_says_why(self):
         """`--vault` alone leaves the root index on yesterday's count, green and silent."""
         self.write("--shell", "powershell")
@@ -4992,7 +5306,7 @@ class WriteCommandTest(unittest.TestCase):
     def test_a_hand_edited_command_survives_the_next_run(self):
         """One that comes back unchanged proves nothing unless it went in changed."""
         self.write()
-        mine = self.target.read_text(encoding="utf-8") + "\n## 7 · My own step\n"
+        mine = self.target.read_text(encoding="utf-8") + "\n## Mein eigener Schritt\n"
         self.target.write_text(mine, encoding="utf-8", newline="\n")
         code, _, err = self.write()
         self.assertEqual(code, 0, err)

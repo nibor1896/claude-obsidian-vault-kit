@@ -560,7 +560,7 @@ only ever sees good input cannot tell you the check still works.
 | `build_index.py` | the index tree (SECTION 5) | a silent fallback on a degraded entry |
 | `check_links.py` | every `[[wikilink]]` resolves to a file | reporting `0 broken` when it scanned 0 files |
 | `check_duplicates.py` | notes whose content overlaps | being ignored — every hit gets a decision |
-| `check_freshness.py` | age of the last **healthy** run of each scheduled job | treating "no log" as "fine" |
+| `check_freshness.py` | age of the last **healthy** run of each scheduled job | treating "no log" as "fine", or a job listed as both watched and on-demand as watched |
 | `run_suites.py` | discovers and runs every `test_*.py` | reporting green when it collected zero suites |
 | `count_tokens.py` | size of what was read, for cost | inventing a precision — output `exact` or `estimated` |
 | `write_command.py` | the `/vaultkit` command, with this vault's real paths in it | overwriting a command the user has edited, or writing one without naming the path |
@@ -640,6 +640,31 @@ Any job on a schedule (task scheduler, cron, launchd) writes a line to an append
 run, including the healthy ones**. `check_freshness.py` reads that log and reports the age of the
 last healthy run per job, against a threshold the user sets. Without this, a scheduler that quietly
 stopped firing looks identical to one that is fine.
+
+**Logging and being watched are two different lists, and `jobs.json` carries both.** Every tool
+writes a line; only a tool that runs on a schedule can be *late*. Put the on-demand ones under an
+age limit and the report is red every single day — which is the fastest way to get the whole check
+switched off, and a check nobody runs is worth less than none. So `jobs` is what must be fresh,
+`on_demand` is what logs and is never late, and each on-demand entry carries its reason as its
+value, because JSON has no comments and an exception without a reason is indistinguishable from an
+oversight.
+
+Three consequences, and each one is a behaviour, not a preference:
+
+- **A name in both lists stops the tool with exit 2.** Not "watched wins": that would be an
+  invisible decision, with the on-demand entry sitting there doing nothing and no run able to show
+  which of the two statements applies.
+- **A name in neither is reported, and does not change the exit code.** That line is the only real
+  signal in this area — somebody built a tool and nobody decided whether it is watched. Turning it
+  red would make the chain permanently red for every user who adds a tool of their own.
+- **The check itself logs, and stands in `on_demand`.** Without its own line, "the freshness check
+  runs in the chain" is a claim about a command file: delete the step and it looks exactly like a
+  check that runs and finds nothing. Watching the watcher would be the regress; logging is not
+  watching.
+
+**It runs FIRST in any chain that also runs other tools** — see the verification run in SECTION 8.
+Every other tool appends an `ok` line, so a freshness check measured afterwards sees the side effect
+of the chain it belongs to and reports fresh over a job that died a week ago.
 
 Note for scheduled jobs on laptops: default task settings often include *do not start on battery*
 and *do not catch up on missed runs*. That combination produces multi-hour gaps overnight that no
@@ -864,12 +889,22 @@ carries the same chain in prose, so a user working in a browser loses nothing.
 ### Verification run — all of it, no exceptions
 
 ```bash
+python 06_tools/check_freshness.py --vault <VaultRoot>   # FIRST, and not as a formality
 python 06_tools/build_index.py --vault <Project>     # once per project
 python 06_tools/build_index.py --root  <VaultRoot>
 python 06_tools/check_links.py --vault <VaultRoot>
 python 06_tools/check_duplicates.py --vault <Project>
 python 06_tools/run_suites.py
 ```
+
+**The freshness check goes first because every line below it writes to the run log.** Measured
+after them, it sees the side effect of this very chain and reports the jobs as fresh — including a
+scheduled one that stopped firing a week ago. There is no reading of the order that puts it
+anywhere else.
+
+**Red there is a report, not a stop.** It judges the past; the rest of the chain produces the
+present. Run every remaining step regardless, carry its numbers into the report below, and do not
+fold its verdict into a line that claims the vault is in order — the two answer different questions.
 
 **`build_index.py` is not a read-only measurement — it writes.** Say so before running it, and check
 `git status` first so its output is not mistaken for someone else's uncommitted work.
@@ -891,6 +926,7 @@ Created:   <folders> · <n> projects · <n> categories
 Index:     <n> entries in <m> categories        (exit 0 | defects: …)
 Links:     <n>/<m> resolve
 Duplicates: <n> flagged
+Freshness: <n>/<m> jobs fresh · <k> on demand · <u> unclassified
 Tests:     <n>/<m> suites green
 Commit:    <hash>
 Open:      <what is not done, AND what you did not measure>
@@ -900,6 +936,11 @@ Rules for that report:
 
 - **"Synchronised" appears only when every check is clean.** Otherwise the line names what is
   broken. A success message that also appears on failure is not a message.
+- **`Freshness:` is its own line and is printed every time, denominators included** — also when
+  everything is fresh, and also when the check went red. It never merges into a line claiming the
+  vault is in order: that one is about the state this run just produced, and freshness is about the
+  past that led up to it. Folding the two together makes a healthy vault look like proof that the
+  scheduler is alive, which is the one thing it cannot show.
 - **`Open:` lists what you did not measure**, not only what is unfinished. Unmeasured and working
   look identical from the outside — that is the entire reason for measuring.
 - If nothing was transferred, write `nothing new`, not an empty success.

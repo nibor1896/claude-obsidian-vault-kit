@@ -1,6 +1,6 @@
 """Write a `/vaultkit` slash command for Claude Code, with this vault's real paths already in it.
 
-The verification chain in SECTION 8 is five commands with three traps in them, and every one of
+The verification chain in SECTION 8 is six commands with three traps in them, and every one of
 the three was hit on a real run:
 
   1. `--vault` means two different things. `check_links.py` wants the vault ROOT,
@@ -11,6 +11,10 @@ the three was hit on a real run:
   3. `--root`, not `--vault`, for the sweep. Rerunning only `--vault` after adding a note leaves
      the root index on yesterday's count -- green, silent, and wrong. Measured on a cold run:
      one added note left the root index reading 5 entries against a vault holding 6.
+
+There is a fourth thing the file gets right and a typed chain cannot: ORDER. `check_freshness.py`
+stands first, because every other step appends an `ok` line and a freshness check measured after
+them reports the side effect of its own chain as health.
 
 A command file removes all three by spelling out the answers once, per vault, with the paths
 filled in. It is a convenience for Claude Code and nothing depends on it: the workflow page in
@@ -124,7 +128,20 @@ def command_text(vault_root, projects, shell):
         "**Before you start:** `build_index.py` writes. Say so, and check `git status` first, so "
         "its output is not mistaken for someone else's uncommitted work.",
         "",
-        "## 1 · Index each project",
+        "## 1 · Read the run log before anything writes to it",
+        "",
+        "**First, and the order is the whole point.** Every step below appends an `ok` line to "
+        "the run log. Measured after them, this check sees the side effect of the very chain it "
+        "belongs to and reports the jobs as fresh — including one that stopped firing a week "
+        "ago.",
+        "",
+        "**Red here is a report, never a reason to stop.** It judges the past; the rest of this "
+        "chain produces the present. Carry its numbers into the report and run the other steps "
+        "either way.",
+        "",
+        f"- `python {tool('check_freshness.py')} --vault {root}`",
+        "",
+        "## 2 · Index each project",
         "",
         "`--vault` here means ONE PROJECT DIRECTORY, not the vault root. One line per project:",
         "",
@@ -133,7 +150,7 @@ def command_text(vault_root, projects, shell):
         lines.append(f"- `python {tool('build_index.py')} --vault {show(project, shell)}`")
     lines += [
         "",
-        "## 2 · Index the vault root",
+        "## 3 · Index the vault root",
         "",
         "`--root`, not `--vault`. This is the one invocation that walks every project *and* "
         "writes the root hub. Running only step 1 after adding a note leaves the root index "
@@ -142,7 +159,7 @@ def command_text(vault_root, projects, shell):
         "",
         f"- `python {tool('build_index.py')} --root {root}`",
         "",
-        "## 3 · Check the links",
+        "## 4 · Check the links",
         "",
         "`--vault` here means THE VAULT ROOT — the same flag, the other meaning. The project "
         "hubs link back to the root index, so anything narrower reports a broken link that is "
@@ -150,17 +167,17 @@ def command_text(vault_root, projects, shell):
         "",
         f"- `python {tool('check_links.py')} --vault {root}`",
         "",
-        "## 4 · Check for duplicates",
+        "## 5 · Check for duplicates",
         "",
         "`--vault` here takes either the root or a single project:",
         "",
         f"- `python {tool('check_duplicates.py')} --vault {root}`",
         "",
-        "## 5 · Run the suites",
+        "## 6 · Run the suites",
         "",
         f"- `python {tool('run_suites.py')}`",
         "",
-        "## 6 · Prove the second run changes nothing",
+        "## 7 · Prove the second run changes nothing",
         "",
         "A generator that drifts on every run is indistinguishable from a clean one after a "
         "single pass, and it turns every later `git status` into noise nobody reads.",

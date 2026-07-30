@@ -1,4 +1,9 @@
 {
-  "_comment": "Jobs that must show a healthy run in runs.log. Verify with: python check_freshness.py --vault <VaultRoot>",
-  "jobs": ["build_index", "check_links"]
+  "_comment": "Two lists, and a name belongs to exactly one of them. \"jobs\" must show a healthy run inside the threshold -- these are the ones a dead scheduler would silently take with it. \"on_demand\" logs like everything else but is never late, because it runs when someone asks. A name in both stops the tool with exit 2. A name in neither is reported, never guessed at. Verify with: python check_freshness.py --vault <VaultRoot>",
+  "jobs": ["build_index", "check_links"],
+  "on_demand": {
+    "check_duplicates": "runs in the verification chain and by hand, never on a schedule",
+    "write_command": "runs once during setup, and again only if the command file is gone",
+    "check_freshness": "this tool itself -- logged, never watched: an age limit on the watcher is a regress"
+  }
 }
