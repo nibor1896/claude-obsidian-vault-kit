@@ -102,11 +102,11 @@
   main,footer{position:relative;z-index:10}
 
   /* ---------- principles ---------- */
-  .principles{padding:clamp(5rem,11vh,8rem) clamp(1.25rem,4vw,3rem)}
+  .principles{padding:clamp(3.5rem,7vh,5.5rem) clamp(1.25rem,4vw,3rem)}
   .statement{font-weight:800;letter-spacing:-.03em;line-height:1.04;
     text-wrap:balance;
     font-size:clamp(2rem,5.6vw,4.6rem);max-width:22ch;
-    margin:0 auto clamp(3.2rem,8vh,5.5rem);
+    margin:0 auto clamp(2.4rem,5.5vh,3.8rem);
     text-shadow:0 2px 28px rgba(7,7,8,.85),0 0 10px rgba(7,7,8,.6)}
   .statement:last-child{margin-bottom:0}
   .statement:nth-child(odd){margin-left:0}
@@ -114,13 +114,13 @@
   .statement .acc{font-style:normal;color:var(--accent);transition:color .3s linear}
 
   /* ---------- use it ---------- */
-  .use{padding:clamp(4rem,9vh,7rem) clamp(1.25rem,4vw,3rem) clamp(5rem,11vh,8rem);
+  .use{padding:clamp(3rem,6vh,4.5rem) clamp(1.25rem,4vw,3rem) clamp(3.5rem,7vh,5.5rem);
     border-top:1px solid var(--hair)}
   .use-inner{max-width:72rem;margin:0 auto}
   .use h2{font-weight:700;font-size:1.05rem;color:var(--dim);letter-spacing:-.01em}
-  .steps{list-style:none;margin-top:2.2rem}
+  .steps{list-style:none;margin-top:1.8rem}
   .steps li{font-weight:700;letter-spacing:-.02em;line-height:1.15;
-    font-size:clamp(1.6rem,3.8vw,3rem);padding:1.05rem 0;color:var(--ink);
+    font-size:clamp(1.6rem,3.8vw,3rem);padding:.95rem 0;color:var(--ink);
     text-shadow:0 2px 28px rgba(7,7,8,.85),0 0 10px rgba(7,7,8,.6)}
   .steps li q{color:var(--accent);transition:color .3s linear;font-style:italic;quotes:"\201C" "\201D"}
   .steps a{border-bottom:2px solid var(--faint);transition:border-color .25s}
@@ -218,8 +218,8 @@ gsap.registerPlugin(ScrollTrigger);
 const reduced = matchMedia('(prefers-reduced-motion: reduce)').matches;
 
 /* ------------------------------------------------------------------ */
-/* the strand: one nerve fibre running the length of the page,         */
-/* weaving to the opposite side of each text block                     */
+/* neural pathways: a few near-vertical fibre tracts running the       */
+/* length of the page, each with knots of its own size and wiring      */
 /* ------------------------------------------------------------------ */
 const canvas = document.getElementById('web');
 let renderer = null;
@@ -260,7 +260,7 @@ if (renderer) {
                  vec3(${COL_B.r.toFixed(4)}, ${COL_B.g.toFixed(4)}, ${COL_B.b.toFixed(4)}),
                  smoothstep(phase - 0.38, phase + 0.38, m));
     }
-    float depthCue(float viewZ) { return clamp((9.6 - viewZ) / 4.2, 0.22, 1.0); }
+    float depthCue(float viewZ) { return clamp((9.6 - viewZ) / 4.2, 0.18, 1.0); }
     float revealAt(float r, float reveal) { return smoothstep(r, r + 0.18, reveal); }
   `;
 
@@ -345,7 +345,7 @@ if (renderer) {
   group.add(lines, points, pulsePts);
   scene.add(group);
 
-  /* strand state, rebuilt whenever the page geometry changes */
+  /* pathway state, rebuilt whenever the page geometry changes */
   let pos = null, aMixArr = null, adj = null, edges = null, E = 0;
   let pulses = [], pPos = null, pMix = null, P = 0;
   let gPul = null;
@@ -357,79 +357,76 @@ if (renderer) {
     const gauss = () => (rand() + rand() + rand() - 1.5) * 0.816;
     const isSmall = innerWidth < 768;
     const aspect = innerWidth / innerHeight;
-    const xAmp = Math.max(0.55, Math.min(2.1, (VH * aspect) / 2 * 0.52));
-
-    /* anchors: each text block pins the strand to its opposite side */
-    const anchors = [];
-    const centerOf = el => {
-      const r = el.getBoundingClientRect();
-      return scrollY + r.top + r.height / 2;
-    };
-    anchors.push({ y: centerOf(document.querySelector('.hero-copy')), side: 1, weight: 1.25 });
-    document.querySelectorAll('.statement').forEach((el, i) => {
-      anchors.push({ y: centerOf(el), side: i % 2 === 0 ? 1 : -1, weight: 0.85 });
-    });
-    anchors.push({ y: centerOf(document.querySelector('.use-inner')), side: 1, weight: 0.9 });
-    const footEl = document.querySelector('footer');
-    anchors.push({ y: centerOf(footEl), side: 0, weight: 1.1 });
-
-    const ctrl = [new THREE.Vector3(anchors[0].side * xAmp * 1.3, 1.2, -0.3)];
-    anchors.forEach((a, i) => {
-      ctrl.push(new THREE.Vector3(
-        a.side * xAmp * (a.side === 0 ? 0 : 1),
-        worldY(a.y),
-        (i % 2 ? -0.35 : 0.3)
-      ));
-    });
+    const xHalf = (VH * aspect) / 2;
     const pageH = document.documentElement.scrollHeight;
-    ctrl.push(new THREE.Vector3(0, worldY(pageH + innerHeight * 0.15), 0));
-    const curve = new THREE.CatmullRomCurve3(ctrl, false, 'catmullrom', 0.6);
+    const yTop = 1.4;
+    const yBot = worldY(pageH + innerHeight * 0.15);
+    const span = yTop - yBot;
 
-    /* nearest curve parameter for each anchor, for the ganglia */
-    const SCAN = 400;
-    const scanPts = [];
-    for (let i = 0; i <= SCAN; i++) scanPts.push(curve.getPointAt(i / SCAN));
-    const nearestU = v => {
-      let best = 0, bd = Infinity;
-      for (let i = 0; i <= SCAN; i++) {
-        const d = scanPts[i].distanceToSquared(v);
-        if (d < bd) { bd = d; best = i; }
-      }
-      return best / SCAN;
-    };
+    /* fibre tracts: near-vertical lanes with a gentle drift */
+    const specs = isSmall ? [
+      { lane: xHalf * 0.34, z: 0.1, drift: 0.20, density: 30, knots: 3, r: 0.13 },
+      { lane: -xHalf * 0.45, z: -1.7, drift: 0.28, density: 18, knots: 2, r: 0.16 },
+    ] : [
+      { lane: xHalf * 0.02, z: 0.15, drift: 0.28, density: 26, knots: 3, r: 0.15 },
+      { lane: xHalf * 0.62, z: -0.4, drift: 0.32, density: 20, knots: 2, r: 0.14 },
+      { lane: -xHalf * 0.54, z: -2.1, drift: 0.45, density: 15, knots: 2, r: 0.18 },
+    ];
 
-    const len = curve.getLength();
-    const density = isSmall ? 26 : 40;
-    const M = Math.min(isSmall ? 700 : 1150, Math.max(420, Math.round(len * density)));
-
-    /* strand body + ganglia at the anchors */
     const raw = [];
+    const knotList = []; /* {nodes, sig, wire}: each knot gets its own size and wiring density */
     const tangent = new THREE.Vector3(), n1 = new THREE.Vector3(), n2 = new THREE.Vector3();
     const up = new THREE.Vector3(0, 0, 1);
-    const pushNode = (v, t) => raw.push({ x: v.x, y: v.y, z: v.z, t });
-    for (let i = 0; i < M; i++) {
-      const u = THREE.MathUtils.clamp(i / (M - 1) + (rand() - 0.5) * 0.6 / M, 0, 1);
-      const p = curve.getPointAt(u);
-      curve.getTangentAt(u, tangent);
-      n1.crossVectors(tangent, up).normalize();
-      if (n1.lengthSq() < 0.01) n1.set(1, 0, 0);
-      n2.crossVectors(tangent, n1).normalize();
-      const r = 0.20 + 0.10 * Math.sin(u * 43.0) * Math.sin(u * 17.0);
-      const g1 = gauss() * r, g2 = gauss() * r;
-      pushNode(p.clone().addScaledVector(n1, g1).addScaledVector(n2, g2), u);
-    }
-    anchors.forEach((a, i) => {
-      const target = ctrl[i + 1];
-      const u0 = nearestU(target);
-      const cnt = Math.round((isSmall ? 60 : 95) * a.weight);
-      const sig = 0.42 * a.weight;
-      const c = curve.getPointAt(u0);
-      for (let k = 0; k < cnt; k++) {
-        const v = new THREE.Vector3(c.x + gauss() * sig, c.y + gauss() * sig * 0.85, c.z + gauss() * sig * 0.8);
-        pushNode(v, THREE.MathUtils.clamp(u0 + gauss() * 0.012, 0, 1));
+
+    specs.forEach((sp, si) => {
+      const nCtrl = Math.max(4, Math.round(span / (VH * 0.85)));
+      const ctrl = [];
+      for (let i = 0; i <= nCtrl; i++) {
+        ctrl.push(new THREE.Vector3(
+          sp.lane + (rand() - 0.5) * 2 * sp.drift,
+          yTop - (span * i) / nCtrl,
+          sp.z + (rand() - 0.5) * 0.5
+        ));
       }
+      const curve = new THREE.CatmullRomCurve3(ctrl, false, 'catmullrom', 0.5);
+      const len = curve.getLength();
+      const M = Math.round(len * sp.density);
+      const nodes = [];
+      for (let i = 0; i < M; i++) {
+        const u = THREE.MathUtils.clamp(i / (M - 1) + (rand() - 0.5) * 0.6 / M, 0, 1);
+        const p = curve.getPointAt(u);
+        curve.getTangentAt(u, tangent);
+        n1.crossVectors(tangent, up).normalize();
+        if (n1.lengthSq() < 0.01) n1.set(1, 0, 0);
+        n2.crossVectors(tangent, n1).normalize();
+        const g1 = gauss() * sp.r, g2 = gauss() * sp.r;
+        nodes.push({
+          x: p.x + n1.x * g1 + n2.x * g2,
+          y: p.y + n1.y * g1 + n2.y * g2,
+          z: p.z + n1.z * g1 + n2.z * g2,
+          t: u, knot: -1,
+        });
+      }
+      for (let k = 0; k < sp.knots; k++) {
+        const u0 = THREE.MathUtils.clamp((k + 0.5) / sp.knots + (rand() - 0.5) * 0.24, 0.06, 0.94);
+        const sig = (0.28 + rand() * 0.45) * (si === 0 ? 1 : 0.72);
+        const cnt = Math.round((55 + rand() * 110) * (isSmall ? 0.6 : 1) * (si === 0 ? 1 : 0.75));
+        const c = curve.getPointAt(u0);
+        const kid = knotList.length;
+        knotList.push({ nodes: [], sig, wire: 0.5 + rand() * 1.1 });
+        for (let m = 0; m < cnt; m++) {
+          nodes.push({
+            x: c.x + gauss() * sig,
+            y: c.y + gauss() * sig * 0.9,
+            z: c.z + gauss() * sig * 0.75,
+            t: THREE.MathUtils.clamp(u0 + gauss() * 0.012, 0, 1),
+            knot: kid,
+          });
+        }
+      }
+      nodes.sort((a, b) => a.t - b.t);
+      nodes.forEach(n => { n.strand = si; raw.push(n); });
     });
-    raw.sort((a, b) => a.t - b.t);
 
     const N = raw.length;
     pos = new Float32Array(N * 3);
@@ -440,10 +437,11 @@ if (renderer) {
       pos.set([raw[i].x, raw[i].y, raw[i].z], i * 3);
       aMixArr[i] = raw[i].t;
       aRand[i] = rand();
-      aScale[i] = rand() < 0.06 ? 1.9 + rand() * 0.9 : 0.55 + rand() * 1.0;
+      const hubP = raw[i].knot >= 0 ? 0.1 : 0.05;
+      aScale[i] = rand() < hubP ? 1.9 + rand() * 0.9 : 0.55 + rand() * 1.0;
+      if (raw[i].knot >= 0) knotList[raw[i].knot].nodes.push(i);
     }
 
-    /* edges among neighbours along the strand */
     edges = [];
     adj = Array.from({ length: N }, () => []);
     const seen = new Set();
@@ -458,10 +456,13 @@ if (renderer) {
       const dx = pos[a * 3] - pos[b * 3], dy = pos[a * 3 + 1] - pos[b * 3 + 1], dz = pos[a * 3 + 2] - pos[b * 3 + 2];
       return dx * dx + dy * dy + dz * dz;
     };
-    const W = 42;
+
+    /* neighbours along each tract */
+    const W = 40;
     for (let i = 0; i < N; i++) {
       let n1i = -1, n2i = -1, b1 = Infinity, b2 = Infinity;
-      for (let j = i + 1; j < Math.min(N, i + W); j++) {
+      for (let j = i + 1; j < N && j < i + W; j++) {
+        if (raw[j].strand !== raw[i].strand) continue;
         const dd = d2(i, j);
         if (dd < b1) { b2 = b1; n2i = n1i; b1 = dd; n1i = j; }
         else if (dd < b2) { b2 = dd; n2i = j; }
@@ -469,10 +470,23 @@ if (renderer) {
       if (n1i >= 0 && b1 < 0.5) addEdge(i, n1i);
       if (n2i >= 0 && b2 < 0.4) addEdge(i, n2i);
     }
-    for (let k = 0; k < (isSmall ? 30 : 60); k++) {
+    /* extra wiring inside each knot: density differs per knot */
+    knotList.forEach(kn => {
+      const ids = kn.nodes;
+      if (ids.length < 3) return;
+      const extra = Math.round(ids.length * kn.wire);
+      const maxD = (kn.sig * 1.6) ** 2;
+      for (let e = 0; e < extra; e++) {
+        const a = ids[Math.floor(rand() * ids.length)];
+        const b = ids[Math.floor(rand() * ids.length)];
+        if (a !== b && d2(a, b) < maxD) addEdge(a, b);
+      }
+    });
+    /* occasional long chords along a tract */
+    for (let k = 0; k < (isSmall ? 24 : 50); k++) {
       const i = Math.floor(rand() * N);
-      const j = THREE.MathUtils.clamp(i + Math.floor((rand() - 0.5) * 300), 0, N - 1);
-      if (d2(i, j) < 2.6) addEdge(i, j);
+      const j = THREE.MathUtils.clamp(i + Math.floor((rand() - 0.5) * 260), 0, N - 1);
+      if (raw[i].strand === raw[j].strand && d2(i, j) < 2.2) addEdge(i, j);
     }
     E = edges.length / 2;
 
@@ -583,7 +597,7 @@ if (renderer) {
       if (scrollY !== lastY || needsRender) {
         lastY = scrollY; needsRender = false;
         camera.position.y = camTargetY();
-        group.rotation.y = -0.12 + scrollProgress() * 0.55;
+        group.rotation.y = -0.08 + scrollProgress() * 0.35;
         renderer.render(scene, camera);
       }
     });
@@ -600,7 +614,7 @@ if (renderer) {
       const k = 1 - Math.exp(-dt * 7);
       camera.position.y += (camTargetY() - camera.position.y) * k;
       camera.position.x += (mx * 0.14 - camera.position.x) * k;
-      group.rotation.y = -0.12 + scrollProgress() * 0.55 + Math.sin(time * 0.08) * 0.04 + mx * 0.05;
+      group.rotation.y = -0.08 + scrollProgress() * 0.35 + Math.sin(time * 0.08) * 0.04 + mx * 0.05;
       group.rotation.x = my * 0.02;
       uniforms.uTime.value = time;
       for (let i = 0; i < P; i++) {
