@@ -90,6 +90,22 @@ created in SECTION 3). Do not retype them from the contracts above, do not "impr
 copying, and do not skip the suites: they are the only reason the numbers in SECTION 0 mean
 anything.
 
+**Extract them; do not transcribe them.** The intended path is a short throwaway script that reads
+this file, cuts each fenced block out by the filename in its heading, and writes it to the tool
+folder. Both cold runs on 2026-07-30 wrote one independently, because nothing here said so — and a
+silence where a method should be reads as "type it out". Sending every block back through the model
+re-tokenises the whole of SECTION 10 and puts a paraphrase where a byte-for-byte copy was promised.
+The extractor is scaffolding, not part of the vault: keep it outside the tool folder and delete it
+when it has run.
+
+**Then check three things, before running anything:**
+
+- **Every `.py` file compiles** — `python -m compileall -q <VaultRoot>/00_Global/06_tools`. A block
+  that arrived truncated fails here; without this check its first symptom is a suite failing for a
+  reason that has nothing to do with the suite.
+- **`jobs.json` parses** — it is the only non-Python block, so no compile step covers it.
+- **No file carries a byte-order mark** — see below.
+
 Measured on Windows 11, Python 3.13, under PowerShell 5.1 **and** Git Bash: 9/9 suites green,
 12/12 acceptance checks correct, 14/14 end-to-end setup steps -- ten consecutive runs under each
 shell. Copy them and that measurement still applies to what you handed the user. Rewrite them and

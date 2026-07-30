@@ -1,4 +1,4 @@
-<!-- kit-version: a4ba554614b2 -->
+<!-- kit-version: 71c53db6dccc -->
 # Claude × Obsidian — Vault Kit
 
 **What this file is:** a setup contract for Claude. Drop it into a Claude conversation and say
@@ -46,6 +46,14 @@ document in order. It is a contract, not a suggestion.
      put a concrete proposal as the first option, add the plausible alternatives, and let the free-text
      field take anything else. A path you propose is answered with one click. A path you request in
      prose costs a round trip and gets a partial answer.
+   - **A proposal may only be built from what the user has already given you**: the paths in their
+     instruction, their earlier answers in this interview, and this file. Nothing else. Listing a
+     directory to find better options is a read of their machine, and rule 5 below governs it — name
+     the path and the reason, wait for a yes, or do not read it. **If no proposal can be built
+     without such a read, ask the question with no pre-filled first option.** An empty first option
+     costs one round trip; an unannounced scan costs something you cannot give back. One cold run
+     offered the user's three real repository names as option 3, read from `<home>/dev` — a path no
+     instruction had named, and nothing in the output said a directory had been looked at.
    - **Never write "please answer all of these at once"**, and never continue a UI question with a
      prose follow-up in the same breath.
    - **If and only if your harness has no such tool**: ask exactly ONE question per message, and put
@@ -230,7 +238,16 @@ Four questions, one call:
   and that needs its own yes.
 - **`user.name` and `user.email`** — ask for both, set them repo-locally, never `--global` (SECTION 7).
   Do not invent them and do not copy them from another repo on the machine. Offer a sensible default as
-  the first option so it is one click.
+  the first option so it is one click. **Both defaults are named, so neither is left to judgement:**
+  - `user.email` → `<handle>@users.noreply.github.com` as the first clickable option. The rule and
+    the reason are in 1.0 above.
+  - `user.name` → **the handle you just used to build that address**, as option 1:
+    `[1] <handle>  [2] a different name`, with free text for anything else. The two values may
+    legitimately differ — a full name against a handle — which is why this stays a question and
+    never becomes an assumption. What it must not be is a second blind typing: in both cold runs on
+    2026-07-30 the operator typed the same string twice, because the question that already had the
+    answer did not offer it. If no handle was given (the user chose a real address instead), there
+    is no default here — ask it open.
 
 ### 1.5 Environment
 
@@ -1195,6 +1212,22 @@ byte for byte, same filename — into the vault's tool folder** (`<VaultRoot>/00
 created in SECTION 3). Do not retype them from the contracts above, do not "improve" them while
 copying, and do not skip the suites: they are the only reason the numbers in SECTION 0 mean
 anything.
+
+**Extract them; do not transcribe them.** The intended path is a short throwaway script that reads
+this file, cuts each fenced block out by the filename in its heading, and writes it to the tool
+folder. Both cold runs on 2026-07-30 wrote one independently, because nothing here said so — and a
+silence where a method should be reads as "type it out". Sending every block back through the model
+re-tokenises the whole of SECTION 10 and puts a paraphrase where a byte-for-byte copy was promised.
+The extractor is scaffolding, not part of the vault: keep it outside the tool folder and delete it
+when it has run.
+
+**Then check three things, before running anything:**
+
+- **Every `.py` file compiles** — `python -m compileall -q <VaultRoot>/00_Global/06_tools`. A block
+  that arrived truncated fails here; without this check its first symptom is a suite failing for a
+  reason that has nothing to do with the suite.
+- **`jobs.json` parses** — it is the only non-Python block, so no compile step covers it.
+- **No file carries a byte-order mark** — see below.
 
 Measured on Windows 11, Python 3.13, under PowerShell 5.1 **and** Git Bash: 9/9 suites green,
 12/12 acceptance checks correct, 14/14 end-to-end setup steps -- ten consecutive runs under each

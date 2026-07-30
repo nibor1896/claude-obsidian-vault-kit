@@ -45,6 +45,14 @@ document in order. It is a contract, not a suggestion.
      put a concrete proposal as the first option, add the plausible alternatives, and let the free-text
      field take anything else. A path you propose is answered with one click. A path you request in
      prose costs a round trip and gets a partial answer.
+   - **A proposal may only be built from what the user has already given you**: the paths in their
+     instruction, their earlier answers in this interview, and this file. Nothing else. Listing a
+     directory to find better options is a read of their machine, and rule 5 below governs it — name
+     the path and the reason, wait for a yes, or do not read it. **If no proposal can be built
+     without such a read, ask the question with no pre-filled first option.** An empty first option
+     costs one round trip; an unannounced scan costs something you cannot give back. One cold run
+     offered the user's three real repository names as option 3, read from `<home>/dev` — a path no
+     instruction had named, and nothing in the output said a directory had been looked at.
    - **Never write "please answer all of these at once"**, and never continue a UI question with a
      prose follow-up in the same breath.
    - **If and only if your harness has no such tool**: ask exactly ONE question per message, and put
@@ -229,7 +237,16 @@ Four questions, one call:
   and that needs its own yes.
 - **`user.name` and `user.email`** — ask for both, set them repo-locally, never `--global` (SECTION 7).
   Do not invent them and do not copy them from another repo on the machine. Offer a sensible default as
-  the first option so it is one click.
+  the first option so it is one click. **Both defaults are named, so neither is left to judgement:**
+  - `user.email` → `<handle>@users.noreply.github.com` as the first clickable option. The rule and
+    the reason are in 1.0 above.
+  - `user.name` → **the handle you just used to build that address**, as option 1:
+    `[1] <handle>  [2] a different name`, with free text for anything else. The two values may
+    legitimately differ — a full name against a handle — which is why this stays a question and
+    never becomes an assumption. What it must not be is a second blind typing: in both cold runs on
+    2026-07-30 the operator typed the same string twice, because the question that already had the
+    answer did not offer it. If no handle was given (the user chose a real address instead), there
+    is no default here — ask it open.
 
 ### 1.5 Environment
 
