@@ -12,6 +12,7 @@ The generated file is derived output. Edit the contract or the scripts, never th
 
 import argparse
 import hashlib
+import json
 import re
 import shutil
 import subprocess
@@ -227,6 +228,126 @@ def check_prose_claims():
     return 0
 
 
+# Measured against src/contract.md and HEADER on 2026-07-30 BEFORE this check was written, because
+# a pattern that cannot see its claim can never disagree with it -- which is how check_prose_claims()
+# shipped green over a delivered file saying 99/99. Result: ten command lines in the contract and
+# three in the header, covering all three spellings in use side by side --
+# `python <VaultRoot>/00_Global/06_tools/x.py`, `python 06_tools/x.py`, `python <vault>/…/x.py`.
+# `python --version` and `python -m compileall` carry no `.py` and are correctly not commands here.
+COMMAND_RE = re.compile(r"python[3]?\s+(?:-\S+\s+)*(?:\S*[/\\])?([A-Za-z_][A-Za-z0-9_]*\.py)")
+
+
+def chain_commands():
+    """Every tool the prose actually tells the user to run, from both sources.
+
+    NOT LIMITED TO SECTION 8, AND THAT CAME OUT OF THE MEASUREMENT. Counting by hand said nine
+    lines, all inside SECTION 8; the pattern found ten. The tenth is `acceptance.py` at the top of
+    SECTION 9, and a check scoped to SECTION 8 would have reported a tool the contract plainly
+    invokes as never invoked. `verify_setup.py` runs the other way round -- it appears in the
+    HEADER and literally nowhere in the contract -- so both sources have to be read as one chain.
+    """
+    return {name for _, text in prose_sources() for name in COMMAND_RE.findall(text)}
+
+
+def prose_sources():
+    """The two texts that tell a user what to type. README.md describes, it does not instruct."""
+    return (("src/contract.md", CONTRACT.read_text(encoding="utf-8")),
+            ("tools/build_kit.py (SECTION 10 header)", HEADER))
+
+
+def declared_uninvoked():
+    """`not_invoked` out of tools/jobs.json: name -> why. Missing key means EMPTY, never a default.
+
+    The same key check_freshness.py reads as its third classification, and deliberately the same
+    file: "this tool is outside the chain on purpose" is one statement, and two structures holding
+    it would eventually answer the same question two ways. jobs.json speaks stems throughout
+    (`build_index`, not `build_index.py`), so the comparison below normalises rather than
+    respelling the entries with a suffix the file has never used.
+
+    A silent fall back to a built-in list is the defect this whole check is about, wearing green:
+    it would classify tools on the strength of something nobody wrote down.
+    """
+    raw = json.loads((TOOLS / "jobs.json").read_text(encoding="utf-8-sig")).get("not_invoked") or {}
+    return dict(raw) if isinstance(raw, dict) else {name: "" for name in raw}
+
+
+def check_prose_chain():
+    """Every command names a tool that ships, and every tool that ships is named or excused.
+
+    WHY THIS EXISTS (#19, 2026-07-30): check_prose_claims() above guards three number patterns.
+    Everything else in the contract is unguarded prose -- delete a command line from SECTION 8 and
+    every run stays green. Four instances were on record, and two more were measured the day this
+    was written: `verify_setup.py` appears in the contract zero times while its 14/14 is guarded in
+    three places, and `count_tokens.py` sat in no chain and in no jobs.json list at all.
+
+    The two directions fail differently:
+
+      - A command naming a tool that does not ship is a line the user types and gets an error
+        from. Cheap, no exceptions.
+      - A shipped tool named by no command is a file sitting unexplained in their folder. This is
+        the direction that needs an opt-out, and the opt-out is jobs.json's `not_invoked` rather
+        than a new mechanism -- check_freshness.py already established the shape, down to the
+        reason being mandatory text because JSON has no comments.
+
+    Suites are covered by run_suites.py rather than listed one by one. That is a list comparison,
+    not a semantic guess: run_suites.py collects exactly delivered_suites(), so if it ever leaves
+    the chain, all nine go with it and this check says so on the same run.
+
+    WHAT IT DOES NOT CHECK: the ORDER of the chain. That check_freshness.py must run first is a
+    promise about meaning, not a list comparison -- guarding it here would build a second truth
+    about the order, next to the contract's own.
+
+    Undo recipes, each red on its own, all four measured on this machine 2026-07-30 --
+    see test_build_kit.py, where each one runs against a copy in a temp directory:
+
+      1. Delete `python 06_tools/check_freshness.py …` from SECTION 8. Exit 1,
+         `check_freshness.py: ships, and no command line runs it`. This is the sentence from the
+         issue body, as a test.
+      2. Misspell a tool in SECTION 8 (`check_link.py`). Exit 1, `names check_link.py, which is
+         not delivered`.
+      3. Add a tool to TOOLS_ORDER without touching the contract or jobs.json. Exit 1 -- the case
+         that actually happens the next time somebody writes a tool.
+      4. Put a name in both the chain and `not_invoked`. Exit 2, no winner picked.
+    """
+    delivered = {name for name in delivered_files() if name.endswith(".py")}
+    commanded = chain_commands()
+    uninvoked = declared_uninvoked()
+
+    # Direction 1, and it has no exceptions.
+    ghosts = sorted(commanded - delivered)
+    if ghosts:
+        print(f"{OUT.name}: the prose tells the user to run something that is not delivered.\n"
+              + "\n".join(f"  a command line names {name}, which is not delivered" for name in ghosts)
+              + "\n  The user types it and gets an error. Either the tool left the delivery lists "
+                "or the line has a typo.", file=sys.stderr)
+        return 1
+
+    # `run_suites.py` collecting them is the chain, so they are covered exactly as long as it is.
+    if "run_suites.py" in commanded:
+        delivered -= set(delivered_suites())
+
+    both = sorted(name for name in delivered
+                  if Path(name).stem in uninvoked and name in commanded)
+    if both:
+        print(f"{OUT.name}: classified twice.\n"
+              + "\n".join(f"  {name}: a command line runs it, and jobs.json's not_invoked says "
+                          f"nothing does — {uninvoked[Path(name).stem]!r}" for name in both)
+              + "\n  No winner is picked: whichever lost would sit in the file doing nothing, and "
+                "no run could show which of the two statements applies.", file=sys.stderr)
+        return 2
+
+    orphans = sorted(name for name in delivered
+                     if name not in commanded and Path(name).stem not in uninvoked)
+    if orphans:
+        print(f"{OUT.name}: a delivered tool that no chain calls and nothing excuses.\n"
+              + "\n".join(f"  {name}: ships, and no command line runs it" for name in orphans)
+              + f"\n  Either add it to a chain in src/contract.md, or add it to `not_invoked` in "
+                f"tools/jobs.json with the reason. A file in the user's tool folder that nothing "
+                f"ever calls is one they cannot tell from a leftover.", file=sys.stderr)
+        return 1
+    return 0
+
+
 def block(name):
     text = (TOOLS / name).read_text(encoding="utf-8")
     lang = "json" if name.endswith(".json") else "python"
@@ -314,10 +435,12 @@ def verify():
             print(f"  ok   {script} runs from the deliverable")
     finally:
         shutil.rmtree(work.parent, ignore_errors=True)
-    if check_prose_claims():
-        return 1
+    failed = check_prose_claims() or check_prose_chain()
+    if failed:
+        return failed
     print(f"{OUT.name}: {len(blocks)} blocks extract, match tools/, and run green · "
-          f"every count in the text matches the code · no stale stamp quoted in the prose")
+          f"every count in the text matches the code · no stale stamp quoted in the prose · "
+          f"every command names a delivered tool and every delivered tool is called or excused")
     return 0
 
 
@@ -335,8 +458,11 @@ def main(argv=None):
     # Before writing, not after: a build that emits the file and *then* complains has already
     # produced the artefact someone will ship. Both paths pay for it -- --check is the cheap gate
     # the acceptance run uses, and the write path refuses to mint a deliverable that lies.
-    if check_prose_claims():
-        return 1
+    # Exit 2 travels: a name classified twice is a contradiction in the sources, not a stale
+    # number, and flattening it to 1 would hide which of the two a reader has to go fix.
+    failed = check_prose_claims() or check_prose_chain()
+    if failed:
+        return failed
 
     rendered = render()
     if args.check:

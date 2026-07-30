@@ -207,6 +207,96 @@ class BuildKitTest(unittest.TestCase):
         for source in ("src/contract.md", "tools/build_kit.py", "README.md"):
             self.assertIn(source, err, "only some sources noticed the tool leaving")
 
+    # ------------------------------------------- the chain, not the numbers in it (#19)
+
+    def test_a_tool_whose_command_line_is_deleted_falls_out_of_the_chain(self):
+        """The sentence from #19's body, as a test: "Delete a command line from SECTION 8 and
+        every run stays green."
+
+        check_prose_claims() guards three number patterns; the command lines carry no numbers, so
+        nothing read them. The freshness step was added to SECTION 8 on 2026-07-30 and its removal
+        would have gone unnoticed by every run in this repository.
+
+        The mutation happens against a COPY in a temp directory, never the working tree -- a
+        recipe someone runs by hand on src/contract.md leaves the contract edited when it crashes.
+
+        Undo recipe: delete the `orphans` block from check_prose_chain(). This case and the
+        TOOLS_ORDER one below go green with the tool missing from the chain, and --check exits 0
+        over a contract that never mentions it.
+        """
+        edit(self.tmp, "src/contract.md",
+             lambda t: re.sub(r"^python 06_tools/check_freshness\.py.*\n", "", t, flags=re.M))
+        code, out, err = run_check(self.tmp)
+        self.assertNotEqual(code, 0, f"a tool nothing runs passed: {out}")
+        self.assertIn("check_freshness.py: ships, and no command line runs it", err)
+
+    def test_a_misspelled_tool_in_a_command_line_is_refused(self):
+        """Direction one, and the cheap half: the user types the line and gets an error.
+
+        Undo recipe: delete the `ghosts` block from check_prose_chain(). The contract then tells
+        the user to run a file that was never delivered, and every run stays green -- which is
+        how `check_duplicates --vault <Project>` prescribed the call that created a ghost folder,
+        found by a cold run rather than by a check.
+        """
+        edit(self.tmp, "src/contract.md",
+             lambda t: t.replace("python 06_tools/check_links.py", "python 06_tools/check_link.py"))
+        code, out, err = run_check(self.tmp)
+        self.assertNotEqual(code, 0, f"a command naming a missing tool passed: {out}")
+        self.assertIn("check_link.py", err)
+        self.assertIn("not delivered", err)
+
+    def test_a_new_tool_in_no_chain_and_no_list_is_refused(self):
+        """The case that actually happens the next time somebody writes a tool.
+
+        Both other directions need a mistake in existing text. This one needs only a addition
+        that is correct in itself: the tool ships, its block is embedded, it runs -- and it sits
+        in the user's folder with nothing ever calling it, indistinguishable from a leftover.
+        `count_tokens.py` was in exactly this state on 2026-07-30 and no run said so.
+
+        Undo recipe: same as the deleted-command case -- drop the `orphans` block.
+        """
+        (self.tmp / "tools" / "neues_werkzeug.py").write_text(
+            "print('ships, and nothing calls it')\n", encoding="utf-8", newline="\n")
+        edit(self.tmp, "tools/build_kit.py",
+             lambda t: t.replace('"run_suites.py"]', '"run_suites.py", "neues_werkzeug.py"]', 1))
+        code, out, err = run_check(self.tmp)
+        self.assertNotEqual(code, 0, f"an uncalled new tool passed: {out}")
+        self.assertIn("neues_werkzeug.py: ships, and no command line runs it", err)
+        self.assertIn("not_invoked", err, "the message did not name the way out")
+
+    def test_a_tool_both_called_and_declared_uncalled_stops_with_exit_2(self):
+        """Exit 2, and deliberately not a winner.
+
+        Copied from check_freshness.py's watched/on-demand rule rather than invented: whichever
+        statement lost would sit in the file doing nothing, and no run could show which of the two
+        applies. The exit code is distinct from 1 on purpose -- a contradiction between two
+        sources is a different repair from a stale line in one of them.
+
+        Undo recipe: return 1 instead of 2 from the `both` block. This case is the only one that
+        moves, and a reader then cannot tell the two repairs apart from the exit code.
+        """
+        edit(self.tmp, "tools/jobs.json",
+             lambda t: t.replace('"not_invoked": {',
+                                 '"not_invoked": {\n    "check_links": "widerspruch",', 1))
+        code, out, err = run_check(self.tmp)
+        self.assertEqual(code, 2, f"a name classified twice did not stop the run: {out}\n{err}")
+        self.assertIn("check_links.py", err)
+        self.assertIn("classified twice", err)
+
+    def test_the_chain_check_reads_the_header_as_well_as_the_contract(self):
+        """verify_setup.py appears in src/contract.md ZERO times, measured 2026-07-30.
+
+        It ships, its 14/14 is guarded in three places by the check above, and the only line that
+        ever runs it lives in this file's SECTION 10 header. A chain check reading the contract
+        alone would report the guarded tool as uninvoked -- and the reflex fix would be to add it
+        to `not_invoked`, writing down that nothing runs it while the header does.
+        """
+        edit(self.tmp, "tools/build_kit.py",
+             lambda t: t.replace("python <vault>/00_Global/06_tools/verify_setup.py", "(removed)"))
+        code, out, err = run_check(self.tmp)
+        self.assertNotEqual(code, 0, f"the header was not read as part of the chain: {out}")
+        self.assertIn("verify_setup.py: ships, and no command line runs it", err)
+
     def test_a_literal_version_stamp_in_the_prose_is_refused(self):
         """A second kit-version line in the text goes stale on the next build, and a reader
         comparing copies cannot tell which of the two is the real one."""

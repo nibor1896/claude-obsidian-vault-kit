@@ -153,6 +153,108 @@ class CheckFreshnessTest(unittest.TestCase):
         self.assertIn("1 unclassified", out)
         self.assertIn("mein_werkzeug", out)
 
+    def write_tool(self, name, body="from vault_paths import log_run\nlog_run(v, 'x', 'ok')\n"):
+        """A script in the vault's own tool folder. Never executed -- only read."""
+        target = self.log.parent / name
+        target.parent.mkdir(parents=True, exist_ok=True)
+        target.write_text(body, encoding="utf-8", newline="\n")
+        return target
+
+    # ------------------------------------------- the population, not only the log (#24)
+
+    def test_a_tool_that_never_ran_is_still_reported_as_unclassified(self):
+        """#24, and the check used to confirm its own silence over exactly this case.
+
+        `unclassified` was derived from the log alone. A tool no chain calls never writes a line,
+        so it could not appear in `seen`, so it could not be reported -- and the tools that fall
+        out of a chain are precisely the ones that never log. Measured 2026-07-30 against a real
+        vault: `0 unclassified` while count_tokens.py sat in the folder in neither list.
+
+        Exit stays 0. That is decided, not incidental: an unclassified tool has not failed, and a
+        chain that goes red the first time a user adds a tool of their own gets switched off.
+
+        Recipe without the fix, measured on this machine 2026-07-30: drop `| on_disk` from the
+        `unclassified` line in main(). This case goes red on the count alone -- the tool is on
+        disk, in no list, and the report says `0 unclassified` with exit 0 either way, which is
+        why nothing noticed.
+        """
+        self.write_log(f"{stamp(1)}\tbuild_index\tok\t0 defects")
+        self.write_tool("mein_werkzeug.py")
+        code, out, err = run_tool("check_freshness.py", "--vault", self.vault,
+                                  "--jobs", "build_index")
+        self.assertEqual(code, 0, out + err)
+        self.assertIn("1 unclassified", out)
+        self.assertIn("mein_werkzeug", out)
+
+    def test_a_tool_that_cannot_log_is_not_asked_to_be_classified(self):
+        """The population's edge, and the healthy control for the case above.
+
+        Without it, the fix above would name every `.py` in the folder -- run_suites, acceptance,
+        verify_setup and upgrade all run, all reach a verdict and none of them log, so all four
+        would sit in the report permanently. Four standing lines above the one line that means
+        something is how a report stops being read.
+
+        Asking whether a tool that cannot log is watched has no answer that changes anything: it
+        can never be late, because it can never be in the log at all.
+        """
+        self.write_log(f"{stamp(1)}\tbuild_index\tok\t0 defects")
+        self.write_tool("stilles_werkzeug.py", "print('reaches a verdict, writes no line')\n")
+        code, out, err = run_tool("check_freshness.py", "--vault", self.vault,
+                                  "--jobs", "build_index")
+        self.assertEqual(code, 0, out + err)
+        self.assertIn("0 unclassified", out)
+        self.assertNotIn("stilles_werkzeug", out)
+
+    def test_a_suite_in_the_tool_folder_is_not_a_job(self):
+        """`test_X.py` is what run_suites.py collects, not something a scheduler runs.
+
+        Excluded structurally rather than by taste: a suite that exercises log_run() would
+        otherwise ask to be classified as a scheduled job, and the user's only way out would be
+        to declare every suite in their config.
+        """
+        self.write_log(f"{stamp(1)}\tbuild_index\tok\t0 defects")
+        self.write_tool("test_mein_werkzeug.py")
+        code, out, err = run_tool("check_freshness.py", "--vault", self.vault,
+                                  "--jobs", "build_index")
+        self.assertEqual(code, 0, out + err)
+        self.assertIn("0 unclassified", out)
+        self.assertNotIn("test_mein_werkzeug", out)
+
+    def test_the_third_list_takes_a_tool_out_of_the_unclassified_line(self):
+        """`not_invoked` is the decision, and this is what making it is worth.
+
+        The same key build_kit.py's chain check reads: one structure, so "deliberately outside
+        the chain" is stated once and cannot be answered two different ways by two tools.
+        """
+        self.write_config('{"jobs": ["build_index"], '
+                          '"not_invoked": {"mein_werkzeug": "ein Modul, kein Kommando"}}')
+        self.write_log(f"{stamp(1)}\tbuild_index\tok\t0 defects")
+        self.write_tool("mein_werkzeug.py")
+        code, out, err = run_tool("check_freshness.py", "--vault", self.vault)
+        self.assertEqual(code, 0, out + err)
+        self.assertIn("1 not invoked", out)
+        self.assertIn("0 unclassified", out)
+
+    def test_a_job_watched_and_declared_uncalled_stops_the_run(self):
+        """The pair check extended to three lists, on the pair that did not exist before.
+
+        A tool cannot both be called by no chain and be the thing a chain is watched for. Same
+        reasoning as the watched/on-demand clash: picking a winner leaves the other entry sitting
+        in the file doing nothing, and no run can then show which statement applies.
+
+        Recipe without the fix, measured on this machine 2026-07-30: reduce the `clash` set back
+        to `set(configured) & set(on_demand)`. This case goes red -- the run reports the job as
+        watched and never mentions that its own config also calls it uninvoked.
+        """
+        self.write_config('{"jobs": ["build_index", "mein_werkzeug"], '
+                          '"not_invoked": {"mein_werkzeug": "kein Kommando"}}')
+        self.write_log(f"{stamp(1)}\tbuild_index\tok\t0 defects")
+        code, out, err = run_tool("check_freshness.py", "--vault", self.vault)
+        self.assertEqual(code, 2, out + err)
+        self.assertIn("mein_werkzeug", err)
+        self.assertIn("jobs.json", err)
+        self.assertNotIn("jobs fresh", out, "it measured anyway over a config it called broken")
+
     def test_a_job_in_both_lists_stops_the_run_instead_of_picking_one(self):
         """Exit 2, and deliberately not "watched wins".
 

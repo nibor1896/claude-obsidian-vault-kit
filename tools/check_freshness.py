@@ -7,11 +7,17 @@ Log format, one line per run, appended by every tool (see vault_paths.log_run):
 
     2026-07-27T09:15:00+00:00\tbuild_index\tok\t0 defects
 
-LOGGING AND BEING WATCHED ARE TWO DIFFERENT THINGS, AND jobs.json CARRIES BOTH LISTS. Every tool
+LOGGING AND BEING WATCHED ARE TWO DIFFERENT THINGS, AND jobs.json CARRIES THE LISTS. Every tool
 writes a line; only a tool that runs on a schedule can be *late*. Put the on-demand ones under an
 age limit and the report is red every single day, which is the fastest way to get the whole check
-switched off. So `jobs` is what must be fresh, `on_demand` is what logs and is never late, and a
-name in neither is reported as unclassified rather than assumed into one of them.
+switched off. So `jobs` is what must be fresh, `on_demand` is what logs and is never late,
+`not_invoked` is what no chain calls at all, and a name in none of them is reported as
+unclassified rather than assumed into one of them.
+
+THE UNCLASSIFIED LIST IS READ FROM THE FOLDER, NOT ONLY FROM THE LOG. A tool that no chain calls
+never writes a line, and a population derived from the log alone therefore cannot see the one
+thing this report is for -- the check confirms its own silence. Measured 2026-07-30: `0
+unclassified` over a folder holding a tool in neither list.
 
 This tool logs itself and stands in `on_demand`. Without its own line, "the freshness check runs in
 the chain" is a claim about a command file: delete the step and it looks exactly like a check that
@@ -56,9 +62,69 @@ DEFAULT_ON_DEMAND = {
                        "is a regress",
 }
 
+# The third classification: no chain calls it, and the value says why. Same rule as above -- the
+# reason is the entry, because JSON has no comments.
+DEFAULT_NOT_INVOKED = {
+    "vault_paths": "a module, not a command -- it has no main(), the other tools import it",
+    "_testkit": "a module, imported by the suites only",
+    "count_tokens": "answers a question on request and reaches no verdict: it reports a size, so "
+                    "it has no pass, no fail and nothing a chain could act on",
+}
+
+
+def tool_folder(vault_root):
+    """The one folder both the config and the population come out of.
+
+    Derived from RUN_LOG_RELPATH rather than spelled again: a population read from one folder and
+    a classification read from another would disagree without either being wrong.
+    """
+    return Path(vault_root).resolve() / RUN_LOG_RELPATH.parent
+
+
+def loggable_tools(vault_root):
+    """(names of tools on disk that can ever appear in the log, files that could not be read).
+
+    WHY THE POPULATION IS NOT SIMPLY EVERY `.py` IN THE FOLDER (2026-07-30): a tool that never
+    calls log_run() cannot appear in the log by construction, so asking whether it is watched has
+    no answer that would change anything -- `run_suites.py`, `acceptance.py`, `verify_setup.py`
+    and `upgrade.py` all run, all reach a verdict, and none of them log. Naming those four on
+    every single run would put four permanent lines above the one line that means something,
+    which is the fastest way to get this report skimmed instead of read.
+
+    Measured on this machine 2026-07-30, before this function existed: five of the shipped tools
+    call log_run() -- build_index, check_links, check_duplicates, write_command, check_freshness
+    -- and those five are exactly the five in jobs.json. So the honest population is "can it log",
+    and the check that follows is "has anyone said which list it belongs to".
+
+    Suites are excluded structurally, not by taste: `test_X.py` is not a job, it is what
+    run_suites.py collects, and a suite that exercises log_run() would otherwise ask to be
+    classified as a scheduled job.
+
+    Reading is by text, so a file that only mentions log_run() in a comment asks for a decision it
+    does not need. That is the cheap direction to be wrong in -- the expensive one, a tool that
+    logs and is never asked about, is the defect this whole function exists for.
+    """
+    folder = tool_folder(vault_root)
+    if not folder.is_dir():
+        return set(), 0
+    names, unreadable = set(), 0
+    for path in sorted(folder.glob("*.py")):
+        if path.name.startswith("test_"):
+            continue
+        try:
+            text = path.read_text(encoding="utf-8-sig", errors="replace")
+        except OSError:
+            # Counted and printed, never a silent continue: a skip that does not count itself
+            # still prints a total, over fewer files than it names.
+            unreadable += 1
+            continue
+        if "log_run(" in text:
+            names.add(path.stem)
+    return names, unreadable
+
 
 def job_lists(vault_root):
-    """(watched, on_demand) — read once, so the two can never disagree about the fallback.
+    """(watched, on_demand, not_invoked) — read once, so they can never disagree about the fallback.
 
     No config file is normal -- a project-only run has none, and both defaults stand. A config
     that exists and cannot be read is not normal, and falling back to the default over it
@@ -70,22 +136,31 @@ def job_lists(vault_root):
     user never made is the silent fallback this docstring is about. Empty is honest, and the
     unclassified line then names the tools instead of guessing at them.
 
-    Either shape is accepted for `on_demand`: the mapping that ships (name -> reason) or a bare
-    list, which a user mirroring `jobs` will write. A list simply carries no reasons; refusing
-    it would hard-fail an honest config over cosmetics.
+    Either shape is accepted for `on_demand` and for `not_invoked`: the mapping that ships
+    (name -> reason) or a bare list, which a user mirroring `jobs` will write. A list simply
+    carries no reasons; refusing it would hard-fail an honest config over cosmetics.
     """
-    config = Path(vault_root).resolve() / "00_Global" / "06_tools" / "jobs.json"
+    config = tool_folder(vault_root) / "jobs.json"
     if not config.exists():
-        return list(DEFAULT_JOBS), dict(DEFAULT_ON_DEMAND)
+        return list(DEFAULT_JOBS), dict(DEFAULT_ON_DEMAND), dict(DEFAULT_NOT_INVOKED)
     try:
         data = json.loads(config.read_text(encoding="utf-8-sig"))
         watched = list(data["jobs"])
-        raw = data.get("on_demand") or {}
-        on_demand = dict(raw) if isinstance(raw, dict) else {name: "" for name in raw}
-        return watched, on_demand
+        return watched, _mapping(data, "on_demand"), _mapping(data, "not_invoked")
     except (OSError, ValueError, KeyError, TypeError) as exc:
         print(f"{config}: unreadable ({exc}) — falling back to {DEFAULT_JOBS}", file=sys.stderr)
-        return list(DEFAULT_JOBS), dict(DEFAULT_ON_DEMAND)
+        return list(DEFAULT_JOBS), dict(DEFAULT_ON_DEMAND), dict(DEFAULT_NOT_INVOKED)
+
+
+def _mapping(data, key):
+    """One optional name->reason list out of a config that exists. Missing means EMPTY.
+
+    Never the built-in default: a config the user wrote and a classification they never made must
+    not be mixed, or the unclassified line reports against a list nobody chose. Same rule as the
+    docstring above, applied to both optional keys instead of one.
+    """
+    raw = data.get(key) or {}
+    return dict(raw) if isinstance(raw, dict) else {name: "" for name in raw}
 
 
 def parse_log(log_path):
@@ -133,23 +208,30 @@ def main(argv=None):
 
     vault_root = Path(args.vault).resolve()
     log_path = Path(args.log).resolve() if args.log else vault_root / RUN_LOG_RELPATH
-    configured, on_demand = job_lists(vault_root)
+    configured, on_demand, not_invoked = job_lists(vault_root)
     jobs = args.jobs if args.jobs else configured
 
-    # Before any measurement, because the answer to "which list wins" is neither of them. Letting
-    # the watched list win would be an invisible decision: the on-demand entry would sit there
-    # doing nothing, and no run could show which of the two statements applies.
+    # Before any measurement, because the answer to "which list wins" is none of them. Letting one
+    # win would be an invisible decision: the other entry would sit there doing nothing, and no
+    # run could show which of the statements applies.
     #
     # The CONFIGURED list, not the effective one: the defect is in the file, so `--jobs` must not
     # be able to dodge it -- and `--jobs check_duplicates` is a deliberate one-off watch of an
     # on-demand tool, which is not a contradiction and must not be treated as one.
-    both = sorted(set(configured) & set(on_demand))
-    if both:
-        print(f"{', '.join(both)}: in the watched list AND in the on-demand list. A job is one or "
-              f"the other — watched means it may be late, on demand means it cannot be. Take it "
-              f"out of one of them in {vault_root / '00_Global' / '06_tools' / 'jobs.json'}.",
+    #
+    # Three lists since 2026-07-30, so every pair is checked rather than the one that used to
+    # exist. `not_invoked` contradicts either of the others just as loudly: a tool cannot both be
+    # called by no chain and be the thing a chain is watched for.
+    clash = sorted({name for a, b in ((configured, on_demand), (configured, not_invoked),
+                                      (set(on_demand), set(not_invoked)))
+                    for name in set(a) & set(b)})
+    if clash:
+        print(f"{', '.join(clash)}: classified twice. Watched means it may be late, on demand "
+              f"means it cannot be, not invoked means no chain calls it — a name belongs to "
+              f"exactly one. Take it out of the others in {tool_folder(vault_root) / 'jobs.json'}.",
               file=sys.stderr)
-        log_run(vault_root, "check_freshness", "did-not-run", f"{len(both)} jobs in both lists")
+        log_run(vault_root, "check_freshness", "did-not-run",
+                f"{len(clash)} jobs in more than one list")
         return 2
 
     if not jobs:
@@ -181,23 +263,35 @@ def main(argv=None):
         else:
             fresh.append((job, age_h))
 
-    # In neither list. The only real signal at this point: somebody built a tool and nobody
-    # decided whether it is watched. It does NOT change the exit code -- an unclassified tool has
-    # not failed, and a chain that goes red the first time a user adds a tool of their own is one
+    # In no list. The only real signal at this point: somebody built a tool and nobody decided
+    # whether it is watched. It does NOT change the exit code -- an unclassified tool has not
+    # failed, and a chain that goes red the first time a user adds a tool of their own is one
     # they will stop running.
     # `configured` is subtracted as well as `jobs`, so a `--jobs` override does not turn the rest
     # of the user's own watch list into news.
-    unclassified = sorted(seen - set(jobs) - set(configured) - set(on_demand))
+    #
+    # THE POPULATION IS THE FOLDER AS WELL AS THE LOG (2026-07-30, #24). It used to be `seen`
+    # alone, and that made the check confirm its own silence: a tool no chain calls never writes
+    # a line, and without a line it could not turn up as unclassified. Measured that day against
+    # a fresh vault -- `0 unclassified` while count_tokens sat in the folder in neither list, the
+    # one tool the report existed to name. The self-confirming shape is the point: the tools that
+    # fall out of the chain are exactly the ones a log-derived population cannot see.
+    on_disk, unreadable = loggable_tools(vault_root)
+    unclassified = sorted((seen | on_disk) - set(jobs) - set(configured)
+                          - set(on_demand) - set(not_invoked))
 
     print(
         f"{len(fresh)}/{len(jobs)} jobs fresh · {len(on_demand)} on demand · "
-        f"{len(unclassified)} unclassified · {lines} log lines · "
-        f"{malformed} malformed · threshold {args.max_age_hours}h"
+        f"{len(not_invoked)} not invoked · {len(unclassified)} unclassified · "
+        f"{lines} log lines · {malformed} malformed · threshold {args.max_age_hours}h"
     )
     for job, age_h in fresh:
         print(f"  {job}: {age_h:.1f}h ago")
     if unclassified:
-        print(f"  neither watched nor listed as on demand: {', '.join(unclassified)}")
+        print(f"  in none of the three lists: {', '.join(unclassified)}")
+    if unreadable:
+        print(f"  {unreadable} file(s) in {tool_folder(vault_root)} could not be read, so they "
+              f"are outside every count above", file=sys.stderr)
 
     status = "defects" if (problems or malformed) else "ok"
     log_run(vault_root, "check_freshness", status,

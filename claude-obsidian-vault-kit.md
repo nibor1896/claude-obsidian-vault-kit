@@ -1,4 +1,4 @@
-<!-- kit-version: 71c53db6dccc -->
+<!-- kit-version: 4974313a90c5 -->
 # Claude × Obsidian — Vault Kit
 
 **What this file is:** a setup contract for Claude. Drop it into a Claude conversation and say
@@ -665,6 +665,34 @@ whole section is about.
   `\0`, and pass bytes. Get this wrong and every note with an umlaut in its name silently leaves the
   denominator — which is exactly the class of file a knowledge vault is full of.
 
+### `check_duplicates.py` in particular — the threshold is a knob nobody has turned yet
+
+**The default is `0.75`, and it is unvalidated. Say so when you report the result.** It was chosen
+as a plausible starting value, not derived from a measurement, and nothing since has tested it
+against a body of notes large enough for the answer to mean anything. On the runs that exist it
+reported `0 pairs flagged` across five and six notes — on that denominator almost any threshold
+reports zero, so the run confirms the arithmetic and nothing else.
+
+This is not a defect to fix before shipping; it is a number whose status has to travel with it. A
+threshold that reads as tuned invites the opposite of what it deserves: the user takes `0 flagged`
+as evidence that there are no duplicates, when it is evidence only that nothing crossed a line
+nobody has placed.
+
+**What would validate it**, so this is a measurement someone can actually run rather than a
+disclaimer:
+
+- A vault with **at least a few hundred notes** that a person knows well enough to judge.
+- The check run **at several thresholds over the same notes** — 0.6, 0.7, 0.75, 0.8, 0.9 — with the
+  flagged pairs recorded per threshold, not just the counts.
+- Each flagged pair judged by hand: a real duplicate, or two notes that legitimately share
+  boilerplate. **Both error directions are counted.** The interesting failure is not the pair it
+  flags wrongly, it is the pair it misses, and a run that only counts hits cannot see those.
+- The result written down **with its denominator and the vault it came from**. A threshold tuned on
+  one person's writing is not a universal constant, and the next vault may want a different one.
+
+Until that exists, `--threshold` is the honest interface: the number is exposed on the command line
+precisely because it is not settled.
+
 ### `check_freshness.py` in particular
 
 Any job on a schedule (task scheduler, cron, launchd) writes a line to an append-only log on **every
@@ -672,22 +700,28 @@ run, including the healthy ones**. `check_freshness.py` reads that log and repor
 last healthy run per job, against a threshold the user sets. Without this, a scheduler that quietly
 stopped firing looks identical to one that is fine.
 
-**Logging and being watched are two different lists, and `jobs.json` carries both.** Every tool
-writes a line; only a tool that runs on a schedule can be *late*. Put the on-demand ones under an
-age limit and the report is red every single day — which is the fastest way to get the whole check
-switched off, and a check nobody runs is worth less than none. So `jobs` is what must be fresh,
-`on_demand` is what logs and is never late, and each on-demand entry carries its reason as its
-value, because JSON has no comments and an exception without a reason is indistinguishable from an
-oversight.
+**Logging and being watched are two different things, and `jobs.json` carries three lists.** Every
+tool writes a line; only a tool that runs on a schedule can be *late*. Put the on-demand ones under
+an age limit and the report is red every single day — which is the fastest way to get the whole
+check switched off, and a check nobody runs is worth less than none. So `jobs` is what must be
+fresh, `on_demand` is what logs and is never late, `not_invoked` is what no chain calls at all, and
+each entry in the latter two carries its reason as its value, because JSON has no comments and an
+exception without a reason is indistinguishable from an oversight.
 
-Three consequences, and each one is a behaviour, not a preference:
+Four consequences, and each one is a behaviour, not a preference:
 
-- **A name in both lists stops the tool with exit 2.** Not "watched wins": that would be an
-  invisible decision, with the on-demand entry sitting there doing nothing and no run able to show
-  which of the two statements applies.
-- **A name in neither is reported, and does not change the exit code.** That line is the only real
-  signal in this area — somebody built a tool and nobody decided whether it is watched. Turning it
-  red would make the chain permanently red for every user who adds a tool of their own.
+- **A name in two of the lists stops the tool with exit 2.** Not "watched wins": that would be an
+  invisible decision, with the other entry sitting there doing nothing and no run able to show
+  which of the statements applies.
+- **A name in none of them is reported, and does not change the exit code.** That line is the only
+  real signal in this area — somebody built a tool and nobody decided whether it is watched.
+  Turning it red would make the chain permanently red for every user who adds a tool of their own.
+- **That report is read from the tool folder, not only from the run log.** A tool that no chain
+  calls never writes a line, so a population taken from the log alone cannot contain the one thing
+  the report exists to name — the check confirms its own silence, and the tools it cannot see are
+  exactly the ones that fell out of the chain. Measured on one setup: `0 unclassified` over a
+  folder holding a tool that was in no list at all. Only tools that *can* log are counted, because
+  asking whether something that never logs is late has no answer that changes anything.
 - **The check itself logs, and stands in `on_demand`.** Without its own line, "the freshness check
   runs in the chain" is a claim about a command file: delete the step and it looks exactly like a
   check that runs and finds nothing. Watching the watcher would be the regress; logging is not
@@ -1522,12 +1556,17 @@ def run_tool(script, *args, strip_io_encoding=True, home=None):
 
 ```json
 {
-  "_comment": "Two lists, and a name belongs to exactly one of them. \"jobs\" must show a healthy run inside the threshold -- these are the ones a dead scheduler would silently take with it. \"on_demand\" logs like everything else but is never late, because it runs when someone asks. A name in both stops the tool with exit 2. A name in neither is reported, never guessed at. Verify with: python check_freshness.py --vault <VaultRoot>",
+  "_comment": "Three lists, and a name belongs to exactly one of them. \"jobs\" must show a healthy run inside the threshold -- these are the ones a dead scheduler would silently take with it. \"on_demand\" logs like everything else but is never late, because it runs when someone asks. \"not_invoked\" is not called by any chain at all, and the value says why -- a module, or a tool that answers a question rather than reaching a verdict. A name in two of them stops the tool with exit 2. A name in none is reported, never guessed at. Verify with: python check_freshness.py --vault <VaultRoot>",
   "jobs": ["build_index", "check_links"],
   "on_demand": {
     "check_duplicates": "runs in the verification chain and by hand, never on a schedule",
     "write_command": "runs once during setup, and again only if the command file is gone",
     "check_freshness": "this tool itself -- logged, never watched: an age limit on the watcher is a regress"
+  },
+  "not_invoked": {
+    "vault_paths": "a module, not a command -- it has no main(), the other tools import it",
+    "_testkit": "a module, imported by the suites only",
+    "count_tokens": "answers a question on request and reaches no verdict: it reports a size, so it has no pass, no fail and nothing a chain could act on"
   }
 }
 ```
@@ -2602,11 +2641,17 @@ Log format, one line per run, appended by every tool (see vault_paths.log_run):
 
     2026-07-27T09:15:00+00:00\tbuild_index\tok\t0 defects
 
-LOGGING AND BEING WATCHED ARE TWO DIFFERENT THINGS, AND jobs.json CARRIES BOTH LISTS. Every tool
+LOGGING AND BEING WATCHED ARE TWO DIFFERENT THINGS, AND jobs.json CARRIES THE LISTS. Every tool
 writes a line; only a tool that runs on a schedule can be *late*. Put the on-demand ones under an
 age limit and the report is red every single day, which is the fastest way to get the whole check
-switched off. So `jobs` is what must be fresh, `on_demand` is what logs and is never late, and a
-name in neither is reported as unclassified rather than assumed into one of them.
+switched off. So `jobs` is what must be fresh, `on_demand` is what logs and is never late,
+`not_invoked` is what no chain calls at all, and a name in none of them is reported as
+unclassified rather than assumed into one of them.
+
+THE UNCLASSIFIED LIST IS READ FROM THE FOLDER, NOT ONLY FROM THE LOG. A tool that no chain calls
+never writes a line, and a population derived from the log alone therefore cannot see the one
+thing this report is for -- the check confirms its own silence. Measured 2026-07-30: `0
+unclassified` over a folder holding a tool in neither list.
 
 This tool logs itself and stands in `on_demand`. Without its own line, "the freshness check runs in
 the chain" is a claim about a command file: delete the step and it looks exactly like a check that
@@ -2651,9 +2696,69 @@ DEFAULT_ON_DEMAND = {
                        "is a regress",
 }
 
+# The third classification: no chain calls it, and the value says why. Same rule as above -- the
+# reason is the entry, because JSON has no comments.
+DEFAULT_NOT_INVOKED = {
+    "vault_paths": "a module, not a command -- it has no main(), the other tools import it",
+    "_testkit": "a module, imported by the suites only",
+    "count_tokens": "answers a question on request and reaches no verdict: it reports a size, so "
+                    "it has no pass, no fail and nothing a chain could act on",
+}
+
+
+def tool_folder(vault_root):
+    """The one folder both the config and the population come out of.
+
+    Derived from RUN_LOG_RELPATH rather than spelled again: a population read from one folder and
+    a classification read from another would disagree without either being wrong.
+    """
+    return Path(vault_root).resolve() / RUN_LOG_RELPATH.parent
+
+
+def loggable_tools(vault_root):
+    """(names of tools on disk that can ever appear in the log, files that could not be read).
+
+    WHY THE POPULATION IS NOT SIMPLY EVERY `.py` IN THE FOLDER (2026-07-30): a tool that never
+    calls log_run() cannot appear in the log by construction, so asking whether it is watched has
+    no answer that would change anything -- `run_suites.py`, `acceptance.py`, `verify_setup.py`
+    and `upgrade.py` all run, all reach a verdict, and none of them log. Naming those four on
+    every single run would put four permanent lines above the one line that means something,
+    which is the fastest way to get this report skimmed instead of read.
+
+    Measured on this machine 2026-07-30, before this function existed: five of the shipped tools
+    call log_run() -- build_index, check_links, check_duplicates, write_command, check_freshness
+    -- and those five are exactly the five in jobs.json. So the honest population is "can it log",
+    and the check that follows is "has anyone said which list it belongs to".
+
+    Suites are excluded structurally, not by taste: `test_X.py` is not a job, it is what
+    run_suites.py collects, and a suite that exercises log_run() would otherwise ask to be
+    classified as a scheduled job.
+
+    Reading is by text, so a file that only mentions log_run() in a comment asks for a decision it
+    does not need. That is the cheap direction to be wrong in -- the expensive one, a tool that
+    logs and is never asked about, is the defect this whole function exists for.
+    """
+    folder = tool_folder(vault_root)
+    if not folder.is_dir():
+        return set(), 0
+    names, unreadable = set(), 0
+    for path in sorted(folder.glob("*.py")):
+        if path.name.startswith("test_"):
+            continue
+        try:
+            text = path.read_text(encoding="utf-8-sig", errors="replace")
+        except OSError:
+            # Counted and printed, never a silent continue: a skip that does not count itself
+            # still prints a total, over fewer files than it names.
+            unreadable += 1
+            continue
+        if "log_run(" in text:
+            names.add(path.stem)
+    return names, unreadable
+
 
 def job_lists(vault_root):
-    """(watched, on_demand) — read once, so the two can never disagree about the fallback.
+    """(watched, on_demand, not_invoked) — read once, so they can never disagree about the fallback.
 
     No config file is normal -- a project-only run has none, and both defaults stand. A config
     that exists and cannot be read is not normal, and falling back to the default over it
@@ -2665,22 +2770,31 @@ def job_lists(vault_root):
     user never made is the silent fallback this docstring is about. Empty is honest, and the
     unclassified line then names the tools instead of guessing at them.
 
-    Either shape is accepted for `on_demand`: the mapping that ships (name -> reason) or a bare
-    list, which a user mirroring `jobs` will write. A list simply carries no reasons; refusing
-    it would hard-fail an honest config over cosmetics.
+    Either shape is accepted for `on_demand` and for `not_invoked`: the mapping that ships
+    (name -> reason) or a bare list, which a user mirroring `jobs` will write. A list simply
+    carries no reasons; refusing it would hard-fail an honest config over cosmetics.
     """
-    config = Path(vault_root).resolve() / "00_Global" / "06_tools" / "jobs.json"
+    config = tool_folder(vault_root) / "jobs.json"
     if not config.exists():
-        return list(DEFAULT_JOBS), dict(DEFAULT_ON_DEMAND)
+        return list(DEFAULT_JOBS), dict(DEFAULT_ON_DEMAND), dict(DEFAULT_NOT_INVOKED)
     try:
         data = json.loads(config.read_text(encoding="utf-8-sig"))
         watched = list(data["jobs"])
-        raw = data.get("on_demand") or {}
-        on_demand = dict(raw) if isinstance(raw, dict) else {name: "" for name in raw}
-        return watched, on_demand
+        return watched, _mapping(data, "on_demand"), _mapping(data, "not_invoked")
     except (OSError, ValueError, KeyError, TypeError) as exc:
         print(f"{config}: unreadable ({exc}) — falling back to {DEFAULT_JOBS}", file=sys.stderr)
-        return list(DEFAULT_JOBS), dict(DEFAULT_ON_DEMAND)
+        return list(DEFAULT_JOBS), dict(DEFAULT_ON_DEMAND), dict(DEFAULT_NOT_INVOKED)
+
+
+def _mapping(data, key):
+    """One optional name->reason list out of a config that exists. Missing means EMPTY.
+
+    Never the built-in default: a config the user wrote and a classification they never made must
+    not be mixed, or the unclassified line reports against a list nobody chose. Same rule as the
+    docstring above, applied to both optional keys instead of one.
+    """
+    raw = data.get(key) or {}
+    return dict(raw) if isinstance(raw, dict) else {name: "" for name in raw}
 
 
 def parse_log(log_path):
@@ -2728,23 +2842,30 @@ def main(argv=None):
 
     vault_root = Path(args.vault).resolve()
     log_path = Path(args.log).resolve() if args.log else vault_root / RUN_LOG_RELPATH
-    configured, on_demand = job_lists(vault_root)
+    configured, on_demand, not_invoked = job_lists(vault_root)
     jobs = args.jobs if args.jobs else configured
 
-    # Before any measurement, because the answer to "which list wins" is neither of them. Letting
-    # the watched list win would be an invisible decision: the on-demand entry would sit there
-    # doing nothing, and no run could show which of the two statements applies.
+    # Before any measurement, because the answer to "which list wins" is none of them. Letting one
+    # win would be an invisible decision: the other entry would sit there doing nothing, and no
+    # run could show which of the statements applies.
     #
     # The CONFIGURED list, not the effective one: the defect is in the file, so `--jobs` must not
     # be able to dodge it -- and `--jobs check_duplicates` is a deliberate one-off watch of an
     # on-demand tool, which is not a contradiction and must not be treated as one.
-    both = sorted(set(configured) & set(on_demand))
-    if both:
-        print(f"{', '.join(both)}: in the watched list AND in the on-demand list. A job is one or "
-              f"the other — watched means it may be late, on demand means it cannot be. Take it "
-              f"out of one of them in {vault_root / '00_Global' / '06_tools' / 'jobs.json'}.",
+    #
+    # Three lists since 2026-07-30, so every pair is checked rather than the one that used to
+    # exist. `not_invoked` contradicts either of the others just as loudly: a tool cannot both be
+    # called by no chain and be the thing a chain is watched for.
+    clash = sorted({name for a, b in ((configured, on_demand), (configured, not_invoked),
+                                      (set(on_demand), set(not_invoked)))
+                    for name in set(a) & set(b)})
+    if clash:
+        print(f"{', '.join(clash)}: classified twice. Watched means it may be late, on demand "
+              f"means it cannot be, not invoked means no chain calls it — a name belongs to "
+              f"exactly one. Take it out of the others in {tool_folder(vault_root) / 'jobs.json'}.",
               file=sys.stderr)
-        log_run(vault_root, "check_freshness", "did-not-run", f"{len(both)} jobs in both lists")
+        log_run(vault_root, "check_freshness", "did-not-run",
+                f"{len(clash)} jobs in more than one list")
         return 2
 
     if not jobs:
@@ -2776,23 +2897,35 @@ def main(argv=None):
         else:
             fresh.append((job, age_h))
 
-    # In neither list. The only real signal at this point: somebody built a tool and nobody
-    # decided whether it is watched. It does NOT change the exit code -- an unclassified tool has
-    # not failed, and a chain that goes red the first time a user adds a tool of their own is one
+    # In no list. The only real signal at this point: somebody built a tool and nobody decided
+    # whether it is watched. It does NOT change the exit code -- an unclassified tool has not
+    # failed, and a chain that goes red the first time a user adds a tool of their own is one
     # they will stop running.
     # `configured` is subtracted as well as `jobs`, so a `--jobs` override does not turn the rest
     # of the user's own watch list into news.
-    unclassified = sorted(seen - set(jobs) - set(configured) - set(on_demand))
+    #
+    # THE POPULATION IS THE FOLDER AS WELL AS THE LOG (2026-07-30, #24). It used to be `seen`
+    # alone, and that made the check confirm its own silence: a tool no chain calls never writes
+    # a line, and without a line it could not turn up as unclassified. Measured that day against
+    # a fresh vault -- `0 unclassified` while count_tokens sat in the folder in neither list, the
+    # one tool the report existed to name. The self-confirming shape is the point: the tools that
+    # fall out of the chain are exactly the ones a log-derived population cannot see.
+    on_disk, unreadable = loggable_tools(vault_root)
+    unclassified = sorted((seen | on_disk) - set(jobs) - set(configured)
+                          - set(on_demand) - set(not_invoked))
 
     print(
         f"{len(fresh)}/{len(jobs)} jobs fresh · {len(on_demand)} on demand · "
-        f"{len(unclassified)} unclassified · {lines} log lines · "
-        f"{malformed} malformed · threshold {args.max_age_hours}h"
+        f"{len(not_invoked)} not invoked · {len(unclassified)} unclassified · "
+        f"{lines} log lines · {malformed} malformed · threshold {args.max_age_hours}h"
     )
     for job, age_h in fresh:
         print(f"  {job}: {age_h:.1f}h ago")
     if unclassified:
-        print(f"  neither watched nor listed as on demand: {', '.join(unclassified)}")
+        print(f"  in none of the three lists: {', '.join(unclassified)}")
+    if unreadable:
+        print(f"  {unreadable} file(s) in {tool_folder(vault_root)} could not be read, so they "
+              f"are outside every count above", file=sys.stderr)
 
     status = "defects" if (problems or malformed) else "ok"
     log_run(vault_root, "check_freshness", status,
@@ -3643,8 +3776,8 @@ def _s13(root):
                      f"{SETUP_KIT_VERSION!r} the kit file it was installed from carried")
 
     # A kit file carrying one block byte-identical to what is installed: upgrade.py then has
-    # nothing to write, and the only thing under test is the line it prints first. It lives
-    # outside the vault, which is where a downloaded kit file actually sits.
+    # nothing to write, so the whole answer is what it says. It lives outside the vault, which is
+    # where a downloaded kit file actually sits.
     jobs = (tools / "jobs.json").read_text(encoding="utf-8").rstrip()
     kit = root.parent / "newer-kit.md"
     kit.write_text(f"<!-- kit-version: ffffffffffff -->\n\n### `jobs.json`\n\n```json\n{jobs}\n```\n",
@@ -3653,6 +3786,21 @@ def _s13(root):
                     label="upgrade.py")
     if f"installed: {installed}" not in out or "unknown" in out:
         raise Failed(f"upgrade.py did not read the installed stamp back:\n{out}")
+
+    # SHARPENED 2026-07-30, NOT EXTENDED (#23). This fixture was already the exact case -- a
+    # newer kit whose one block is identical to what is on disk -- and it only ever read the
+    # first printed line. Everything after it went unexamined, which is where the defect lived:
+    # upgrade.py returned on `nothing to do` before it ever compared ffffffffffff against the
+    # stamp, so a release that changed no script left the folder on the previous version and
+    # said nothing. A new step would have moved 14/14 in three sources for no new fixture.
+    #
+    # Undo recipe, measured on this machine 2026-07-30: replace the stamp comparison in
+    # upgrade.py's main() with `if False:`, which is what the early return amounted to.
+    # verify_setup 13/14 here, and test_upgrade 12/15.
+    if "ffffffffffff" not in out:
+        raise Failed(f"upgrade.py did not say the kit carries a version the folder does not:\n{out}")
+    if stamp.read_text(encoding="utf-8-sig").strip() != installed:
+        raise Failed("upgrade.py rewrote kit-version.txt without --apply")
 
 
 @step("14 a /vaultkit command is written once, carries this vault's own paths, and is left alone")
@@ -3873,12 +4021,39 @@ def stamp(kit_path):
 
 
 def classify(blocks):
+    """Compare each embedded block against the file on disk.
+
+    READ AS utf-8-sig AND errors="replace", AND BOTH HALVES ARE LOAD-BEARING (2026-07-30). The
+    contract states this rule for every file the user might have touched (SECTION 6, "Read every
+    file the user might have written as `utf-8-sig`, never `utf-8`") and this line was the one
+    place in this file that broke it -- three other reads here already had it, so it read as an
+    oversight rather than a decision.
+
+    The two halves fail differently, which is why neither alone is enough:
+
+      - A BOM does NOT raise. It decodes to \\ufeff, the comparison against the block fails, and
+        the file is listed as `overwrite` -- an untouched file reported as a local edit. The user
+        opened it in Notepad once; that is the whole cause. This is the silent half.
+      - Only genuinely invalid UTF-8 raises, and then UnicodeDecodeError comes out of a helper
+        with no filename in the message, taking the whole update down. `errors="replace"` turns
+        that into a mismatch, so the file is named as `overwrite` and the run survives.
+
+    Undo recipes, both measured on this machine 2026-07-30, and they are not symmetric:
+
+      - Set the encoding back to `utf-8` (dropping errors= with it): test_upgrade 13/15. BOTH
+        cases go red, because `utf-8` without a replacement handler raises on the bad byte too.
+      - Keep `utf-8-sig` and drop only `errors="replace"`: test_upgrade 14/15, and only
+        `test_an_undecodable_file_is_named_rather_than_crashing_the_run` moves. That asymmetry is
+        the measurement worth keeping -- it shows the BOM half and the crash half are two defects
+        sharing one line, and fixing either alone leaves the other.
+    """
     same, changed, added = [], [], []
     for name, body in sorted(blocks.items()):
         target = TOOLS / name
         if not target.exists():
             added.append(name)
-        elif target.read_text(encoding="utf-8").replace("\r\n", "\n") == body:
+        elif target.read_text(encoding="utf-8-sig",
+                              errors="replace").replace("\r\n", "\n") == body:
             same.append(name)
         else:
             changed.append(name)
@@ -3917,15 +4092,36 @@ def main(argv=None):
 
     blocks, new_version = read_kit(args.kit)
     same, changed, added = classify(blocks)
+    installed = installed_version()
 
-    print(f"installed: {installed_version()} · kit file: {new_version}")
+    print(f"installed: {installed} · kit file: {new_version}")
     print(f"{len(same)} unchanged · {len(changed)} would be overwritten · {len(added)} new")
     for name in changed:
         print(f"  overwrite  {name}")
     for name in added:
         print(f"  add        {name}")
 
+    # A NEWER KIT WHOSE SCRIPTS DID NOT CHANGE STILL MOVES THE VERSION (2026-07-30). The return
+    # below used to sit in front of the --apply branch, so write_stamp() further down was
+    # unreachable on this path: a release that only edited the contract or the SECTION 10 header
+    # left the folder stamped with the version before it, forever. `installed:` then answered the
+    # one question this whole path exists for with a number that was true yesterday -- and the
+    # folder was fully up to date, which is what makes it hard to notice.
+    #
+    # Said either way, never done silently: without --apply this only reports the gap, because
+    # "nothing is written without --apply" is the promise the rest of the file keeps. An
+    # unversioned kit is not stamped from here for the same reason stamp() refuses it -- that
+    # string would be compared against every future kit and never match.
     if not changed and not added:
+        if new_version != "unversioned" and installed != new_version:
+            if args.apply:
+                write_stamp(new_version)
+                print(f"every script is already current · stamp corrected: "
+                      f"{installed} → {new_version}")
+            else:
+                print(f"every script is already current, but the stamp still reads {installed}. "
+                      f"Re-run with --apply to record {new_version}.")
+            return 0
         print("nothing to do.")
         return 0
     if not args.apply:
@@ -4640,6 +4836,108 @@ class CheckFreshnessTest(unittest.TestCase):
         self.assertIn("1 unclassified", out)
         self.assertIn("mein_werkzeug", out)
 
+    def write_tool(self, name, body="from vault_paths import log_run\nlog_run(v, 'x', 'ok')\n"):
+        """A script in the vault's own tool folder. Never executed -- only read."""
+        target = self.log.parent / name
+        target.parent.mkdir(parents=True, exist_ok=True)
+        target.write_text(body, encoding="utf-8", newline="\n")
+        return target
+
+    # ------------------------------------------- the population, not only the log (#24)
+
+    def test_a_tool_that_never_ran_is_still_reported_as_unclassified(self):
+        """#24, and the check used to confirm its own silence over exactly this case.
+
+        `unclassified` was derived from the log alone. A tool no chain calls never writes a line,
+        so it could not appear in `seen`, so it could not be reported -- and the tools that fall
+        out of a chain are precisely the ones that never log. Measured 2026-07-30 against a real
+        vault: `0 unclassified` while count_tokens.py sat in the folder in neither list.
+
+        Exit stays 0. That is decided, not incidental: an unclassified tool has not failed, and a
+        chain that goes red the first time a user adds a tool of their own gets switched off.
+
+        Recipe without the fix, measured on this machine 2026-07-30: drop `| on_disk` from the
+        `unclassified` line in main(). This case goes red on the count alone -- the tool is on
+        disk, in no list, and the report says `0 unclassified` with exit 0 either way, which is
+        why nothing noticed.
+        """
+        self.write_log(f"{stamp(1)}\tbuild_index\tok\t0 defects")
+        self.write_tool("mein_werkzeug.py")
+        code, out, err = run_tool("check_freshness.py", "--vault", self.vault,
+                                  "--jobs", "build_index")
+        self.assertEqual(code, 0, out + err)
+        self.assertIn("1 unclassified", out)
+        self.assertIn("mein_werkzeug", out)
+
+    def test_a_tool_that_cannot_log_is_not_asked_to_be_classified(self):
+        """The population's edge, and the healthy control for the case above.
+
+        Without it, the fix above would name every `.py` in the folder -- run_suites, acceptance,
+        verify_setup and upgrade all run, all reach a verdict and none of them log, so all four
+        would sit in the report permanently. Four standing lines above the one line that means
+        something is how a report stops being read.
+
+        Asking whether a tool that cannot log is watched has no answer that changes anything: it
+        can never be late, because it can never be in the log at all.
+        """
+        self.write_log(f"{stamp(1)}\tbuild_index\tok\t0 defects")
+        self.write_tool("stilles_werkzeug.py", "print('reaches a verdict, writes no line')\n")
+        code, out, err = run_tool("check_freshness.py", "--vault", self.vault,
+                                  "--jobs", "build_index")
+        self.assertEqual(code, 0, out + err)
+        self.assertIn("0 unclassified", out)
+        self.assertNotIn("stilles_werkzeug", out)
+
+    def test_a_suite_in_the_tool_folder_is_not_a_job(self):
+        """`test_X.py` is what run_suites.py collects, not something a scheduler runs.
+
+        Excluded structurally rather than by taste: a suite that exercises log_run() would
+        otherwise ask to be classified as a scheduled job, and the user's only way out would be
+        to declare every suite in their config.
+        """
+        self.write_log(f"{stamp(1)}\tbuild_index\tok\t0 defects")
+        self.write_tool("test_mein_werkzeug.py")
+        code, out, err = run_tool("check_freshness.py", "--vault", self.vault,
+                                  "--jobs", "build_index")
+        self.assertEqual(code, 0, out + err)
+        self.assertIn("0 unclassified", out)
+        self.assertNotIn("test_mein_werkzeug", out)
+
+    def test_the_third_list_takes_a_tool_out_of_the_unclassified_line(self):
+        """`not_invoked` is the decision, and this is what making it is worth.
+
+        The same key build_kit.py's chain check reads: one structure, so "deliberately outside
+        the chain" is stated once and cannot be answered two different ways by two tools.
+        """
+        self.write_config('{"jobs": ["build_index"], '
+                          '"not_invoked": {"mein_werkzeug": "ein Modul, kein Kommando"}}')
+        self.write_log(f"{stamp(1)}\tbuild_index\tok\t0 defects")
+        self.write_tool("mein_werkzeug.py")
+        code, out, err = run_tool("check_freshness.py", "--vault", self.vault)
+        self.assertEqual(code, 0, out + err)
+        self.assertIn("1 not invoked", out)
+        self.assertIn("0 unclassified", out)
+
+    def test_a_job_watched_and_declared_uncalled_stops_the_run(self):
+        """The pair check extended to three lists, on the pair that did not exist before.
+
+        A tool cannot both be called by no chain and be the thing a chain is watched for. Same
+        reasoning as the watched/on-demand clash: picking a winner leaves the other entry sitting
+        in the file doing nothing, and no run can then show which statement applies.
+
+        Recipe without the fix, measured on this machine 2026-07-30: reduce the `clash` set back
+        to `set(configured) & set(on_demand)`. This case goes red -- the run reports the job as
+        watched and never mentions that its own config also calls it uninvoked.
+        """
+        self.write_config('{"jobs": ["build_index", "mein_werkzeug"], '
+                          '"not_invoked": {"mein_werkzeug": "kein Kommando"}}')
+        self.write_log(f"{stamp(1)}\tbuild_index\tok\t0 defects")
+        code, out, err = run_tool("check_freshness.py", "--vault", self.vault)
+        self.assertEqual(code, 2, out + err)
+        self.assertIn("mein_werkzeug", err)
+        self.assertIn("jobs.json", err)
+        self.assertNotIn("jobs fresh", out, "it measured anyway over a config it called broken")
+
     def test_a_job_in_both_lists_stops_the_run_instead_of_picking_one(self):
         """Exit 2, and deliberately not "watched wins".
 
@@ -5042,7 +5340,16 @@ class UpgradeTest(unittest.TestCase):
     # ------------------------------------------------------------------ control
 
     def test_healthy_control_reports_no_change(self):
+        """Identical scripts AND a matching stamp: the only state with nothing to say.
+
+        The `--stamp` line was added on 2026-07-30 with the #23 fix. Without it this fixture was
+        a folder that had never been stamped at all -- `installed: unknown` -- and it passed,
+        because the old code returned on `nothing to do` before ever comparing the two versions.
+        That is the defect, sitting inside the healthy control: the case this test called healthy
+        was one where the tool could not say which kit the folder came from.
+        """
         kit = kit_file(self.tmp / "kit.md", {"build_index.py": "print('old')"})
+        run_upgrade(self.tools, "--stamp", kit)
         code, out, err = run_upgrade(self.tools, kit)
         self.assertEqual(code, 0, err)
         self.assertIn("1 unchanged", out)
@@ -5120,6 +5427,141 @@ class UpgradeTest(unittest.TestCase):
         kit = kit_file(self.tmp / "kit.md", {"build_index.py": body})
         run_upgrade(self.tools, kit, "--apply")
         self.assertIn("Übergröße", (self.tools / "build_index.py").read_text(encoding="utf-8"))
+
+    # ------------------------------------------------- what a Windows editor leaves behind
+
+    def test_a_file_with_a_bom_is_not_reported_as_changed(self):
+        """The silent half of #22: a BOM does not raise, it just makes the comparison fail.
+
+        The user opened the file in Notepad, or wrote it once with PowerShell 5.1's
+        `Set-Content -Encoding utf8`. The bytes of the code are identical; the file gains a
+        leading \\ufeff that `utf-8` keeps and `strip()` does not remove -- "\\ufeff".isspace()
+        is False. classify() then lists an untouched file under `overwrite`, and the user is
+        told they have a local edit they never made.
+
+        Undo recipe, measured on this machine 2026-07-30: in upgrade.py's classify(), read the
+        target with `encoding="utf-8"` again. test_upgrade 13/15 -- this case fails with
+        `1 would be overwritten` where it expects `1 unchanged`, and the undecodable case goes
+        with it, because dropping the replacement handler is part of the same reversal. The run
+        stays exit 0 throughout, which is why nothing caught it before.
+        """
+        (self.tools / "build_index.py").write_text("print('old')\n",
+                                                   encoding="utf-8-sig", newline="\n")
+        kit = kit_file(self.tmp / "kit.md", {"build_index.py": "print('old')"})
+        code, out, err = run_upgrade(self.tools, kit)
+        self.assertEqual(code, 0, err)
+        self.assertIn("1 unchanged", out)
+        self.assertNotIn("overwrite", out)
+
+    def test_an_undecodable_file_is_named_rather_than_crashing_the_run(self):
+        """The loud half of #22, and the only one that ever raised.
+
+        One invalid byte anywhere in the tool folder took the whole update down with a
+        UnicodeDecodeError out of classify(), which names no file -- so the message pointed at
+        nothing the user could act on, and the other twenty-one scripts went unexamined.
+        `errors="replace"` turns it into an ordinary mismatch: the file is named under
+        `overwrite`, which is exactly right, because overwriting it is the repair.
+
+        Undo recipe, measured on this machine 2026-07-30: drop `errors="replace"` from
+        classify(). This test fails with a non-zero exit and `UnicodeDecodeError` on stderr
+        instead of the expected listing.
+        """
+        (self.tools / "build_index.py").write_bytes(b"print('\xff\xfe not utf-8')\n")
+        kit = kit_file(self.tmp / "kit.md", {"build_index.py": "print('old')"})
+        code, out, err = run_upgrade(self.tools, kit)
+        self.assertEqual(code, 0, f"an unreadable byte stopped the run:\n{err}")
+        self.assertIn("overwrite  build_index.py", out)
+        self.assertNotIn("UnicodeDecodeError", err)
+
+    # ------------------------------------- a newer kit whose scripts happen to be identical
+
+    def test_a_newer_kit_with_identical_scripts_still_reports_the_stale_stamp(self):
+        """#23, the empty cell: version differs, blocks do not.
+
+        A release that only edited the contract or the SECTION 10 header ships new bytes and
+        the same scripts. The old code returned on `nothing to do` before the --apply branch,
+        so write_stamp() was unreachable on this path and the folder kept the previous version
+        forever -- while reporting itself fully up to date, which is what hid it.
+
+        Nothing is written here, because that promise holds without --apply. It is said.
+
+        THE ASSERTIONS ARE ON THE SENTENCE, NOT ON THE HEX. Written the obvious way -- assert both
+        version strings appear in the output -- this test passed against the broken code, because
+        the header line `installed: aaaaaaaaaaaa · kit file: bbbbbbbbbbbb` already contains both
+        and always did. It was caught by running the undo recipe rather than by reading it: only
+        the --apply case below went red, and a recipe that moves one test when it claims two is
+        the same defect this suite exists for, one level up.
+
+        Undo recipe, measured on this machine 2026-07-30: replace the stamp comparison in
+        upgrade.py's main() with `if False:`, which is what returning early amounts to.
+        test_upgrade 12/15 -- this case, the unstamped one and the --apply one -- and
+        verify_setup 13/14 at step 13. It was 14/15 before the assertions above were moved off
+        the header line, and the difference between those two numbers is the whole reason this
+        recipe gets run instead of reasoned about.
+        """
+        run_upgrade(self.tools, "--stamp",
+                    kit_file(self.tmp / "old.md", {"build_index.py": "print('old')"},
+                             version="aaaaaaaaaaaa"))
+        kit = kit_file(self.tmp / "kit.md", {"build_index.py": "print('old')"},
+                       version="bbbbbbbbbbbb")
+        code, out, err = run_upgrade(self.tools, kit)
+        self.assertEqual(code, 0, err)
+        self.assertIn("stamp still reads aaaaaaaaaaaa", out, "the stale stamp was not called out")
+        self.assertIn("record bbbbbbbbbbbb", out, "the repair was not named")
+        self.assertNotIn("nothing to do", out, "a folder on the wrong version was called done")
+        self.assertEqual((self.tools / "kit-version.txt").read_text(encoding="utf-8").strip(),
+                         "aaaaaaaaaaaa", "the stamp was rewritten without --apply")
+
+    def test_apply_corrects_the_stamp_when_only_the_version_moved(self):
+        """The other half: --apply has to actually fix what the report named."""
+        run_upgrade(self.tools, "--stamp",
+                    kit_file(self.tmp / "old.md", {"build_index.py": "print('old')"},
+                             version="aaaaaaaaaaaa"))
+        kit = kit_file(self.tmp / "kit.md", {"build_index.py": "print('old')"},
+                       version="bbbbbbbbbbbb")
+        code, out, err = run_upgrade(self.tools, kit, "--apply")
+        self.assertEqual(code, 0, err)
+        self.assertEqual((self.tools / "kit-version.txt").read_text(encoding="utf-8").strip(),
+                         "bbbbbbbbbbbb")
+        self.assertEqual((self.tools / "build_index.py").read_text(encoding="utf-8"),
+                         "print('old')\n", "a script was rewritten over an identical block")
+
+    def test_an_unstamped_folder_with_identical_scripts_is_told_it_has_no_stamp(self):
+        """The same gap from the other end: no stamp at all, scripts already current.
+
+        Found by the healthy control above when the #23 fix went in, not by design. A folder
+        installed before `--stamp` existed, or by a setup that skipped that line, answers
+        `installed: unknown` -- and on this path the old code returned before saying so. The
+        repair is the same one word of output; `--apply` writes it.
+
+        Asserted on the sentence rather than on the words, for the reason spelled out two tests
+        up: `installed: unknown · kit file: dddddddddddd` is the header line, so both strings are
+        present whether or not the tool ever compares them.
+        """
+        kit = kit_file(self.tmp / "kit.md", {"build_index.py": "print('old')"},
+                       version="dddddddddddd")
+        code, out, err = run_upgrade(self.tools, kit)
+        self.assertEqual(code, 0, err)
+        self.assertIn("stamp still reads unknown", out)
+        self.assertIn("record dddddddddddd", out)
+        self.assertNotIn("nothing to do", out)
+        self.assertFalse((self.tools / "kit-version.txt").exists(),
+                         "a stamp was written without --apply")
+
+    def test_a_matching_stamp_and_identical_scripts_stay_quiet(self):
+        """The healthy control for the two above.
+
+        Without it they only prove the tool complains, not that it complains for a reason: a
+        version comparison that fires when the versions agree would pass both of them and turn
+        every run into an offer to fix what is already right.
+        """
+        kit = kit_file(self.tmp / "kit.md", {"build_index.py": "print('old')"},
+                       version="cccccccccccc")
+        run_upgrade(self.tools, "--stamp", kit)
+        code, out, err = run_upgrade(self.tools, kit)
+        self.assertEqual(code, 0, err)
+        self.assertIn("nothing to do", out)
+        self.assertNotIn("--apply", out, "a folder at the right version was offered a correction")
 
 
 if __name__ == "__main__":

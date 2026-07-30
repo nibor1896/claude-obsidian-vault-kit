@@ -344,8 +344,8 @@ def _s13(root):
                      f"{SETUP_KIT_VERSION!r} the kit file it was installed from carried")
 
     # A kit file carrying one block byte-identical to what is installed: upgrade.py then has
-    # nothing to write, and the only thing under test is the line it prints first. It lives
-    # outside the vault, which is where a downloaded kit file actually sits.
+    # nothing to write, so the whole answer is what it says. It lives outside the vault, which is
+    # where a downloaded kit file actually sits.
     jobs = (tools / "jobs.json").read_text(encoding="utf-8").rstrip()
     kit = root.parent / "newer-kit.md"
     kit.write_text(f"<!-- kit-version: ffffffffffff -->\n\n### `jobs.json`\n\n```json\n{jobs}\n```\n",
@@ -354,6 +354,21 @@ def _s13(root):
                     label="upgrade.py")
     if f"installed: {installed}" not in out or "unknown" in out:
         raise Failed(f"upgrade.py did not read the installed stamp back:\n{out}")
+
+    # SHARPENED 2026-07-30, NOT EXTENDED (#23). This fixture was already the exact case -- a
+    # newer kit whose one block is identical to what is on disk -- and it only ever read the
+    # first printed line. Everything after it went unexamined, which is where the defect lived:
+    # upgrade.py returned on `nothing to do` before it ever compared ffffffffffff against the
+    # stamp, so a release that changed no script left the folder on the previous version and
+    # said nothing. A new step would have moved 14/14 in three sources for no new fixture.
+    #
+    # Undo recipe, measured on this machine 2026-07-30: replace the stamp comparison in
+    # upgrade.py's main() with `if False:`, which is what the early return amounted to.
+    # verify_setup 13/14 here, and test_upgrade 12/15.
+    if "ffffffffffff" not in out:
+        raise Failed(f"upgrade.py did not say the kit carries a version the folder does not:\n{out}")
+    if stamp.read_text(encoding="utf-8-sig").strip() != installed:
+        raise Failed("upgrade.py rewrote kit-version.txt without --apply")
 
 
 @step("14 a /vaultkit command is written once, carries this vault's own paths, and is left alone")

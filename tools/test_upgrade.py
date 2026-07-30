@@ -50,7 +50,16 @@ class UpgradeTest(unittest.TestCase):
     # ------------------------------------------------------------------ control
 
     def test_healthy_control_reports_no_change(self):
+        """Identical scripts AND a matching stamp: the only state with nothing to say.
+
+        The `--stamp` line was added on 2026-07-30 with the #23 fix. Without it this fixture was
+        a folder that had never been stamped at all -- `installed: unknown` -- and it passed,
+        because the old code returned on `nothing to do` before ever comparing the two versions.
+        That is the defect, sitting inside the healthy control: the case this test called healthy
+        was one where the tool could not say which kit the folder came from.
+        """
         kit = kit_file(self.tmp / "kit.md", {"build_index.py": "print('old')"})
+        run_upgrade(self.tools, "--stamp", kit)
         code, out, err = run_upgrade(self.tools, kit)
         self.assertEqual(code, 0, err)
         self.assertIn("1 unchanged", out)
@@ -128,6 +137,141 @@ class UpgradeTest(unittest.TestCase):
         kit = kit_file(self.tmp / "kit.md", {"build_index.py": body})
         run_upgrade(self.tools, kit, "--apply")
         self.assertIn("Übergröße", (self.tools / "build_index.py").read_text(encoding="utf-8"))
+
+    # ------------------------------------------------- what a Windows editor leaves behind
+
+    def test_a_file_with_a_bom_is_not_reported_as_changed(self):
+        """The silent half of #22: a BOM does not raise, it just makes the comparison fail.
+
+        The user opened the file in Notepad, or wrote it once with PowerShell 5.1's
+        `Set-Content -Encoding utf8`. The bytes of the code are identical; the file gains a
+        leading \\ufeff that `utf-8` keeps and `strip()` does not remove -- "\\ufeff".isspace()
+        is False. classify() then lists an untouched file under `overwrite`, and the user is
+        told they have a local edit they never made.
+
+        Undo recipe, measured on this machine 2026-07-30: in upgrade.py's classify(), read the
+        target with `encoding="utf-8"` again. test_upgrade 13/15 -- this case fails with
+        `1 would be overwritten` where it expects `1 unchanged`, and the undecodable case goes
+        with it, because dropping the replacement handler is part of the same reversal. The run
+        stays exit 0 throughout, which is why nothing caught it before.
+        """
+        (self.tools / "build_index.py").write_text("print('old')\n",
+                                                   encoding="utf-8-sig", newline="\n")
+        kit = kit_file(self.tmp / "kit.md", {"build_index.py": "print('old')"})
+        code, out, err = run_upgrade(self.tools, kit)
+        self.assertEqual(code, 0, err)
+        self.assertIn("1 unchanged", out)
+        self.assertNotIn("overwrite", out)
+
+    def test_an_undecodable_file_is_named_rather_than_crashing_the_run(self):
+        """The loud half of #22, and the only one that ever raised.
+
+        One invalid byte anywhere in the tool folder took the whole update down with a
+        UnicodeDecodeError out of classify(), which names no file -- so the message pointed at
+        nothing the user could act on, and the other twenty-one scripts went unexamined.
+        `errors="replace"` turns it into an ordinary mismatch: the file is named under
+        `overwrite`, which is exactly right, because overwriting it is the repair.
+
+        Undo recipe, measured on this machine 2026-07-30: drop `errors="replace"` from
+        classify(). This test fails with a non-zero exit and `UnicodeDecodeError` on stderr
+        instead of the expected listing.
+        """
+        (self.tools / "build_index.py").write_bytes(b"print('\xff\xfe not utf-8')\n")
+        kit = kit_file(self.tmp / "kit.md", {"build_index.py": "print('old')"})
+        code, out, err = run_upgrade(self.tools, kit)
+        self.assertEqual(code, 0, f"an unreadable byte stopped the run:\n{err}")
+        self.assertIn("overwrite  build_index.py", out)
+        self.assertNotIn("UnicodeDecodeError", err)
+
+    # ------------------------------------- a newer kit whose scripts happen to be identical
+
+    def test_a_newer_kit_with_identical_scripts_still_reports_the_stale_stamp(self):
+        """#23, the empty cell: version differs, blocks do not.
+
+        A release that only edited the contract or the SECTION 10 header ships new bytes and
+        the same scripts. The old code returned on `nothing to do` before the --apply branch,
+        so write_stamp() was unreachable on this path and the folder kept the previous version
+        forever -- while reporting itself fully up to date, which is what hid it.
+
+        Nothing is written here, because that promise holds without --apply. It is said.
+
+        THE ASSERTIONS ARE ON THE SENTENCE, NOT ON THE HEX. Written the obvious way -- assert both
+        version strings appear in the output -- this test passed against the broken code, because
+        the header line `installed: aaaaaaaaaaaa · kit file: bbbbbbbbbbbb` already contains both
+        and always did. It was caught by running the undo recipe rather than by reading it: only
+        the --apply case below went red, and a recipe that moves one test when it claims two is
+        the same defect this suite exists for, one level up.
+
+        Undo recipe, measured on this machine 2026-07-30: replace the stamp comparison in
+        upgrade.py's main() with `if False:`, which is what returning early amounts to.
+        test_upgrade 12/15 -- this case, the unstamped one and the --apply one -- and
+        verify_setup 13/14 at step 13. It was 14/15 before the assertions above were moved off
+        the header line, and the difference between those two numbers is the whole reason this
+        recipe gets run instead of reasoned about.
+        """
+        run_upgrade(self.tools, "--stamp",
+                    kit_file(self.tmp / "old.md", {"build_index.py": "print('old')"},
+                             version="aaaaaaaaaaaa"))
+        kit = kit_file(self.tmp / "kit.md", {"build_index.py": "print('old')"},
+                       version="bbbbbbbbbbbb")
+        code, out, err = run_upgrade(self.tools, kit)
+        self.assertEqual(code, 0, err)
+        self.assertIn("stamp still reads aaaaaaaaaaaa", out, "the stale stamp was not called out")
+        self.assertIn("record bbbbbbbbbbbb", out, "the repair was not named")
+        self.assertNotIn("nothing to do", out, "a folder on the wrong version was called done")
+        self.assertEqual((self.tools / "kit-version.txt").read_text(encoding="utf-8").strip(),
+                         "aaaaaaaaaaaa", "the stamp was rewritten without --apply")
+
+    def test_apply_corrects_the_stamp_when_only_the_version_moved(self):
+        """The other half: --apply has to actually fix what the report named."""
+        run_upgrade(self.tools, "--stamp",
+                    kit_file(self.tmp / "old.md", {"build_index.py": "print('old')"},
+                             version="aaaaaaaaaaaa"))
+        kit = kit_file(self.tmp / "kit.md", {"build_index.py": "print('old')"},
+                       version="bbbbbbbbbbbb")
+        code, out, err = run_upgrade(self.tools, kit, "--apply")
+        self.assertEqual(code, 0, err)
+        self.assertEqual((self.tools / "kit-version.txt").read_text(encoding="utf-8").strip(),
+                         "bbbbbbbbbbbb")
+        self.assertEqual((self.tools / "build_index.py").read_text(encoding="utf-8"),
+                         "print('old')\n", "a script was rewritten over an identical block")
+
+    def test_an_unstamped_folder_with_identical_scripts_is_told_it_has_no_stamp(self):
+        """The same gap from the other end: no stamp at all, scripts already current.
+
+        Found by the healthy control above when the #23 fix went in, not by design. A folder
+        installed before `--stamp` existed, or by a setup that skipped that line, answers
+        `installed: unknown` -- and on this path the old code returned before saying so. The
+        repair is the same one word of output; `--apply` writes it.
+
+        Asserted on the sentence rather than on the words, for the reason spelled out two tests
+        up: `installed: unknown · kit file: dddddddddddd` is the header line, so both strings are
+        present whether or not the tool ever compares them.
+        """
+        kit = kit_file(self.tmp / "kit.md", {"build_index.py": "print('old')"},
+                       version="dddddddddddd")
+        code, out, err = run_upgrade(self.tools, kit)
+        self.assertEqual(code, 0, err)
+        self.assertIn("stamp still reads unknown", out)
+        self.assertIn("record dddddddddddd", out)
+        self.assertNotIn("nothing to do", out)
+        self.assertFalse((self.tools / "kit-version.txt").exists(),
+                         "a stamp was written without --apply")
+
+    def test_a_matching_stamp_and_identical_scripts_stay_quiet(self):
+        """The healthy control for the two above.
+
+        Without it they only prove the tool complains, not that it complains for a reason: a
+        version comparison that fires when the versions agree would pass both of them and turn
+        every run into an offer to fix what is already right.
+        """
+        kit = kit_file(self.tmp / "kit.md", {"build_index.py": "print('old')"},
+                       version="cccccccccccc")
+        run_upgrade(self.tools, "--stamp", kit)
+        code, out, err = run_upgrade(self.tools, kit)
+        self.assertEqual(code, 0, err)
+        self.assertIn("nothing to do", out)
+        self.assertNotIn("--apply", out, "a folder at the right version was offered a correction")
 
 
 if __name__ == "__main__":

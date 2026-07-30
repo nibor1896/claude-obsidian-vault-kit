@@ -664,6 +664,34 @@ whole section is about.
   `\0`, and pass bytes. Get this wrong and every note with an umlaut in its name silently leaves the
   denominator — which is exactly the class of file a knowledge vault is full of.
 
+### `check_duplicates.py` in particular — the threshold is a knob nobody has turned yet
+
+**The default is `0.75`, and it is unvalidated. Say so when you report the result.** It was chosen
+as a plausible starting value, not derived from a measurement, and nothing since has tested it
+against a body of notes large enough for the answer to mean anything. On the runs that exist it
+reported `0 pairs flagged` across five and six notes — on that denominator almost any threshold
+reports zero, so the run confirms the arithmetic and nothing else.
+
+This is not a defect to fix before shipping; it is a number whose status has to travel with it. A
+threshold that reads as tuned invites the opposite of what it deserves: the user takes `0 flagged`
+as evidence that there are no duplicates, when it is evidence only that nothing crossed a line
+nobody has placed.
+
+**What would validate it**, so this is a measurement someone can actually run rather than a
+disclaimer:
+
+- A vault with **at least a few hundred notes** that a person knows well enough to judge.
+- The check run **at several thresholds over the same notes** — 0.6, 0.7, 0.75, 0.8, 0.9 — with the
+  flagged pairs recorded per threshold, not just the counts.
+- Each flagged pair judged by hand: a real duplicate, or two notes that legitimately share
+  boilerplate. **Both error directions are counted.** The interesting failure is not the pair it
+  flags wrongly, it is the pair it misses, and a run that only counts hits cannot see those.
+- The result written down **with its denominator and the vault it came from**. A threshold tuned on
+  one person's writing is not a universal constant, and the next vault may want a different one.
+
+Until that exists, `--threshold` is the honest interface: the number is exposed on the command line
+precisely because it is not settled.
+
 ### `check_freshness.py` in particular
 
 Any job on a schedule (task scheduler, cron, launchd) writes a line to an append-only log on **every
@@ -671,22 +699,28 @@ run, including the healthy ones**. `check_freshness.py` reads that log and repor
 last healthy run per job, against a threshold the user sets. Without this, a scheduler that quietly
 stopped firing looks identical to one that is fine.
 
-**Logging and being watched are two different lists, and `jobs.json` carries both.** Every tool
-writes a line; only a tool that runs on a schedule can be *late*. Put the on-demand ones under an
-age limit and the report is red every single day — which is the fastest way to get the whole check
-switched off, and a check nobody runs is worth less than none. So `jobs` is what must be fresh,
-`on_demand` is what logs and is never late, and each on-demand entry carries its reason as its
-value, because JSON has no comments and an exception without a reason is indistinguishable from an
-oversight.
+**Logging and being watched are two different things, and `jobs.json` carries three lists.** Every
+tool writes a line; only a tool that runs on a schedule can be *late*. Put the on-demand ones under
+an age limit and the report is red every single day — which is the fastest way to get the whole
+check switched off, and a check nobody runs is worth less than none. So `jobs` is what must be
+fresh, `on_demand` is what logs and is never late, `not_invoked` is what no chain calls at all, and
+each entry in the latter two carries its reason as its value, because JSON has no comments and an
+exception without a reason is indistinguishable from an oversight.
 
-Three consequences, and each one is a behaviour, not a preference:
+Four consequences, and each one is a behaviour, not a preference:
 
-- **A name in both lists stops the tool with exit 2.** Not "watched wins": that would be an
-  invisible decision, with the on-demand entry sitting there doing nothing and no run able to show
-  which of the two statements applies.
-- **A name in neither is reported, and does not change the exit code.** That line is the only real
-  signal in this area — somebody built a tool and nobody decided whether it is watched. Turning it
-  red would make the chain permanently red for every user who adds a tool of their own.
+- **A name in two of the lists stops the tool with exit 2.** Not "watched wins": that would be an
+  invisible decision, with the other entry sitting there doing nothing and no run able to show
+  which of the statements applies.
+- **A name in none of them is reported, and does not change the exit code.** That line is the only
+  real signal in this area — somebody built a tool and nobody decided whether it is watched.
+  Turning it red would make the chain permanently red for every user who adds a tool of their own.
+- **That report is read from the tool folder, not only from the run log.** A tool that no chain
+  calls never writes a line, so a population taken from the log alone cannot contain the one thing
+  the report exists to name — the check confirms its own silence, and the tools it cannot see are
+  exactly the ones that fell out of the chain. Measured on one setup: `0 unclassified` over a
+  folder holding a tool that was in no list at all. Only tools that *can* log are counted, because
+  asking whether something that never logs is late has no answer that changes anything.
 - **The check itself logs, and stands in `on_demand`.** Without its own line, "the freshness check
   runs in the chain" is a claim about a command file: delete the step and it looks exactly like a
   check that runs and finds nothing. Watching the watcher would be the regress; logging is not

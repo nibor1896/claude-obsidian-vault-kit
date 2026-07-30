@@ -42,8 +42,14 @@ notes, no demo content, nothing invented.
   the index.
 - Guard scripts that each refuse a silent zero: link resolution, duplicate detection, freshness of
   scheduled jobs, and a test runner that will not report green over zero collected suites.
+- A note template per project, so the frontmatter header is filled in before you type anything.
 - A workflow document in your own words, so the next session reads it instead of re-deriving
   everything.
+
+Two of those are quiet enough to miss when they work — the templates, and the version stamp that
+lets a later kit tell you what an update would change. Both are written up for humans in
+[docs/updating-and-templates.md](docs/updating-and-templates.md); the file you hand to Claude is
+written for Claude.
 
 ## The part that actually matters
 
