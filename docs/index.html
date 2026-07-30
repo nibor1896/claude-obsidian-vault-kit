@@ -16,7 +16,7 @@
 <link rel="preconnect" href="https://cdn.fontshare.com" crossorigin>
 <link href="https://api.fontshare.com/v2/css?f[]=cabinet-grotesk@500,700,800&display=swap" rel="stylesheet">
 <style>
-  /* z-scale: 10 hero copy · 40 nav · 60 grain · 100 skip-link */
+  /* z-scale: 0 strand canvas · 10 content · 40 nav · 60 grain · 100 skip-link */
   :root{
     --bg:#070708;
     --ink:#edebe8;
@@ -52,6 +52,14 @@
   body::after{content:"";position:fixed;inset:0;z-index:60;pointer-events:none;opacity:.045;
     background-image:url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='160' height='160'%3E%3Cfilter id='n'%3E%3CfeTurbulence type='fractalNoise' baseFrequency='0.9' numOctaves='2'/%3E%3C/filter%3E%3Crect width='160' height='160' filter='url(%23n)'/%3E%3C/svg%3E")}
 
+  /* ---------- strand canvas, behind the whole page ---------- */
+  #web{position:fixed;inset:0;width:100%;height:100%;display:block;pointer-events:none;z-index:0}
+  .glow-fallback{display:none;position:fixed;inset:0;pointer-events:none;z-index:0;
+    background:
+      radial-gradient(42% 46% at 68% 38%,rgba(217,119,87,.22),transparent 70%),
+      radial-gradient(38% 42% at 42% 55%,rgba(124,58,237,.20),transparent 70%)}
+  .no-webgl .glow-fallback{display:block}
+
   /* ---------- nav ---------- */
   nav{position:fixed;top:0;left:0;right:0;z-index:40;height:64px;
     display:flex;align-items:center;justify-content:space-between;
@@ -67,13 +75,7 @@
   nav .gh:hover{color:var(--ink)}
 
   /* ---------- hero ---------- */
-  .hero{position:relative;min-height:100dvh;overflow:hidden}
-  #web{position:absolute;inset:0;width:100%;height:100%;display:block;pointer-events:none}
-  .glow-fallback{display:none;position:absolute;inset:0;pointer-events:none;
-    background:
-      radial-gradient(42% 46% at 68% 38%,rgba(217,119,87,.22),transparent 70%),
-      radial-gradient(38% 42% at 42% 55%,rgba(124,58,237,.20),transparent 70%)}
-  .no-webgl .glow-fallback{display:block}
+  .hero{position:relative;min-height:100dvh}
   .hero .scrim{position:absolute;inset:0;pointer-events:none;
     background:radial-gradient(58% 62% at 22% 78%,rgba(7,7,8,.82),transparent 72%)}
   .hero-copy{position:absolute;z-index:10;
@@ -84,7 +86,8 @@
   .line{display:block;overflow:hidden}
   .line>span{display:block;transform:translateY(0)}
   .sub{margin-top:1.4rem;max-width:34rem;font-size:clamp(1rem,1.5vw,1.2rem);
-    color:var(--dim);line-height:1.55}
+    color:var(--dim);line-height:1.55;
+    text-shadow:0 2px 28px rgba(7,7,8,.85),0 0 10px rgba(7,7,8,.6)}
   .cta-row{margin-top:2.1rem;display:flex;align-items:center;gap:1.5rem;flex-wrap:wrap}
   .btn{display:inline-flex;align-items:center;gap:.6rem;white-space:nowrap;
     background:var(--ink);color:#0a0a0a;font-weight:700;font-size:1rem;
@@ -95,25 +98,30 @@
   .btn .arr{transition:transform .25s cubic-bezier(.16,1,.3,1)}
   .btn:hover .arr{transform:translateX(3px)}
 
+  /* ---------- content above the strand ---------- */
+  main,footer{position:relative;z-index:10}
+
   /* ---------- principles ---------- */
-  .principles{padding:clamp(7rem,16vh,12rem) clamp(1.25rem,4vw,3rem)}
+  .principles{padding:clamp(5rem,11vh,8rem) clamp(1.25rem,4vw,3rem)}
   .statement{font-weight:800;letter-spacing:-.03em;line-height:1.04;
     text-wrap:balance;
     font-size:clamp(2rem,5.6vw,4.6rem);max-width:22ch;
-    margin:0 auto clamp(4.5rem,11vh,8rem)}
+    margin:0 auto clamp(3.2rem,8vh,5.5rem);
+    text-shadow:0 2px 28px rgba(7,7,8,.85),0 0 10px rgba(7,7,8,.6)}
   .statement:last-child{margin-bottom:0}
   .statement:nth-child(odd){margin-left:0}
   .statement:nth-child(even){margin-right:0;text-align:right}
   .statement .acc{font-style:normal;color:var(--accent);transition:color .3s linear}
 
   /* ---------- use it ---------- */
-  .use{padding:clamp(5rem,12vh,9rem) clamp(1.25rem,4vw,3rem) clamp(7rem,14vh,11rem);
+  .use{padding:clamp(4rem,9vh,7rem) clamp(1.25rem,4vw,3rem) clamp(5rem,11vh,8rem);
     border-top:1px solid var(--hair)}
   .use-inner{max-width:72rem;margin:0 auto}
   .use h2{font-weight:700;font-size:1.05rem;color:var(--dim);letter-spacing:-.01em}
-  .steps{list-style:none;margin-top:2.6rem}
+  .steps{list-style:none;margin-top:2.2rem}
   .steps li{font-weight:700;letter-spacing:-.02em;line-height:1.15;
-    font-size:clamp(1.6rem,3.8vw,3rem);padding:1.15rem 0;color:var(--ink)}
+    font-size:clamp(1.6rem,3.8vw,3rem);padding:1.05rem 0;color:var(--ink);
+    text-shadow:0 2px 28px rgba(7,7,8,.85),0 0 10px rgba(7,7,8,.6)}
   .steps li q{color:var(--accent);transition:color .3s linear;font-style:italic;quotes:"\201C" "\201D"}
   .steps a{border-bottom:2px solid var(--faint);transition:border-color .25s}
   .steps a:hover{border-bottom-color:var(--accent)}
@@ -140,6 +148,9 @@
 <noscript><style>.glow-fallback{display:block}</style></noscript>
 <a class="skip" href="#main">Skip to content</a>
 
+<canvas id="web" aria-hidden="true"></canvas>
+<div class="glow-fallback" aria-hidden="true"></div>
+
 <nav id="nav" aria-label="Main">
   <a class="brand" href="https://github.com/nibor1896/claude-obsidian-vault-kit" aria-label="claude-obsidian-vault-kit on GitHub">
     <!-- Claude mark (Anthropic), original path via Simple Icons -->
@@ -152,8 +163,6 @@
 </nav>
 
 <header class="hero" id="hero">
-  <canvas id="web" aria-hidden="true"></canvas>
-  <div class="glow-fallback" aria-hidden="true"></div>
   <div class="scrim" aria-hidden="true"></div>
   <div class="hero-copy">
     <h1>
@@ -209,7 +218,8 @@ gsap.registerPlugin(ScrollTrigger);
 const reduced = matchMedia('(prefers-reduced-motion: reduce)').matches;
 
 /* ------------------------------------------------------------------ */
-/* neural map                                                          */
+/* the strand: one nerve fibre running the length of the page,         */
+/* weaving to the opposite side of each text block                     */
 /* ------------------------------------------------------------------ */
 const canvas = document.getElementById('web');
 let renderer = null;
@@ -227,98 +237,20 @@ if (renderer) {
 
   const scene = new THREE.Scene();
   const camera = new THREE.PerspectiveCamera(38, 1, 0.1, 100);
-  camera.position.set(0, 0, 7.4);
+  const CAM_Z = 7.4;
+  camera.position.set(0, 0, CAM_Z);
+  const VH = 2 * CAM_Z * Math.tan(THREE.MathUtils.degToRad(38 / 2)); /* world units per viewport height */
 
-  /* seeded rng so the map is the same sculpture on every visit */
   const mulberry32 = s => () => {
     s |= 0; s = (s + 0x6D2B79F5) | 0;
     let t = Math.imul(s ^ (s >>> 15), 1 | s);
     t = (t + Math.imul(t ^ (t >>> 7), 61 | t)) ^ t;
     return ((t ^ (t >>> 14)) >>> 0) / 4294967296;
   };
-  const rand = mulberry32(20260730);
-  const gauss = () => (rand() + rand() + rand() - 1.5) * 0.816;
-
-  const isSmall = innerWidth < 768;
-  const N_SHELL = isSmall ? 380 : 620;
-  const N_CORE = Math.floor(N_SHELL * 0.14);
-  const N = N_SHELL + N_CORE;
-
-  const pos = new Float32Array(N * 3);
-  const aMix = new Float32Array(N);
-  const aRand = new Float32Array(N);
-  const aScale = new Float32Array(N);
-
-  const GOLDEN = Math.PI * (3 - Math.sqrt(5));
-  for (let i = 0; i < N_SHELL; i++) {
-    const y0 = 1 - (i / (N_SHELL - 1)) * 2;
-    const r0 = Math.sqrt(Math.max(0, 1 - y0 * y0));
-    const th = GOLDEN * i;
-    let x = Math.cos(th) * r0 + gauss() * 0.05;
-    let y = y0 + gauss() * 0.05;
-    let z = Math.sin(th) * r0 + gauss() * 0.05;
-    /* cortical wrinkle: layered trig noise on the radius */
-    const w = 1
-      + 0.12 * Math.sin(x * 3.1 + z * 2.3)
-      + 0.08 * Math.sin(y * 4.7 - x * 1.9)
-      + 0.05 * Math.sin(z * 6.3 + y * 3.7);
-    const l = Math.hypot(x, y, z) || 1;
-    x = (x / l) * w; y = (y / l) * w; z = (z / l) * w;
-    /* hemispheres */
-    x *= 1.38; y *= 0.92; z *= 1.06;
-    x += Math.sign(x) * 0.10;
-    pos.set([x, y, z], i * 3);
-  }
-  for (let i = N_SHELL; i < N; i++) {
-    const r = Math.cbrt(rand()) * 0.85;
-    const u = rand() * 2 - 1, ph = rand() * Math.PI * 2;
-    const s = Math.sqrt(1 - u * u);
-    pos.set([Math.cos(ph) * s * r * 1.38, u * r * 0.92, Math.sin(ph) * s * r * 1.06], i * 3);
-  }
-  for (let i = 0; i < N; i++) {
-    const x = pos[i * 3], y = pos[i * 3 + 1], z = pos[i * 3 + 2];
-    aMix[i] = THREE.MathUtils.clamp((x * 0.55 + y * 0.3 + z * 0.15) * 0.5 + 0.5, 0, 1);
-    aRand[i] = rand();
-    aScale[i] = rand() < 0.06 ? 1.9 + rand() * 0.9 : 0.55 + rand() * 1.0;
-  }
-
-  /* edges: 2 nearest neighbours + a few long association fibres */
-  const edges = [];
-  const adj = Array.from({ length: N }, () => []);
-  const addEdge = (a, b) => {
-    if (a === b) return;
-    const k = a < b ? a * N + b : b * N + a;
-    if (addEdge.seen.has(k)) return;
-    addEdge.seen.add(k);
-    edges.push(a, b); adj[a].push(b); adj[b].push(a);
-  };
-  addEdge.seen = new Set();
-  const d2 = (a, b) => {
-    const dx = pos[a * 3] - pos[b * 3], dy = pos[a * 3 + 1] - pos[b * 3 + 1], dz = pos[a * 3 + 2] - pos[b * 3 + 2];
-    return dx * dx + dy * dy + dz * dz;
-  };
-  for (let i = 0; i < N; i++) {
-    let n1 = -1, n2 = -1, n3 = -1, b1 = Infinity, b2 = Infinity, b3 = Infinity;
-    for (let j = 0; j < N; j++) {
-      if (i === j) continue;
-      const dd = d2(i, j);
-      if (dd < b1) { b3 = b2; n3 = n2; b2 = b1; n2 = n1; b1 = dd; n1 = j; }
-      else if (dd < b2) { b3 = b2; n3 = n2; b2 = dd; n2 = j; }
-      else if (dd < b3) { b3 = dd; n3 = j; }
-    }
-    if (n1 >= 0 && b1 < 0.5) addEdge(i, n1);
-    if (n2 >= 0 && b2 < 0.5) addEdge(i, n2);
-    if (n3 >= 0 && b3 < 0.42) addEdge(i, n3);
-  }
-  for (let k = 0; k < (isSmall ? 22 : 40); k++) {
-    addEdge(Math.floor(rand() * N), Math.floor(rand() * N));
-  }
-  const E = edges.length / 2;
 
   const uniforms = {
     uPhase: { value: reduced ? 0.5 : -0.4 },
     uReveal: { value: reduced ? 1 : 0 },
-    uFade: { value: 1 },
     uTime: { value: 0 },
     uPR: { value: Math.min(devicePixelRatio, 2) },
   };
@@ -332,12 +264,6 @@ if (renderer) {
     float revealAt(float r, float reveal) { return smoothstep(r, r + 0.18, reveal); }
   `;
 
-  /* nodes */
-  const gPts = new THREE.BufferGeometry();
-  gPts.setAttribute('position', new THREE.BufferAttribute(pos, 3));
-  gPts.setAttribute('aMix', new THREE.BufferAttribute(aMix, 1));
-  gPts.setAttribute('aRand', new THREE.BufferAttribute(aRand, 1));
-  gPts.setAttribute('aScale', new THREE.BufferAttribute(aScale, 1));
   const mPts = new THREE.ShaderMaterial({
     uniforms, transparent: true, depthWrite: false, blending: THREE.AdditiveBlending,
     vertexShader: `
@@ -352,7 +278,7 @@ if (renderer) {
         gl_Position = projectionMatrix * mv;
       }`,
     fragmentShader: `
-      uniform float uPhase; uniform float uReveal; uniform float uFade;
+      uniform float uPhase; uniform float uReveal;
       varying float vMix; varying float vRand; varying float vZ;
       ${colorGLSL}
       void main() {
@@ -360,28 +286,10 @@ if (renderer) {
         float disc = smoothstep(0.5, 0.14, d);
         vec3 col = netColor(vMix, uPhase);
         col += vec3(0.95) * smoothstep(0.17, 0.0, d) * 0.5;
-        float a = disc * revealAt(vRand, uReveal) * depthCue(vZ) * uFade;
+        float a = disc * revealAt(vRand, uReveal) * depthCue(vZ);
         gl_FragColor = vec4(col, a * 0.85);
       }`,
   });
-  const points = new THREE.Points(gPts, mPts);
-
-  /* synapses */
-  const lPos = new Float32Array(E * 2 * 3);
-  const lMix = new Float32Array(E * 2);
-  const lRand = new Float32Array(E * 2);
-  for (let e = 0; e < E; e++) {
-    const a = edges[e * 2], b = edges[e * 2 + 1];
-    lPos.set([pos[a * 3], pos[a * 3 + 1], pos[a * 3 + 2]], e * 6);
-    lPos.set([pos[b * 3], pos[b * 3 + 1], pos[b * 3 + 2]], e * 6 + 3);
-    lMix[e * 2] = aMix[a]; lMix[e * 2 + 1] = aMix[b];
-    const r = Math.min(aRand[a], aRand[b]);
-    lRand[e * 2] = r; lRand[e * 2 + 1] = r;
-  }
-  const gLin = new THREE.BufferGeometry();
-  gLin.setAttribute('position', new THREE.BufferAttribute(lPos, 3));
-  gLin.setAttribute('aMix', new THREE.BufferAttribute(lMix, 1));
-  gLin.setAttribute('aRand', new THREE.BufferAttribute(lRand, 1));
   const mLin = new THREE.ShaderMaterial({
     uniforms, transparent: true, depthWrite: false, blending: THREE.AdditiveBlending,
     vertexShader: `
@@ -394,32 +302,15 @@ if (renderer) {
         gl_Position = projectionMatrix * mv;
       }`,
     fragmentShader: `
-      uniform float uPhase; uniform float uReveal; uniform float uFade;
+      uniform float uPhase; uniform float uReveal;
       varying float vMix; varying float vRand; varying float vZ;
       ${colorGLSL}
       void main() {
         vec3 col = netColor(vMix, uPhase);
-        float a = 0.22 * revealAt(vRand, uReveal) * depthCue(vZ) * uFade;
+        float a = 0.22 * revealAt(vRand, uReveal) * depthCue(vZ);
         gl_FragColor = vec4(col, a);
       }`,
   });
-  const lines = new THREE.LineSegments(gLin, mLin);
-
-  /* signal pulses walking the graph */
-  const P = reduced ? 0 : (isSmall ? 42 : 72);
-  const pPos = new Float32Array(Math.max(P, 1) * 3);
-  const pMix = new Float32Array(Math.max(P, 1));
-  const pOff = new Float32Array(Math.max(P, 1));
-  const pulses = [];
-  for (let i = 0; i < P; i++) {
-    const e = Math.floor(rand() * E);
-    pulses.push({ a: edges[e * 2], b: edges[e * 2 + 1], t: rand(), v: 0.5 + rand() * 0.9 });
-    pOff[i] = rand() * Math.PI * 2;
-  }
-  const gPul = new THREE.BufferGeometry();
-  gPul.setAttribute('position', new THREE.BufferAttribute(pPos, 3));
-  gPul.setAttribute('aMix', new THREE.BufferAttribute(pMix, 1));
-  gPul.setAttribute('aOff', new THREE.BufferAttribute(pOff, 1));
   const mPul = new THREE.ShaderMaterial({
     uniforms, transparent: true, depthWrite: false, blending: THREE.AdditiveBlending,
     vertexShader: `
@@ -434,7 +325,7 @@ if (renderer) {
         gl_Position = projectionMatrix * mv;
       }`,
     fragmentShader: `
-      uniform float uPhase; uniform float uReveal; uniform float uFade; uniform float uTime;
+      uniform float uPhase; uniform float uReveal; uniform float uTime;
       varying float vMix; varying float vOff; varying float vZ;
       ${colorGLSL}
       void main() {
@@ -442,41 +333,215 @@ if (renderer) {
         float disc = smoothstep(0.5, 0.05, d);
         vec3 col = netColor(vMix, uPhase) + vec3(1.0) * smoothstep(0.22, 0.0, d) * 0.8;
         float tw = 0.7 + 0.3 * sin(uTime * 5.0 + vOff);
-        float a = disc * tw * uReveal * depthCue(vZ) * uFade;
+        float a = disc * tw * uReveal * depthCue(vZ);
         gl_FragColor = vec4(col, a);
       }`,
   });
-  const pulsePts = new THREE.Points(gPul, mPul);
-  pulsePts.visible = P > 0;
 
+  const points = new THREE.Points(new THREE.BufferGeometry(), mPts);
+  const lines = new THREE.LineSegments(new THREE.BufferGeometry(), mLin);
+  const pulsePts = new THREE.Points(new THREE.BufferGeometry(), mPul);
   const group = new THREE.Group();
   group.add(lines, points, pulsePts);
   scene.add(group);
 
-  /* placement: network sits right of the copy on wide screens */
-  const place = () => {
-    const w = canvas.clientWidth || innerWidth;
-    group.position.x = w > 900 ? 1.15 : 0;
-    group.position.y = w > 900 ? 0.12 : 0.55;
-    group.rotation.z = 0.10;
-    group.scale.setScalar(w < 560 ? 0.8 : 1.14);
+  /* strand state, rebuilt whenever the page geometry changes */
+  let pos = null, aMixArr = null, adj = null, edges = null, E = 0;
+  let pulses = [], pPos = null, pMix = null, P = 0;
+  let gPul = null;
+
+  const worldY = px => -(px / innerHeight) * VH;
+
+  const buildStrand = () => {
+    const rand = mulberry32(20260730);
+    const gauss = () => (rand() + rand() + rand() - 1.5) * 0.816;
+    const isSmall = innerWidth < 768;
+    const aspect = innerWidth / innerHeight;
+    const xAmp = Math.max(0.55, Math.min(2.1, (VH * aspect) / 2 * 0.52));
+
+    /* anchors: each text block pins the strand to its opposite side */
+    const anchors = [];
+    const centerOf = el => {
+      const r = el.getBoundingClientRect();
+      return scrollY + r.top + r.height / 2;
+    };
+    anchors.push({ y: centerOf(document.querySelector('.hero-copy')), side: 1, weight: 1.25 });
+    document.querySelectorAll('.statement').forEach((el, i) => {
+      anchors.push({ y: centerOf(el), side: i % 2 === 0 ? 1 : -1, weight: 0.85 });
+    });
+    anchors.push({ y: centerOf(document.querySelector('.use-inner')), side: 1, weight: 0.9 });
+    const footEl = document.querySelector('footer');
+    anchors.push({ y: centerOf(footEl), side: 0, weight: 1.1 });
+
+    const ctrl = [new THREE.Vector3(anchors[0].side * xAmp * 1.3, 1.2, -0.3)];
+    anchors.forEach((a, i) => {
+      ctrl.push(new THREE.Vector3(
+        a.side * xAmp * (a.side === 0 ? 0 : 1),
+        worldY(a.y),
+        (i % 2 ? -0.35 : 0.3)
+      ));
+    });
+    const pageH = document.documentElement.scrollHeight;
+    ctrl.push(new THREE.Vector3(0, worldY(pageH + innerHeight * 0.15), 0));
+    const curve = new THREE.CatmullRomCurve3(ctrl, false, 'catmullrom', 0.6);
+
+    /* nearest curve parameter for each anchor, for the ganglia */
+    const SCAN = 400;
+    const scanPts = [];
+    for (let i = 0; i <= SCAN; i++) scanPts.push(curve.getPointAt(i / SCAN));
+    const nearestU = v => {
+      let best = 0, bd = Infinity;
+      for (let i = 0; i <= SCAN; i++) {
+        const d = scanPts[i].distanceToSquared(v);
+        if (d < bd) { bd = d; best = i; }
+      }
+      return best / SCAN;
+    };
+
+    const len = curve.getLength();
+    const density = isSmall ? 26 : 40;
+    const M = Math.min(isSmall ? 700 : 1150, Math.max(420, Math.round(len * density)));
+
+    /* strand body + ganglia at the anchors */
+    const raw = [];
+    const tangent = new THREE.Vector3(), n1 = new THREE.Vector3(), n2 = new THREE.Vector3();
+    const up = new THREE.Vector3(0, 0, 1);
+    const pushNode = (v, t) => raw.push({ x: v.x, y: v.y, z: v.z, t });
+    for (let i = 0; i < M; i++) {
+      const u = THREE.MathUtils.clamp(i / (M - 1) + (rand() - 0.5) * 0.6 / M, 0, 1);
+      const p = curve.getPointAt(u);
+      curve.getTangentAt(u, tangent);
+      n1.crossVectors(tangent, up).normalize();
+      if (n1.lengthSq() < 0.01) n1.set(1, 0, 0);
+      n2.crossVectors(tangent, n1).normalize();
+      const r = 0.20 + 0.10 * Math.sin(u * 43.0) * Math.sin(u * 17.0);
+      const g1 = gauss() * r, g2 = gauss() * r;
+      pushNode(p.clone().addScaledVector(n1, g1).addScaledVector(n2, g2), u);
+    }
+    anchors.forEach((a, i) => {
+      const target = ctrl[i + 1];
+      const u0 = nearestU(target);
+      const cnt = Math.round((isSmall ? 60 : 95) * a.weight);
+      const sig = 0.42 * a.weight;
+      const c = curve.getPointAt(u0);
+      for (let k = 0; k < cnt; k++) {
+        const v = new THREE.Vector3(c.x + gauss() * sig, c.y + gauss() * sig * 0.85, c.z + gauss() * sig * 0.8);
+        pushNode(v, THREE.MathUtils.clamp(u0 + gauss() * 0.012, 0, 1));
+      }
+    });
+    raw.sort((a, b) => a.t - b.t);
+
+    const N = raw.length;
+    pos = new Float32Array(N * 3);
+    aMixArr = new Float32Array(N);
+    const aRand = new Float32Array(N);
+    const aScale = new Float32Array(N);
+    for (let i = 0; i < N; i++) {
+      pos.set([raw[i].x, raw[i].y, raw[i].z], i * 3);
+      aMixArr[i] = raw[i].t;
+      aRand[i] = rand();
+      aScale[i] = rand() < 0.06 ? 1.9 + rand() * 0.9 : 0.55 + rand() * 1.0;
+    }
+
+    /* edges among neighbours along the strand */
+    edges = [];
+    adj = Array.from({ length: N }, () => []);
+    const seen = new Set();
+    const addEdge = (a, b) => {
+      if (a === b) return;
+      const k = a < b ? a * N + b : b * N + a;
+      if (seen.has(k)) return;
+      seen.add(k);
+      edges.push(a, b); adj[a].push(b); adj[b].push(a);
+    };
+    const d2 = (a, b) => {
+      const dx = pos[a * 3] - pos[b * 3], dy = pos[a * 3 + 1] - pos[b * 3 + 1], dz = pos[a * 3 + 2] - pos[b * 3 + 2];
+      return dx * dx + dy * dy + dz * dz;
+    };
+    const W = 42;
+    for (let i = 0; i < N; i++) {
+      let n1i = -1, n2i = -1, b1 = Infinity, b2 = Infinity;
+      for (let j = i + 1; j < Math.min(N, i + W); j++) {
+        const dd = d2(i, j);
+        if (dd < b1) { b2 = b1; n2i = n1i; b1 = dd; n1i = j; }
+        else if (dd < b2) { b2 = dd; n2i = j; }
+      }
+      if (n1i >= 0 && b1 < 0.5) addEdge(i, n1i);
+      if (n2i >= 0 && b2 < 0.4) addEdge(i, n2i);
+    }
+    for (let k = 0; k < (isSmall ? 30 : 60); k++) {
+      const i = Math.floor(rand() * N);
+      const j = THREE.MathUtils.clamp(i + Math.floor((rand() - 0.5) * 300), 0, N - 1);
+      if (d2(i, j) < 2.6) addEdge(i, j);
+    }
+    E = edges.length / 2;
+
+    /* pour into geometries */
+    const gPts = new THREE.BufferGeometry();
+    gPts.setAttribute('position', new THREE.BufferAttribute(pos, 3));
+    gPts.setAttribute('aMix', new THREE.BufferAttribute(aMixArr, 1));
+    gPts.setAttribute('aRand', new THREE.BufferAttribute(aRand, 1));
+    gPts.setAttribute('aScale', new THREE.BufferAttribute(aScale, 1));
+    points.geometry.dispose(); points.geometry = gPts;
+
+    const lPos = new Float32Array(E * 2 * 3);
+    const lMix = new Float32Array(E * 2);
+    const lRand = new Float32Array(E * 2);
+    for (let e = 0; e < E; e++) {
+      const a = edges[e * 2], b = edges[e * 2 + 1];
+      lPos.set([pos[a * 3], pos[a * 3 + 1], pos[a * 3 + 2]], e * 6);
+      lPos.set([pos[b * 3], pos[b * 3 + 1], pos[b * 3 + 2]], e * 6 + 3);
+      lMix[e * 2] = aMixArr[a]; lMix[e * 2 + 1] = aMixArr[b];
+      const r = Math.min(aRand[a], aRand[b]);
+      lRand[e * 2] = r; lRand[e * 2 + 1] = r;
+    }
+    const gLin = new THREE.BufferGeometry();
+    gLin.setAttribute('position', new THREE.BufferAttribute(lPos, 3));
+    gLin.setAttribute('aMix', new THREE.BufferAttribute(lMix, 1));
+    gLin.setAttribute('aRand', new THREE.BufferAttribute(lRand, 1));
+    lines.geometry.dispose(); lines.geometry = gLin;
+
+    P = reduced ? 0 : (isSmall ? 46 : 84);
+    pPos = new Float32Array(Math.max(P, 1) * 3);
+    pMix = new Float32Array(Math.max(P, 1));
+    const pOff = new Float32Array(Math.max(P, 1));
+    pulses = [];
+    for (let i = 0; i < P; i++) {
+      const e = Math.floor(rand() * E);
+      pulses.push({ a: edges[e * 2], b: edges[e * 2 + 1], t: rand(), v: 0.5 + rand() * 0.9 });
+      pOff[i] = rand() * Math.PI * 2;
+    }
+    gPul = new THREE.BufferGeometry();
+    gPul.setAttribute('position', new THREE.BufferAttribute(pPos, 3));
+    gPul.setAttribute('aMix', new THREE.BufferAttribute(pMix, 1));
+    gPul.setAttribute('aOff', new THREE.BufferAttribute(pOff, 1));
+    pulsePts.geometry.dispose(); pulsePts.geometry = gPul;
+    pulsePts.visible = P > 0;
   };
 
+  let needsRender = true;
   const resize = () => {
-    const w = canvas.clientWidth || innerWidth;
-    const h = canvas.clientHeight || innerHeight;
+    const w = innerWidth, h = innerHeight;
     if (!w || !h) return;
     renderer.setSize(w, h, false);
     camera.aspect = w / h;
     camera.updateProjectionMatrix();
     uniforms.uPR.value = Math.min(devicePixelRatio, 2);
-    place();
-    if (reduced) renderer.render(scene, camera);
+    needsRender = true;
   };
-  addEventListener('resize', resize);
+  let rebuildTimer = 0;
+  const rebuild = () => { buildStrand(); needsRender = true; };
+  addEventListener('resize', () => {
+    resize();
+    clearTimeout(rebuildTimer);
+    rebuildTimer = setTimeout(rebuild, 250);
+  });
   /* background tabs can report 0x0 at module time; observe instead of trusting one shot */
   new ResizeObserver(resize).observe(canvas);
   resize();
+  buildStrand();
+  if (document.fonts && document.fonts.ready) document.fonts.ready.then(rebuild);
+  addEventListener('load', rebuild);
 
   /* pointer parallax */
   let mx = 0, my = 0;
@@ -494,42 +559,49 @@ if (renderer) {
     document.documentElement.style.setProperty('--accent', '#' + accent.getHexString());
   };
 
-  let spin = 0.35;
-  let inView = true;
-  new IntersectionObserver(([en]) => { inView = en.isIntersecting; }, { threshold: 0 })
-    .observe(document.getElementById('hero'));
+  const scrollProgress = () => {
+    const max = document.documentElement.scrollHeight - innerHeight;
+    return max > 0 ? scrollY / max : 0;
+  };
+  const camTargetY = () => worldY(scrollY + innerHeight / 2);
 
   const step = pulse => {
     const nexts = adj[pulse.b];
     const next = nexts.length ? nexts[Math.floor(Math.random() * nexts.length)] : pulse.a;
-    pulse.a = pulse.b; pulse.b = next === pulse.a && nexts.length > 1
-      ? nexts[Math.floor(Math.random() * nexts.length)] : next;
+    pulse.a = pulse.b; pulse.b = next;
     pulse.t = 0;
   };
 
   if (reduced) {
     setAccent();
+    camera.position.y = camTargetY();
     renderer.render(scene, camera);
+    /* view stays a pure function of scroll position: re-render only when it moved */
+    let lastY = scrollY;
+    gsap.ticker.add(() => {
+      if (document.hidden) return;
+      if (scrollY !== lastY || needsRender) {
+        lastY = scrollY; needsRender = false;
+        camera.position.y = camTargetY();
+        group.rotation.y = -0.12 + scrollProgress() * 0.55;
+        renderer.render(scene, camera);
+      }
+    });
   } else {
     gsap.fromTo(uniforms.uPhase, { value: -0.4 }, {
       value: 1.4, duration: 7.5, ease: 'sine.inOut', repeat: -1, yoyo: true,
     });
     gsap.to(uniforms.uReveal, { value: 1, duration: 2.6, ease: 'power2.inOut', delay: 0.15 });
 
-    ScrollTrigger.create({
-      trigger: '#hero', start: 'top top', end: 'bottom top', scrub: true,
-      onUpdate: st => {
-        uniforms.uFade.value = 1 - st.progress * 0.9;
-        camera.position.z = 7.4 + st.progress * 1.6;
-      },
-    });
-
+    camera.position.y = camTargetY();
     gsap.ticker.add((time, deltaMS) => {
-      if (document.hidden || (!inView && uniforms.uReveal.value >= 1)) return;
+      if (document.hidden) return;
       const dt = Math.min(deltaMS / 1000, 0.05);
-      spin += dt * 0.05;
-      group.rotation.y = spin + mx * 0.14;
-      group.rotation.x = my * 0.10;
+      const k = 1 - Math.exp(-dt * 7);
+      camera.position.y += (camTargetY() - camera.position.y) * k;
+      camera.position.x += (mx * 0.14 - camera.position.x) * k;
+      group.rotation.y = -0.12 + scrollProgress() * 0.55 + Math.sin(time * 0.08) * 0.04 + mx * 0.05;
+      group.rotation.x = my * 0.02;
       uniforms.uTime.value = time;
       for (let i = 0; i < P; i++) {
         const p = pulses[i];
@@ -539,7 +611,7 @@ if (renderer) {
         pPos[i * 3]     = pos[p.a * 3]     + (pos[p.b * 3]     - pos[p.a * 3]) * t;
         pPos[i * 3 + 1] = pos[p.a * 3 + 1] + (pos[p.b * 3 + 1] - pos[p.a * 3 + 1]) * t;
         pPos[i * 3 + 2] = pos[p.a * 3 + 2] + (pos[p.b * 3 + 2] - pos[p.a * 3 + 2]) * t;
-        pMix[i] = aMix[p.a] + (aMix[p.b] - aMix[p.a]) * t;
+        pMix[i] = aMixArr[p.a] + (aMixArr[p.b] - aMixArr[p.a]) * t;
       }
       if (P > 0) {
         gPul.attributes.position.needsUpdate = true;
