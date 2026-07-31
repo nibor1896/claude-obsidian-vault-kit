@@ -1474,9 +1474,19 @@ def _mapping(data, key):
     Never the built-in default: a config the user wrote and a classification they never made must
     not be mixed, or the unclassified line reports against a list nobody chose. Same rule as the
     docstring above, applied to both optional keys instead of one.
+
+    KEYS STARTING WITH `_` ARE NOT JOBS (2026-07-31). JSON has no comments, so the shipped
+    jobs.json carries its explanations as `_comment` keys -- and the delivered file invites the
+    user to do the same, since it is the only way to write down why an entry is there. Without
+    this filter every fresh vault reported `1 not invoked` over the placeholder that says the
+    list is empty: a count with no object behind it, printed on the one line whose whole purpose
+    is naming things nobody classified. The key itself stays in jobs.json -- delete it and
+    build_kit.py's --check goes red comparing None against {}.
     """
     raw = data.get(key) or {}
-    return dict(raw) if isinstance(raw, dict) else {name: "" for name in raw}
+    if isinstance(raw, dict):
+        return {name: reason for name, reason in raw.items() if not name.startswith("_")}
+    return {name: "" for name in raw if not name.startswith("_")}
 
 
 def parse_log(log_path):

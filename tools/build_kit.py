@@ -365,9 +365,17 @@ def declared_uninvoked():
 
     A silent fall back to a built-in list is the defect this whole check is about, wearing green:
     it would classify tools on the strength of something nobody wrote down.
+
+    `_`-prefixed keys are dropped, the same rule vaultkit.py's _mapping() applies, for the same
+    reason: JSON has no comments, so `_comment` carries them, and it is not the name of a tool.
+    Harmless here today -- no delivered file is called `_comment.py`, so a phantom entry excuses
+    nothing that exists -- and filtered anyway, because the two readers of one file disagreeing
+    about what counts as an entry is the shape this whole check exists to catch.
     """
     raw = json.loads((TOOLS / "jobs.json").read_text(encoding="utf-8-sig")).get("not_invoked") or {}
-    return dict(raw) if isinstance(raw, dict) else {name: "" for name in raw}
+    if isinstance(raw, dict):
+        return {name: reason for name, reason in raw.items() if not name.startswith("_")}
+    return {name: "" for name in raw if not name.startswith("_")}
 
 
 def check_prose_chain():

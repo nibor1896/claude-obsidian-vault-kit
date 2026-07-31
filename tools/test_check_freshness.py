@@ -250,6 +250,51 @@ class CheckFreshnessTest(unittest.TestCase):
         self.assertIn("1 not invoked", out)
         self.assertIn("0 unclassified", out)
 
+    def test_a_json_comment_is_not_a_job(self):
+        """The shipped jobs.json ships `not_invoked` holding one `_comment` and nothing else.
+
+        JSON has no comments, so the reason an entry exists has to be a key -- and the delivered
+        file invites the user to write their own the same way. Without the `_` filter every fresh
+        vault printed `1 not invoked` over the placeholder that says the list is empty: a count
+        with no object behind it, on the one line whose whole job is naming things nobody
+        classified. Measured against the test vault on 2026-07-31, `1 not invoked` before and
+        `0 not invoked` after, same vault, same config.
+
+        Recipe without the fix: put `dict(raw)` back in `_mapping()`. This case reports
+        `1 not invoked` with exit 0 -- which is why it went unnoticed through a whole cold run.
+        """
+        self.write_config(f'{{"jobs": [{self.KIT_WATCHED}], '
+                          f'"on_demand": {{{self.KIT_ON_DEMAND}}}, '
+                          f'"not_invoked": {{"_comment": "empty, and the key stays for YOUR '
+                          f'tools"}}}}')
+        self.write_log(f"{stamp(1)}\tbuild_index\tok\t0 defects",
+                       f"{stamp(2)}\tcheck_links\tok\t3/3 resolve")
+        code, out, err = run_tool("vaultkit.py", "freshness", "--vault", self.vault)
+        self.assertEqual(code, 0, out + err)
+        self.assertIn("0 not invoked", out)
+        self.assertNotIn("_comment", out + err)
+
+    def test_a_comment_beside_a_real_entry_removes_neither_the_entry_nor_itself(self):
+        """The healthy control for the filter above, and it is not decoration.
+
+        A filter written as "drop everything but the first key", or one applied to the wrong
+        list, passes the case above and silently stops excusing the tool the user classified.
+        That failure is invisible: the tool reappears on the unclassified line, which is exactly
+        where an unclassified tool belongs, so nothing about the output looks wrong.
+        """
+        self.write_config(f'{{"jobs": [{self.KIT_WATCHED}], '
+                          f'"on_demand": {{{self.KIT_ON_DEMAND}}}, '
+                          f'"not_invoked": {{"_comment": "why this list exists", '
+                          f'"mein_werkzeug": "ein Modul, kein Kommando"}}}}')
+        self.write_log(f"{stamp(1)}\tbuild_index\tok\t0 defects",
+                       f"{stamp(2)}\tcheck_links\tok\t3/3 resolve")
+        self.write_tool("mein_werkzeug.py")
+        code, out, err = run_tool("vaultkit.py", "freshness", "--vault", self.vault)
+        self.assertEqual(code, 0, out + err)
+        self.assertIn("1 not invoked", out)
+        self.assertIn("0 unclassified", out)
+        self.assertNotIn("_comment", out + err)
+
     def test_a_job_watched_and_declared_uncalled_stops_the_run(self):
         """The pair check extended to three lists, on the pair that did not exist before.
 
