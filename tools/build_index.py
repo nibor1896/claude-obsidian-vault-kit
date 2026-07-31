@@ -166,8 +166,19 @@ def link_to(vault_root, target_path, label, defects):
     The link checker resolves [[...]] and deliberately does not resolve [text](path).
     So every fallback to a markdown link is a defect in the filename, not a workaround.
     """
-    rel = Path(target_path).resolve().relative_to(Path(vault_root).resolve()).as_posix()
     name = Path(target_path).name
+    try:
+        rel = Path(target_path).resolve().relative_to(Path(vault_root).resolve()).as_posix()
+    except ValueError:
+        # A junction or symlink inside the vault whose target resolves outside the root.
+        # relative_to() raises there, and this used to leave the function as a traceback -- so
+        # the run died before log_run() at the end of main(), which is the one outcome this kit
+        # forbids: silence has to mean "did not run". There is no link to write either way (a
+        # [[wikilink]] needs a vault-relative path and there is none), so the label goes in as
+        # plain text and the defect line carries the reason.
+        defects.add(name, "resolves outside the vault root — not linkable "
+                          "(a junction or symlink pointing out of the vault?)")
+        return label
     if has_forbidden_chars(name):
         defects.add(name, "filename contains one of # [ ] | ^ — cannot be wikilinked")
         return f"[{label}]({quote(rel)})"
@@ -263,15 +274,44 @@ def entry_line(vault_root, entry, defects):
 # --------------------------------------------------------------------------- writing
 
 
-def write_if_changed(path, content):
-    """Write only on a real change, so a rerun leaves `git status` empty."""
+def write_if_changed(path, content, defects):
+    """Write only on a real change, so a rerun leaves `git status` empty.
+
+    THE WRITE IS INSIDE A try, AND THAT IS THE WHOLE POINT (2026-07-31). It used to sit outside
+    one, so a read-only or locked INDEX file -- a vault on OneDrive is not a theoretical case --
+    raised PermissionError out of here and took the run down BEFORE log_run() at the end of
+    main(). The result was half an index tree AND not one line in runs.log: not `defects`, not
+    `did-not-run`, nothing at all. Silence is the one thing that has to keep meaning "did not
+    run", and a crash on the way to the log turns it into a lie.
+
+    Two try blocks, not one, and the split is deliberate: a file that cannot be READ may still be
+    writable, and overwriting it is the repair. Merging them would turn that case into a defect
+    and skip the write that would have fixed it.
+
+    Measured on this machine 2026-07-31, on a copy of a real vault (491 .md), with `attrib +R` on
+    `Horus-F5Tts-Onnx/00_Notes/INDEX - Horus-F5Tts-Onnx Notes.md` -- the third project of seven,
+    so most of the tree comes before it:
+
+      before   PermissionError traceback · 46 of 61 index files written · runs.log absent
+      after    exit 1 · the filename on stderr · 61 of 61 written · `build_index defects` logged
+      unlock   `attrib -R`, rerun: exit 0, tree complete
+      again    third run writes nothing, `git status` stays empty
+
+    The reset path is the point of quoting the numbers: `attrib -R` on the same file puts the
+    copy back, so anyone can rerun this without guessing what state it left behind.
+    """
     path = Path(path)
     try:
         if path.exists() and path.read_text(encoding="utf-8") == content:
             return False
     except OSError:
+        # Unreadable, possibly writable. Fall through to the write, which is the repair.
         pass
-    path.write_text(content, encoding="utf-8", newline="\n")
+    try:
+        path.write_text(content, encoding="utf-8", newline="\n")
+    except OSError as exc:
+        defects.add(path.name, f"not written ({exc})")
+        return False
     return True
 
 
@@ -353,7 +393,8 @@ def build_project(vault_root, project_dir, defects):
         lines.append("")
         lines.append(f"_{len(entries)} entries._")
         lines.append("")
-        write_if_changed(folder / category_index_name(project_name, folder_name), "\n".join(lines))
+        write_if_changed(folder / category_index_name(project_name, folder_name),
+                         "\n".join(lines), defects)
         category_rows.append((folder_name, len(entries)))
 
     lines = [HEADER.format(name=project_name, today=today)]
@@ -366,7 +407,7 @@ def build_project(vault_root, project_dir, defects):
     lines.append("")
     lines.append(f"_{total_entries} entries in {len(category_rows)} categories._")
     lines.append("")
-    write_if_changed(project_dir / project_index_name(project_dir), "\n".join(lines))
+    write_if_changed(project_dir / project_index_name(project_dir), "\n".join(lines), defects)
     return total_entries, len(category_rows), created, adopted
 
 
@@ -414,7 +455,7 @@ def build_root(vault_root, defects):
     lines.append("")
     lines.append(f"_{len(projects)} projects · {total_entries} entries in {total_categories} categories._")
     lines.append("")
-    write_if_changed(vault_root / root_index_name(vault_root), "\n".join(lines))
+    write_if_changed(vault_root / root_index_name(vault_root), "\n".join(lines), defects)
     templates = write_templates(vault_root, projects)
     return len(projects), total_entries, total_categories, created_all, adopted_all, templates
 

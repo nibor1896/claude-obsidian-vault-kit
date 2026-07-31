@@ -1,4 +1,4 @@
-<!-- kit-version: 4974313a90c5 -->
+<!-- kit-version: d42b9ba83c07 -->
 # Claude × Obsidian — Vault Kit
 
 **What this file is:** a setup contract for Claude. Drop it into a Claude conversation and say
@@ -1340,15 +1340,6 @@ FORBIDDEN_LINK_CHARS = set("#[]|^")
 RUN_LOG_RELPATH = Path("00_Global") / "06_tools" / "runs.log"
 
 
-def force_utf8():
-    """Re-export of the stdout/stderr fix so tests can assert it exists."""
-    for stream in (sys.stdout, sys.stderr):
-        try:
-            stream.reconfigure(encoding="utf-8", errors="replace")
-        except (AttributeError, ValueError):
-            pass
-
-
 def category_label(folder_name: str) -> str:
     """'03_technical_docs' -> 'technical_docs'. The prefix is sort order, not meaning."""
     return re.sub(r"^\d+_", "", folder_name)
@@ -1458,7 +1449,12 @@ def log_run(vault_root, job: str, status: str, detail: str = ""):
         log_path.parent.mkdir(parents=True, exist_ok=True)
         stamp = datetime.now(timezone.utc).strftime("%Y-%m-%dT%H:%M:%S+00:00")
         line = f"{stamp}\t{job}\t{status}\t{detail}\n"
-        with open(log_path, "a", encoding="utf-8") as fh:
+        # newline="\n": the only writer in this kit that lacked it, so runs.log was the one
+        # generated file whose line endings depended on the platform that wrote it. The reader
+        # (check_freshness.py) opens in universal-newline mode and copes either way, which is
+        # exactly why nothing went red over it -- a log half CRLF and half LF from two different
+        # machines is a diff nobody can read, not a run that fails.
+        with open(log_path, "a", encoding="utf-8", newline="\n") as fh:
             fh.write(line)
     except OSError as exc:
         print(f"run log not written: {exc}", file=sys.stderr)
@@ -1744,8 +1740,19 @@ def link_to(vault_root, target_path, label, defects):
     The link checker resolves [[...]] and deliberately does not resolve [text](path).
     So every fallback to a markdown link is a defect in the filename, not a workaround.
     """
-    rel = Path(target_path).resolve().relative_to(Path(vault_root).resolve()).as_posix()
     name = Path(target_path).name
+    try:
+        rel = Path(target_path).resolve().relative_to(Path(vault_root).resolve()).as_posix()
+    except ValueError:
+        # A junction or symlink inside the vault whose target resolves outside the root.
+        # relative_to() raises there, and this used to leave the function as a traceback -- so
+        # the run died before log_run() at the end of main(), which is the one outcome this kit
+        # forbids: silence has to mean "did not run". There is no link to write either way (a
+        # [[wikilink]] needs a vault-relative path and there is none), so the label goes in as
+        # plain text and the defect line carries the reason.
+        defects.add(name, "resolves outside the vault root — not linkable "
+                          "(a junction or symlink pointing out of the vault?)")
+        return label
     if has_forbidden_chars(name):
         defects.add(name, "filename contains one of # [ ] | ^ — cannot be wikilinked")
         return f"[{label}]({quote(rel)})"
@@ -1841,15 +1848,44 @@ def entry_line(vault_root, entry, defects):
 # --------------------------------------------------------------------------- writing
 
 
-def write_if_changed(path, content):
-    """Write only on a real change, so a rerun leaves `git status` empty."""
+def write_if_changed(path, content, defects):
+    """Write only on a real change, so a rerun leaves `git status` empty.
+
+    THE WRITE IS INSIDE A try, AND THAT IS THE WHOLE POINT (2026-07-31). It used to sit outside
+    one, so a read-only or locked INDEX file -- a vault on OneDrive is not a theoretical case --
+    raised PermissionError out of here and took the run down BEFORE log_run() at the end of
+    main(). The result was half an index tree AND not one line in runs.log: not `defects`, not
+    `did-not-run`, nothing at all. Silence is the one thing that has to keep meaning "did not
+    run", and a crash on the way to the log turns it into a lie.
+
+    Two try blocks, not one, and the split is deliberate: a file that cannot be READ may still be
+    writable, and overwriting it is the repair. Merging them would turn that case into a defect
+    and skip the write that would have fixed it.
+
+    Measured on this machine 2026-07-31, on a copy of a real vault (491 .md), with `attrib +R` on
+    `Horus-F5Tts-Onnx/00_Notes/INDEX - Horus-F5Tts-Onnx Notes.md` -- the third project of seven,
+    so most of the tree comes before it:
+
+      before   PermissionError traceback · 46 of 61 index files written · runs.log absent
+      after    exit 1 · the filename on stderr · 61 of 61 written · `build_index defects` logged
+      unlock   `attrib -R`, rerun: exit 0, tree complete
+      again    third run writes nothing, `git status` stays empty
+
+    The reset path is the point of quoting the numbers: `attrib -R` on the same file puts the
+    copy back, so anyone can rerun this without guessing what state it left behind.
+    """
     path = Path(path)
     try:
         if path.exists() and path.read_text(encoding="utf-8") == content:
             return False
     except OSError:
+        # Unreadable, possibly writable. Fall through to the write, which is the repair.
         pass
-    path.write_text(content, encoding="utf-8", newline="\n")
+    try:
+        path.write_text(content, encoding="utf-8", newline="\n")
+    except OSError as exc:
+        defects.add(path.name, f"not written ({exc})")
+        return False
     return True
 
 
@@ -1931,7 +1967,8 @@ def build_project(vault_root, project_dir, defects):
         lines.append("")
         lines.append(f"_{len(entries)} entries._")
         lines.append("")
-        write_if_changed(folder / category_index_name(project_name, folder_name), "\n".join(lines))
+        write_if_changed(folder / category_index_name(project_name, folder_name),
+                         "\n".join(lines), defects)
         category_rows.append((folder_name, len(entries)))
 
     lines = [HEADER.format(name=project_name, today=today)]
@@ -1944,7 +1981,7 @@ def build_project(vault_root, project_dir, defects):
     lines.append("")
     lines.append(f"_{total_entries} entries in {len(category_rows)} categories._")
     lines.append("")
-    write_if_changed(project_dir / project_index_name(project_dir), "\n".join(lines))
+    write_if_changed(project_dir / project_index_name(project_dir), "\n".join(lines), defects)
     return total_entries, len(category_rows), created, adopted
 
 
@@ -1992,7 +2029,7 @@ def build_root(vault_root, defects):
     lines.append("")
     lines.append(f"_{len(projects)} projects · {total_entries} entries in {total_categories} categories._")
     lines.append("")
-    write_if_changed(vault_root / root_index_name(vault_root), "\n".join(lines))
+    write_if_changed(vault_root / root_index_name(vault_root), "\n".join(lines), defects)
     templates = write_templates(vault_root, projects)
     return len(projects), total_entries, total_categories, created_all, adopted_all, templates
 
@@ -3445,7 +3482,6 @@ every step passed in every pass.
 """
 
 import argparse
-import json
 import os
 import shutil
 import subprocess
@@ -3972,7 +4008,16 @@ def read_kit(path):
     # utf-8-sig: a downloaded kit file re-saved by a Windows editor starts with a BOM, and
     # VERSION_RE anchors at ^. The match then fails and the newer kit reads as "unversioned"
     # -- the one number the whole update path compares against.
-    text = Path(path).read_text(encoding="utf-8-sig")
+    try:
+        text = Path(path).read_text(encoding="utf-8-sig")
+    except OSError as exc:
+        # THE FIRST THING THE UPDATE PATH DOES (2026-07-31). A mistyped kit path used to come
+        # back as a FileNotFoundError traceback -- verified by running it -- and a traceback on
+        # the opening move reads as "this tool is broken", not as "that argument is wrong".
+        # Exit 2 throughout this file means the environment refused an I/O operation, which is
+        # a different repair from exit 1 (written, but it does not pass its own checks).
+        print(f"{path}: cannot be read ({exc})", file=sys.stderr)
+        raise SystemExit(2)
     blocks = {name: body + "\n" for name, body in BLOCK_RE.findall(text)}
     if not blocks:
         raise SystemExit(f"{path}: no script blocks found -- is this a kit file?")
@@ -3987,9 +4032,18 @@ def installed_version():
 
 
 def write_stamp(version):
-    """The one place kit-version.txt is spelled. Both writers go through here."""
+    """The one place kit-version.txt is spelled. Both writers go through here.
+
+    Returns the path on success and None when the write failed, having said why on stderr.
+    Both callers act on the None: a stamp is the answer to "which kit is this folder from",
+    and a run that could not write one must not go on to report a version it did not record.
+    """
     target = TOOLS / "kit-version.txt"
-    target.write_text(version + "\n", encoding="utf-8", newline="\n")
+    try:
+        target.write_text(version + "\n", encoding="utf-8", newline="\n")
+    except OSError as exc:
+        print(f"{target.name}: not written ({exc})", file=sys.stderr)
+        return None
     return target
 
 
@@ -4008,7 +4062,13 @@ def stamp(kit_path):
     would then be compared against every future kit forever and never match, which is a wrong
     answer wearing a right answer's clothes.
     """
-    text = Path(kit_path).read_text(encoding="utf-8-sig")
+    try:
+        text = Path(kit_path).read_text(encoding="utf-8-sig")
+    except OSError as exc:
+        # Same reasoning as read_kit(): --stamp is the other entry point, and a mistyped path
+        # here produced the same traceback.
+        print(f"{kit_path}: cannot be read ({exc})", file=sys.stderr)
+        return 2
     found = VERSION_RE.search(text)
     if not found:
         print(f"{kit_path}: no `<!-- kit-version: … -->` line — nothing to stamp. An unstamped "
@@ -4016,6 +4076,8 @@ def stamp(kit_path):
               f"than none.", file=sys.stderr)
         return 1
     target = write_stamp(found.group(1))
+    if target is None:
+        return 2
     print(f"wrote {target.name}: {found.group(1)}")
     return 0
 
@@ -4038,11 +4100,11 @@ def classify(blocks):
         with no filename in the message, taking the whole update down. `errors="replace"` turns
         that into a mismatch, so the file is named as `overwrite` and the run survives.
 
-    Undo recipes, both measured on this machine 2026-07-30, and they are not symmetric:
+    Undo recipes, both re-measured on this machine 2026-07-31, and they are not symmetric:
 
-      - Set the encoding back to `utf-8` (dropping errors= with it): test_upgrade 13/15. BOTH
+      - Set the encoding back to `utf-8` (dropping errors= with it): test_upgrade 16/18. BOTH
         cases go red, because `utf-8` without a replacement handler raises on the bad byte too.
-      - Keep `utf-8-sig` and drop only `errors="replace"`: test_upgrade 14/15, and only
+      - Keep `utf-8-sig` and drop only `errors="replace"`: test_upgrade 17/18, and only
         `test_an_undecodable_file_is_named_rather_than_crashing_the_run` moves. That asymmetry is
         the measurement worth keeping -- it shows the BOM half and the crash half are two defects
         sharing one line, and fixing either alone leaves the other.
@@ -4115,7 +4177,8 @@ def main(argv=None):
     if not changed and not added:
         if new_version != "unversioned" and installed != new_version:
             if args.apply:
-                write_stamp(new_version)
+                if write_stamp(new_version) is None:
+                    return 2
                 print(f"every script is already current · stamp corrected: "
                       f"{installed} → {new_version}")
             else:
@@ -4128,9 +4191,30 @@ def main(argv=None):
         print("\nnothing written. Re-run with --apply to write these files.")
         return 0
 
+    # PER FILE, AND THE LOOP DOES NOT STOP AT THE FIRST REFUSAL (2026-07-31). One unwritable
+    # target used to end the run with a traceback that named the exception and not the file, and
+    # every script after it in the list went unwritten with nothing said about them either. Now
+    # each failure is named and the rest still land: a folder that got 20 of 22 files and knows
+    # which two it is missing can be repaired; one that stopped somewhere unnamed cannot.
+    refused = []
     for name in changed + added:
-        (TOOLS / name).write_text(blocks[name], encoding="utf-8", newline="\n")
-    write_stamp(new_version)
+        try:
+            (TOOLS / name).write_text(blocks[name], encoding="utf-8", newline="\n")
+        except OSError as exc:
+            print(f"{name}: not written ({exc})", file=sys.stderr)
+            refused.append(name)
+    if refused:
+        # No stamp. kit-version.txt naming a version this folder does not carry is the same
+        # wrong-answer-in-right-answer's-clothes that stamp() refuses "unversioned" for.
+        print(f"\n{len(changed) + len(added) - len(refused)} of {len(changed) + len(added)} files "
+              f"written · {len(refused)} refused: {', '.join(refused)}\n"
+              f"kit-version.txt was NOT updated -- the folder is part old, part new, and a stamp "
+              f"would claim otherwise. Fix the cause and re-run --apply.", file=sys.stderr)
+        return 2
+    if write_stamp(new_version) is None:
+        print("the scripts are current, the stamp is not -- re-run --apply once it can be written.",
+              file=sys.stderr)
+        return 2
     print(f"\nwrote {len(changed) + len(added)} files. Proving them:")
     if not prove():
         print("the updated folder does not pass its own checks -- restore it from git.",
@@ -4155,11 +4239,13 @@ control: a suite that only ever sees good input cannot tell you the check still 
 
 import shutil
 import sys
+import tempfile
 import unittest
 from pathlib import Path
 
 sys.path.insert(0, str(Path(__file__).resolve().parent))
 
+import build_index
 from _testkit import make_vault, run_tool, write_note
 from vault_paths import (
     CATEGORY_FOLDERS,
@@ -4286,7 +4372,7 @@ class BuildIndexTest(unittest.TestCase):
         """#15. Recipe for the failure without the fix: delete the `declared = ...` assignment
         AND the `if declared and ...` block under it from collect_entries in build_index.py --
         cutting only the assignment leaves an orphaned defects.add() and measures something
-        else. Re-measured that way on this machine 2026-07-29 -- 29 of 30 tests pass and this
+        else. Re-measured that way on this machine 2026-07-31 -- 31 of 32 tests pass and this
         one fails with `AssertionError: 0 != 1`: the run exits 0, says nothing, and indexes the
         note under ProjektEins while its frontmatter goes on claiming Homelab. acceptance.py
         drops to 11/12 in the same state. The asymmetry is what made it hard to see: agreement
@@ -4422,7 +4508,7 @@ class BuildIndexTest(unittest.TestCase):
         #
         # Recipe, so the number below stays reproducible: copy tools/ somewhere, add the five
         # lines back to template_text() in vault_paths.py, run `python -m unittest
-        # test_build_index` there. Measured on this machine 2026-07-29 -- 29/30, failing here
+        # test_build_index` there. Measured on this machine 2026-07-31 -- 31/32, failing here
         # and nowhere else.
         for field in ("updated:", "issues:", "generator:", "retired:", "stale:"):
             self.assertNotIn(field, text)
@@ -4445,7 +4531,7 @@ class BuildIndexTest(unittest.TestCase):
         """_templates sits at the vault root, and a directory at the vault root is a project.
 
         Recipe for the failure without the exemption: drop TEMPLATES_DIR from SKIP_DIRS in
-        vault_paths.py and rerun. Re-measured on this machine 2026-07-29 -- 28/30 here, 11/12 in
+        vault_paths.py and rerun. Re-measured on this machine 2026-07-31 -- 30/32 here, 11/12 in
         acceptance.py and 13/14 in verify_setup.py. The run then reports six `created
         _templates/<category>` lines and writes a `TEMPLATE - _templates.md` for the folder it
         just mistook for a project.
@@ -4499,6 +4585,70 @@ class BuildIndexTest(unittest.TestCase):
         self.assertIn('project: "ProjektSpaeter"', later.read_text(encoding="utf-8"))
         self.assertIn(later.name, out)
         self.assertNotIn(template_name("ProjektEins"), out)   # the existing one is not touched
+
+    # ------------------------------------------------ a run that cannot finish still reports
+
+    def test_an_unwritable_index_is_a_defect_and_the_run_still_reaches_the_log(self):
+        """The write in write_if_changed used to sit outside the try, so one locked INDEX file
+        raised PermissionError and killed the run BEFORE log_run(). Half a tree and not one
+        line in runs.log -- not `defects`, not `did-not-run`, nothing.
+
+        The fixture is a DIRECTORY where an index file belongs, because that raises OSError for
+        every user on every platform. A read-only flag is the real-world cause -- OneDrive, or
+        an editor holding the file -- but it does not stop root, and a suite that quietly passes
+        for the wrong reason on someone else's machine is what this file exists to prevent.
+
+        Measured with the real cause on this machine 2026-07-31, on a copy of a 491-note vault,
+        `attrib +R` on `Horus-F5Tts-Onnx/00_Notes/INDEX - Horus-F5Tts-Onnx Notes.md`:
+        before the fix a PermissionError traceback, 46 of 61 index files written and no runs.log
+        at all; after it exit 1, the filename on stderr, 61 of 61 written and one
+        `build_index … defects` line. `attrib -R` on the same file puts the copy back.
+
+        Undo recipe: move `path.write_text(...)` in build_index.py's write_if_changed() back out
+        of its try block. This case then fails with a PermissionError traceback instead of the
+        listing, and the two log assertions below go with it.
+        """
+        write_note(self.project / "00_Notes" / "eine-erkenntnis.md", title="Eine Erkenntnis")
+        blocked = self.project / "00_Notes" / category_index_name("ProjektEins", "00_Notes")
+        blocked.mkdir(parents=True, exist_ok=True)
+
+        code, _, err = run_tool("build_index.py", "--vault", self.project)
+        self.assertEqual(code, 1)
+        self.assertIn(blocked.name, err)
+        self.assertIn("not written", err)
+        self.assertNotIn("Traceback", err)
+        # The rest of the tree was written anyway -- one refused file is not a reason to
+        # abandon the other five categories and the hub.
+        for folder in ("02_docs", "06_tools"):
+            self.assertTrue(
+                (self.project / folder / category_index_name("ProjektEins", folder)).exists(),
+                f"{folder} was abandoned after an unrelated file could not be written")
+        self.assertTrue((self.project / project_index_name(self.project)).exists())
+        # And the run said so where silence would have read as "did not run".
+        log = (self.vault / RUN_LOG_RELPATH).read_text(encoding="utf-8")
+        self.assertIn("build_index", log)
+        self.assertIn("defects", log)
+
+    def test_a_link_target_outside_the_vault_is_a_defect_not_a_crash(self):
+        """`relative_to()` raises ValueError for a junction or symlink resolving out of the
+        vault, and it used to leave link_to() as a traceback -- same silence as above, since
+        log_run() is never reached.
+
+        Called directly rather than through a symlink fixture: creating one on Windows needs
+        administrator rights or Developer Mode, so a fixture would skip itself on the default
+        installation and prove nothing there.
+
+        Undo recipe: drop the try/except around the `rel = ...` line in build_index.py's
+        link_to(). This case then fails with ValueError instead of returning the label.
+        """
+        defects = build_index.Defects()
+        outside = Path(tempfile.gettempdir()).resolve() / "ganz-woanders.md"
+        text = build_index.link_to(self.vault, outside, "Woanders", defects)
+        self.assertEqual(len(defects), 1)
+        self.assertEqual(defects.items[0][0], "ganz-woanders.md")
+        self.assertIn("outside the vault root", defects.items[0][1])
+        self.assertIn("Woanders", text)
+        self.assertNotIn("[[", text)
 
     # -------------------------------------------------------------- invariants
 
@@ -5439,8 +5589,8 @@ class UpgradeTest(unittest.TestCase):
         is False. classify() then lists an untouched file under `overwrite`, and the user is
         told they have a local edit they never made.
 
-        Undo recipe, measured on this machine 2026-07-30: in upgrade.py's classify(), read the
-        target with `encoding="utf-8"` again. test_upgrade 13/15 -- this case fails with
+        Undo recipe, re-measured on this machine 2026-07-31: in upgrade.py's classify(), read the
+        target with `encoding="utf-8"` again. test_upgrade 16/18 -- this case fails with
         `1 would be overwritten` where it expects `1 unchanged`, and the undecodable case goes
         with it, because dropping the replacement handler is part of the same reversal. The run
         stays exit 0 throughout, which is why nothing caught it before.
@@ -5473,6 +5623,68 @@ class UpgradeTest(unittest.TestCase):
         self.assertIn("overwrite  build_index.py", out)
         self.assertNotIn("UnicodeDecodeError", err)
 
+    # ------------------------------------- file operations that the environment refuses
+
+    def test_a_kit_path_that_is_not_there_is_named_rather_than_traced(self):
+        """The first thing the update path does, and a mistyped argument is the likeliest input.
+
+        Verified by running it on this machine 2026-07-31: `upgrade.py <typo>.md` came back as a
+        FileNotFoundError traceback out of read_kit(). A traceback on the opening move reads as
+        "this tool is broken" rather than "that path is wrong", and it is the state a user is in
+        when they are already trying to repair something.
+
+        Exit 2 rather than 1 throughout this file means the environment refused an I/O
+        operation; 1 stays what it was, "written, but it does not pass its own checks".
+
+        Undo recipe: remove the try/except around read_text() in upgrade.py's read_kit(). This
+        case then exits 1 with `Traceback (most recent call last)` on stderr.
+        """
+        code, out, err = run_upgrade(self.tools, self.tmp / "gibt-es-nicht.md")
+        self.assertEqual(code, 2, out + err)
+        self.assertNotIn("Traceback", err)
+        self.assertIn("gibt-es-nicht.md", out + err)
+
+    def test_a_stamp_path_that_is_not_there_is_named_rather_than_traced(self):
+        """--stamp is the other entry point and had the same hole, in a read of its own."""
+        code, out, err = run_upgrade(self.tools, "--stamp", self.tmp / "gibt-es-nicht.md")
+        self.assertEqual(code, 2, out + err)
+        self.assertNotIn("Traceback", err)
+        self.assertIn("gibt-es-nicht.md", out + err)
+        self.assertFalse((self.tools / "kit-version.txt").exists())
+
+    def test_a_file_that_cannot_be_written_is_named_and_the_rest_still_land(self):
+        """One refused target used to end --apply with a traceback naming the exception and not
+        the file, and every script after it in the list went unwritten with nothing said either.
+
+        The refused block here is one whose heading carries a directory that does not exist, so
+        the write raises FileNotFoundError for every user on every platform -- no permissions
+        involved, no exception for root. It sorts first among the added files, which is the half
+        that matters: the ones behind it have to land anyway.
+
+        The stamp is the other half. A folder that is part old and part new must not come out
+        carrying a version claiming otherwise -- the same reason stamp() refuses to record
+        "unversioned".
+
+        Undo recipe: remove the try/except from the write loop in upgrade.py's main(). This case
+        then exits 1 with a FileNotFoundError traceback, check_links.py is never written, and
+        the assertions on the surviving file and on the absent stamp go with it.
+        """
+        kit = kit_file(self.tmp / "kit.md",
+                       {"build_index.py": "print('new')",
+                        "aaa_kein_ordner/neu.py": "x = 1",
+                        "check_links.py": "print('tool')"},
+                       version="abcdef012345")
+        code, out, err = run_upgrade(self.tools, kit, "--apply")
+        self.assertEqual(code, 2, out + err)
+        self.assertNotIn("Traceback", err)
+        self.assertIn("aaa_kein_ordner/neu.py", err)
+        self.assertEqual((self.tools / "build_index.py").read_text(encoding="utf-8"),
+                         "print('new')\n", "a file listed before the refusal was not written")
+        self.assertTrue((self.tools / "check_links.py").exists(),
+                        "the loop stopped at the first refusal instead of naming it and going on")
+        self.assertFalse((self.tools / "kit-version.txt").exists(),
+                         "a part-old, part-new folder was stamped as if the update had finished")
+
     # ------------------------------------- a newer kit whose scripts happen to be identical
 
     def test_a_newer_kit_with_identical_scripts_still_reports_the_stale_stamp(self):
@@ -5492,12 +5704,14 @@ class UpgradeTest(unittest.TestCase):
         the --apply case below went red, and a recipe that moves one test when it claims two is
         the same defect this suite exists for, one level up.
 
-        Undo recipe, measured on this machine 2026-07-30: replace the stamp comparison in
+        Undo recipe, re-measured on this machine 2026-07-31: replace the stamp comparison in
         upgrade.py's main() with `if False:`, which is what returning early amounts to.
-        test_upgrade 12/15 -- this case, the unstamped one and the --apply one -- and
-        verify_setup 13/14 at step 13. It was 14/15 before the assertions above were moved off
-        the header line, and the difference between those two numbers is the whole reason this
-        recipe gets run instead of reasoned about.
+        test_upgrade 15/18 -- this case, the unstamped one and the --apply one -- and
+        verify_setup 13/14 at step 13. Before the assertions above were moved off the header
+        line the same recipe moved exactly ONE test, and the difference between one and three
+        is the whole reason this recipe gets run instead of reasoned about. Named rather than
+        given as a fraction, because that older run cannot be repeated: the code it measured
+        is gone, and a fraction carried forward would look like a number somebody still has.
         """
         run_upgrade(self.tools, "--stamp",
                     kit_file(self.tmp / "old.md", {"build_index.py": "print('old')"},

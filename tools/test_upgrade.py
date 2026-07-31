@@ -149,8 +149,8 @@ class UpgradeTest(unittest.TestCase):
         is False. classify() then lists an untouched file under `overwrite`, and the user is
         told they have a local edit they never made.
 
-        Undo recipe, measured on this machine 2026-07-30: in upgrade.py's classify(), read the
-        target with `encoding="utf-8"` again. test_upgrade 13/15 -- this case fails with
+        Undo recipe, re-measured on this machine 2026-07-31: in upgrade.py's classify(), read the
+        target with `encoding="utf-8"` again. test_upgrade 16/18 -- this case fails with
         `1 would be overwritten` where it expects `1 unchanged`, and the undecodable case goes
         with it, because dropping the replacement handler is part of the same reversal. The run
         stays exit 0 throughout, which is why nothing caught it before.
@@ -183,6 +183,68 @@ class UpgradeTest(unittest.TestCase):
         self.assertIn("overwrite  build_index.py", out)
         self.assertNotIn("UnicodeDecodeError", err)
 
+    # ------------------------------------- file operations that the environment refuses
+
+    def test_a_kit_path_that_is_not_there_is_named_rather_than_traced(self):
+        """The first thing the update path does, and a mistyped argument is the likeliest input.
+
+        Verified by running it on this machine 2026-07-31: `upgrade.py <typo>.md` came back as a
+        FileNotFoundError traceback out of read_kit(). A traceback on the opening move reads as
+        "this tool is broken" rather than "that path is wrong", and it is the state a user is in
+        when they are already trying to repair something.
+
+        Exit 2 rather than 1 throughout this file means the environment refused an I/O
+        operation; 1 stays what it was, "written, but it does not pass its own checks".
+
+        Undo recipe: remove the try/except around read_text() in upgrade.py's read_kit(). This
+        case then exits 1 with `Traceback (most recent call last)` on stderr.
+        """
+        code, out, err = run_upgrade(self.tools, self.tmp / "gibt-es-nicht.md")
+        self.assertEqual(code, 2, out + err)
+        self.assertNotIn("Traceback", err)
+        self.assertIn("gibt-es-nicht.md", out + err)
+
+    def test_a_stamp_path_that_is_not_there_is_named_rather_than_traced(self):
+        """--stamp is the other entry point and had the same hole, in a read of its own."""
+        code, out, err = run_upgrade(self.tools, "--stamp", self.tmp / "gibt-es-nicht.md")
+        self.assertEqual(code, 2, out + err)
+        self.assertNotIn("Traceback", err)
+        self.assertIn("gibt-es-nicht.md", out + err)
+        self.assertFalse((self.tools / "kit-version.txt").exists())
+
+    def test_a_file_that_cannot_be_written_is_named_and_the_rest_still_land(self):
+        """One refused target used to end --apply with a traceback naming the exception and not
+        the file, and every script after it in the list went unwritten with nothing said either.
+
+        The refused block here is one whose heading carries a directory that does not exist, so
+        the write raises FileNotFoundError for every user on every platform -- no permissions
+        involved, no exception for root. It sorts first among the added files, which is the half
+        that matters: the ones behind it have to land anyway.
+
+        The stamp is the other half. A folder that is part old and part new must not come out
+        carrying a version claiming otherwise -- the same reason stamp() refuses to record
+        "unversioned".
+
+        Undo recipe: remove the try/except from the write loop in upgrade.py's main(). This case
+        then exits 1 with a FileNotFoundError traceback, check_links.py is never written, and
+        the assertions on the surviving file and on the absent stamp go with it.
+        """
+        kit = kit_file(self.tmp / "kit.md",
+                       {"build_index.py": "print('new')",
+                        "aaa_kein_ordner/neu.py": "x = 1",
+                        "check_links.py": "print('tool')"},
+                       version="abcdef012345")
+        code, out, err = run_upgrade(self.tools, kit, "--apply")
+        self.assertEqual(code, 2, out + err)
+        self.assertNotIn("Traceback", err)
+        self.assertIn("aaa_kein_ordner/neu.py", err)
+        self.assertEqual((self.tools / "build_index.py").read_text(encoding="utf-8"),
+                         "print('new')\n", "a file listed before the refusal was not written")
+        self.assertTrue((self.tools / "check_links.py").exists(),
+                        "the loop stopped at the first refusal instead of naming it and going on")
+        self.assertFalse((self.tools / "kit-version.txt").exists(),
+                         "a part-old, part-new folder was stamped as if the update had finished")
+
     # ------------------------------------- a newer kit whose scripts happen to be identical
 
     def test_a_newer_kit_with_identical_scripts_still_reports_the_stale_stamp(self):
@@ -202,12 +264,14 @@ class UpgradeTest(unittest.TestCase):
         the --apply case below went red, and a recipe that moves one test when it claims two is
         the same defect this suite exists for, one level up.
 
-        Undo recipe, measured on this machine 2026-07-30: replace the stamp comparison in
+        Undo recipe, re-measured on this machine 2026-07-31: replace the stamp comparison in
         upgrade.py's main() with `if False:`, which is what returning early amounts to.
-        test_upgrade 12/15 -- this case, the unstamped one and the --apply one -- and
-        verify_setup 13/14 at step 13. It was 14/15 before the assertions above were moved off
-        the header line, and the difference between those two numbers is the whole reason this
-        recipe gets run instead of reasoned about.
+        test_upgrade 15/18 -- this case, the unstamped one and the --apply one -- and
+        verify_setup 13/14 at step 13. Before the assertions above were moved off the header
+        line the same recipe moved exactly ONE test, and the difference between one and three
+        is the whole reason this recipe gets run instead of reasoned about. Named rather than
+        given as a fraction, because that older run cannot be repeated: the code it measured
+        is gone, and a fraction carried forward would look like a number somebody still has.
         """
         run_upgrade(self.tools, "--stamp",
                     kit_file(self.tmp / "old.md", {"build_index.py": "print('old')"},

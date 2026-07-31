@@ -41,7 +41,16 @@ def read_kit(path):
     # utf-8-sig: a downloaded kit file re-saved by a Windows editor starts with a BOM, and
     # VERSION_RE anchors at ^. The match then fails and the newer kit reads as "unversioned"
     # -- the one number the whole update path compares against.
-    text = Path(path).read_text(encoding="utf-8-sig")
+    try:
+        text = Path(path).read_text(encoding="utf-8-sig")
+    except OSError as exc:
+        # THE FIRST THING THE UPDATE PATH DOES (2026-07-31). A mistyped kit path used to come
+        # back as a FileNotFoundError traceback -- verified by running it -- and a traceback on
+        # the opening move reads as "this tool is broken", not as "that argument is wrong".
+        # Exit 2 throughout this file means the environment refused an I/O operation, which is
+        # a different repair from exit 1 (written, but it does not pass its own checks).
+        print(f"{path}: cannot be read ({exc})", file=sys.stderr)
+        raise SystemExit(2)
     blocks = {name: body + "\n" for name, body in BLOCK_RE.findall(text)}
     if not blocks:
         raise SystemExit(f"{path}: no script blocks found -- is this a kit file?")
@@ -56,9 +65,18 @@ def installed_version():
 
 
 def write_stamp(version):
-    """The one place kit-version.txt is spelled. Both writers go through here."""
+    """The one place kit-version.txt is spelled. Both writers go through here.
+
+    Returns the path on success and None when the write failed, having said why on stderr.
+    Both callers act on the None: a stamp is the answer to "which kit is this folder from",
+    and a run that could not write one must not go on to report a version it did not record.
+    """
     target = TOOLS / "kit-version.txt"
-    target.write_text(version + "\n", encoding="utf-8", newline="\n")
+    try:
+        target.write_text(version + "\n", encoding="utf-8", newline="\n")
+    except OSError as exc:
+        print(f"{target.name}: not written ({exc})", file=sys.stderr)
+        return None
     return target
 
 
@@ -77,7 +95,13 @@ def stamp(kit_path):
     would then be compared against every future kit forever and never match, which is a wrong
     answer wearing a right answer's clothes.
     """
-    text = Path(kit_path).read_text(encoding="utf-8-sig")
+    try:
+        text = Path(kit_path).read_text(encoding="utf-8-sig")
+    except OSError as exc:
+        # Same reasoning as read_kit(): --stamp is the other entry point, and a mistyped path
+        # here produced the same traceback.
+        print(f"{kit_path}: cannot be read ({exc})", file=sys.stderr)
+        return 2
     found = VERSION_RE.search(text)
     if not found:
         print(f"{kit_path}: no `<!-- kit-version: … -->` line — nothing to stamp. An unstamped "
@@ -85,6 +109,8 @@ def stamp(kit_path):
               f"than none.", file=sys.stderr)
         return 1
     target = write_stamp(found.group(1))
+    if target is None:
+        return 2
     print(f"wrote {target.name}: {found.group(1)}")
     return 0
 
@@ -107,11 +133,11 @@ def classify(blocks):
         with no filename in the message, taking the whole update down. `errors="replace"` turns
         that into a mismatch, so the file is named as `overwrite` and the run survives.
 
-    Undo recipes, both measured on this machine 2026-07-30, and they are not symmetric:
+    Undo recipes, both re-measured on this machine 2026-07-31, and they are not symmetric:
 
-      - Set the encoding back to `utf-8` (dropping errors= with it): test_upgrade 13/15. BOTH
+      - Set the encoding back to `utf-8` (dropping errors= with it): test_upgrade 16/18. BOTH
         cases go red, because `utf-8` without a replacement handler raises on the bad byte too.
-      - Keep `utf-8-sig` and drop only `errors="replace"`: test_upgrade 14/15, and only
+      - Keep `utf-8-sig` and drop only `errors="replace"`: test_upgrade 17/18, and only
         `test_an_undecodable_file_is_named_rather_than_crashing_the_run` moves. That asymmetry is
         the measurement worth keeping -- it shows the BOM half and the crash half are two defects
         sharing one line, and fixing either alone leaves the other.
@@ -184,7 +210,8 @@ def main(argv=None):
     if not changed and not added:
         if new_version != "unversioned" and installed != new_version:
             if args.apply:
-                write_stamp(new_version)
+                if write_stamp(new_version) is None:
+                    return 2
                 print(f"every script is already current · stamp corrected: "
                       f"{installed} → {new_version}")
             else:
@@ -197,9 +224,30 @@ def main(argv=None):
         print("\nnothing written. Re-run with --apply to write these files.")
         return 0
 
+    # PER FILE, AND THE LOOP DOES NOT STOP AT THE FIRST REFUSAL (2026-07-31). One unwritable
+    # target used to end the run with a traceback that named the exception and not the file, and
+    # every script after it in the list went unwritten with nothing said about them either. Now
+    # each failure is named and the rest still land: a folder that got 20 of 22 files and knows
+    # which two it is missing can be repaired; one that stopped somewhere unnamed cannot.
+    refused = []
     for name in changed + added:
-        (TOOLS / name).write_text(blocks[name], encoding="utf-8", newline="\n")
-    write_stamp(new_version)
+        try:
+            (TOOLS / name).write_text(blocks[name], encoding="utf-8", newline="\n")
+        except OSError as exc:
+            print(f"{name}: not written ({exc})", file=sys.stderr)
+            refused.append(name)
+    if refused:
+        # No stamp. kit-version.txt naming a version this folder does not carry is the same
+        # wrong-answer-in-right-answer's-clothes that stamp() refuses "unversioned" for.
+        print(f"\n{len(changed) + len(added) - len(refused)} of {len(changed) + len(added)} files "
+              f"written · {len(refused)} refused: {', '.join(refused)}\n"
+              f"kit-version.txt was NOT updated -- the folder is part old, part new, and a stamp "
+              f"would claim otherwise. Fix the cause and re-run --apply.", file=sys.stderr)
+        return 2
+    if write_stamp(new_version) is None:
+        print("the scripts are current, the stamp is not -- re-run --apply once it can be written.",
+              file=sys.stderr)
+        return 2
     print(f"\nwrote {len(changed) + len(added)} files. Proving them:")
     if not prove():
         print("the updated folder does not pass its own checks -- restore it from git.",

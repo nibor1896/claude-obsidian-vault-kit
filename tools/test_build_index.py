@@ -6,11 +6,13 @@ control: a suite that only ever sees good input cannot tell you the check still 
 
 import shutil
 import sys
+import tempfile
 import unittest
 from pathlib import Path
 
 sys.path.insert(0, str(Path(__file__).resolve().parent))
 
+import build_index
 from _testkit import make_vault, run_tool, write_note
 from vault_paths import (
     CATEGORY_FOLDERS,
@@ -137,7 +139,7 @@ class BuildIndexTest(unittest.TestCase):
         """#15. Recipe for the failure without the fix: delete the `declared = ...` assignment
         AND the `if declared and ...` block under it from collect_entries in build_index.py --
         cutting only the assignment leaves an orphaned defects.add() and measures something
-        else. Re-measured that way on this machine 2026-07-29 -- 29 of 30 tests pass and this
+        else. Re-measured that way on this machine 2026-07-31 -- 31 of 32 tests pass and this
         one fails with `AssertionError: 0 != 1`: the run exits 0, says nothing, and indexes the
         note under ProjektEins while its frontmatter goes on claiming Homelab. acceptance.py
         drops to 11/12 in the same state. The asymmetry is what made it hard to see: agreement
@@ -273,7 +275,7 @@ class BuildIndexTest(unittest.TestCase):
         #
         # Recipe, so the number below stays reproducible: copy tools/ somewhere, add the five
         # lines back to template_text() in vault_paths.py, run `python -m unittest
-        # test_build_index` there. Measured on this machine 2026-07-29 -- 29/30, failing here
+        # test_build_index` there. Measured on this machine 2026-07-31 -- 31/32, failing here
         # and nowhere else.
         for field in ("updated:", "issues:", "generator:", "retired:", "stale:"):
             self.assertNotIn(field, text)
@@ -296,7 +298,7 @@ class BuildIndexTest(unittest.TestCase):
         """_templates sits at the vault root, and a directory at the vault root is a project.
 
         Recipe for the failure without the exemption: drop TEMPLATES_DIR from SKIP_DIRS in
-        vault_paths.py and rerun. Re-measured on this machine 2026-07-29 -- 28/30 here, 11/12 in
+        vault_paths.py and rerun. Re-measured on this machine 2026-07-31 -- 30/32 here, 11/12 in
         acceptance.py and 13/14 in verify_setup.py. The run then reports six `created
         _templates/<category>` lines and writes a `TEMPLATE - _templates.md` for the folder it
         just mistook for a project.
@@ -350,6 +352,70 @@ class BuildIndexTest(unittest.TestCase):
         self.assertIn('project: "ProjektSpaeter"', later.read_text(encoding="utf-8"))
         self.assertIn(later.name, out)
         self.assertNotIn(template_name("ProjektEins"), out)   # the existing one is not touched
+
+    # ------------------------------------------------ a run that cannot finish still reports
+
+    def test_an_unwritable_index_is_a_defect_and_the_run_still_reaches_the_log(self):
+        """The write in write_if_changed used to sit outside the try, so one locked INDEX file
+        raised PermissionError and killed the run BEFORE log_run(). Half a tree and not one
+        line in runs.log -- not `defects`, not `did-not-run`, nothing.
+
+        The fixture is a DIRECTORY where an index file belongs, because that raises OSError for
+        every user on every platform. A read-only flag is the real-world cause -- OneDrive, or
+        an editor holding the file -- but it does not stop root, and a suite that quietly passes
+        for the wrong reason on someone else's machine is what this file exists to prevent.
+
+        Measured with the real cause on this machine 2026-07-31, on a copy of a 491-note vault,
+        `attrib +R` on `Horus-F5Tts-Onnx/00_Notes/INDEX - Horus-F5Tts-Onnx Notes.md`:
+        before the fix a PermissionError traceback, 46 of 61 index files written and no runs.log
+        at all; after it exit 1, the filename on stderr, 61 of 61 written and one
+        `build_index … defects` line. `attrib -R` on the same file puts the copy back.
+
+        Undo recipe: move `path.write_text(...)` in build_index.py's write_if_changed() back out
+        of its try block. This case then fails with a PermissionError traceback instead of the
+        listing, and the two log assertions below go with it.
+        """
+        write_note(self.project / "00_Notes" / "eine-erkenntnis.md", title="Eine Erkenntnis")
+        blocked = self.project / "00_Notes" / category_index_name("ProjektEins", "00_Notes")
+        blocked.mkdir(parents=True, exist_ok=True)
+
+        code, _, err = run_tool("build_index.py", "--vault", self.project)
+        self.assertEqual(code, 1)
+        self.assertIn(blocked.name, err)
+        self.assertIn("not written", err)
+        self.assertNotIn("Traceback", err)
+        # The rest of the tree was written anyway -- one refused file is not a reason to
+        # abandon the other five categories and the hub.
+        for folder in ("02_docs", "06_tools"):
+            self.assertTrue(
+                (self.project / folder / category_index_name("ProjektEins", folder)).exists(),
+                f"{folder} was abandoned after an unrelated file could not be written")
+        self.assertTrue((self.project / project_index_name(self.project)).exists())
+        # And the run said so where silence would have read as "did not run".
+        log = (self.vault / RUN_LOG_RELPATH).read_text(encoding="utf-8")
+        self.assertIn("build_index", log)
+        self.assertIn("defects", log)
+
+    def test_a_link_target_outside_the_vault_is_a_defect_not_a_crash(self):
+        """`relative_to()` raises ValueError for a junction or symlink resolving out of the
+        vault, and it used to leave link_to() as a traceback -- same silence as above, since
+        log_run() is never reached.
+
+        Called directly rather than through a symlink fixture: creating one on Windows needs
+        administrator rights or Developer Mode, so a fixture would skip itself on the default
+        installation and prove nothing there.
+
+        Undo recipe: drop the try/except around the `rel = ...` line in build_index.py's
+        link_to(). This case then fails with ValueError instead of returning the label.
+        """
+        defects = build_index.Defects()
+        outside = Path(tempfile.gettempdir()).resolve() / "ganz-woanders.md"
+        text = build_index.link_to(self.vault, outside, "Woanders", defects)
+        self.assertEqual(len(defects), 1)
+        self.assertEqual(defects.items[0][0], "ganz-woanders.md")
+        self.assertIn("outside the vault root", defects.items[0][1])
+        self.assertIn("Woanders", text)
+        self.assertNotIn("[[", text)
 
     # -------------------------------------------------------------- invariants
 

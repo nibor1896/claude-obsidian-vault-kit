@@ -13,7 +13,6 @@ every step passed in every pass.
 """
 
 import argparse
-import json
 import os
 import shutil
 import subprocess

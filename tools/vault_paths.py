@@ -52,15 +52,6 @@ FORBIDDEN_LINK_CHARS = set("#[]|^")
 RUN_LOG_RELPATH = Path("00_Global") / "06_tools" / "runs.log"
 
 
-def force_utf8():
-    """Re-export of the stdout/stderr fix so tests can assert it exists."""
-    for stream in (sys.stdout, sys.stderr):
-        try:
-            stream.reconfigure(encoding="utf-8", errors="replace")
-        except (AttributeError, ValueError):
-            pass
-
-
 def category_label(folder_name: str) -> str:
     """'03_technical_docs' -> 'technical_docs'. The prefix is sort order, not meaning."""
     return re.sub(r"^\d+_", "", folder_name)
@@ -170,7 +161,12 @@ def log_run(vault_root, job: str, status: str, detail: str = ""):
         log_path.parent.mkdir(parents=True, exist_ok=True)
         stamp = datetime.now(timezone.utc).strftime("%Y-%m-%dT%H:%M:%S+00:00")
         line = f"{stamp}\t{job}\t{status}\t{detail}\n"
-        with open(log_path, "a", encoding="utf-8") as fh:
+        # newline="\n": the only writer in this kit that lacked it, so runs.log was the one
+        # generated file whose line endings depended on the platform that wrote it. The reader
+        # (check_freshness.py) opens in universal-newline mode and copes either way, which is
+        # exactly why nothing went red over it -- a log half CRLF and half LF from two different
+        # machines is a diff nobody can read, not a run that fails.
+        with open(log_path, "a", encoding="utf-8", newline="\n") as fh:
             fh.write(line)
     except OSError as exc:
         print(f"run log not written: {exc}", file=sys.stderr)

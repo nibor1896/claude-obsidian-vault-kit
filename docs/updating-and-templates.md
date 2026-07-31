@@ -130,7 +130,7 @@ driver**. If either goes red it says so and fails: a tool folder that was update
 re-proven is the state this kit exists to prevent. Restore from git if that happens — which is one
 of the reasons the vault is a git repository.
 
-### Two things it now tells you that it used to swallow
+### Three things it now tells you that it used to swallow
 
 **A release that changed no script still moves the version.** If a new kit only edits the contract
 or the setup instructions, every script on your disk is already current — and the updater used to
@@ -145,6 +145,16 @@ bytes of your code are unchanged, but the comparison used to fail, and the scrip
 `overwrite` when nothing about it had been edited. Those files now compare as unchanged. And a file
 containing genuinely invalid bytes is named in the listing instead of stopping the entire update
 with an error that mentions no filename at all.
+
+**A path it cannot read or write is named, not traced.** A mistyped kit file used to come back as a
+Python traceback out of the first thing the updater does, which reads as "this tool is broken"
+rather than "that path is wrong" — and you are usually already repairing something when you see it.
+The same held for a script the updater could not write: the run ended there, and every script behind
+it in the list went unwritten with nothing said about those either. Now each refused file is named,
+the ones behind it are still written, and **the stamp is deliberately left alone** — a folder that is
+part old and part new must not carry a version claiming the update finished. Fix the cause and rerun
+`--apply`. These runs exit with code `2`, which means the environment refused a file operation;
+code `1` still means what it did, "written, but it does not pass its own checks".
 
 ---
 
