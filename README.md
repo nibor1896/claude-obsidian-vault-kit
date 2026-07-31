@@ -93,6 +93,19 @@ code, a run-log label that no longer matches its filename, a runnable script mis
 stdout/stderr fix, a command line naming a tool nobody gets, or a count in the text the code does
 not count.
 
+## What you end up with
+
+<p align="center">
+  <img src="docs/media/vault-in-obsidian.png" width="960"
+       alt="An Obsidian vault built by this kit: the generated root index on the left, the graph view it produces on the right">
+</p>
+
+That vault is the author's own, seven projects and a few hundred notes deep — the index on the left
+is generated, the graph on the right is what the links in it produce. **Yours starts empty:** the
+same tree, the same three tools, four pages describing them, and not one note you did not write.
+The counts on the image are the ones visible in it — the lines add up to 404, and `823/823` is what
+the link checker said that day.
+
 ## License
 
 MIT — see [LICENSE](LICENSE).
