@@ -605,6 +605,37 @@ cannot tell you the check still works.
 outcomes explicitly: pass, fail, and *did not run*. A check that cannot tell "working" from "broken"
 is not evidence.
 
+The third one is a phrase, not an exit code, and it is spelled **`did not run: <why>`** — one
+wording, from one constant, because a checker that scanned nothing and a checker that found nothing
+print the same number otherwise.
+
+### The three exit codes, and what each one claims
+
+Both shipped scripts use these, and nothing else. Read them as claims about *what was measured*, not
+as severity:
+
+| | Meaning | What the user does |
+|---|---|---|
+| `0` | **Clean.** The check ran over a real population and found nothing wrong. | nothing |
+| `1` | **A defect, or `did not run`.** Either it found something, or it could not reach a verdict. | fix a note, or run the thing that was missing |
+| `2` | **The arguments or the sources are wrong, not the vault.** An unknown subcommand, a path that is not a directory, two config lists that contradict each other, a file operation the environment refused. **Nothing was measured, so nothing about the vault is being claimed.** | fix the command or the config |
+
+**`1` covers two states on purpose.** "I found a broken link" and "I could not look" are both *do not
+trust this vault yet*, and both are answered by the same next action: look at the output. Splitting
+them would put the difference in a number instead of in the sentence that already carries it.
+
+**One deliberate exception, and it is the kind that reads like a bug forever if nobody writes it
+down.** `vaultkit.py duplicates` returns **`0`** when there are fewer than two comparable notes,
+where `links` and `freshness` return `1` in their equivalent case. The reason is the first run of a
+new vault: one note is not a failure, it is Tuesday. A guard that goes red on a brand-new vault
+teaches its owner to ignore it in the first minute, and a check that gets ignored is worse than one
+that does not exist.
+
+Measured on 2026-07-31, flipping that one return to `1`: a fresh vault holding a single note goes
+from exit `0` to exit `1` — **and `acceptance.py` stays at 12/12**, because its healthy-control
+fixture has two notes. Nothing in this kit's own verification sees that decision, which is precisely
+why it is stated here rather than left in the code to be discovered and "fixed".
+
 ### Force UTF-8 on stdout and stderr in every tool — first lines of every script
 
 ```python

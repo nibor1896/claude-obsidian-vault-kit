@@ -103,6 +103,12 @@ class VaultkitTest(unittest.TestCase):
             self.assertTrue(callable(spec.get("run")), f"{sub} routes to nothing callable")
             self.assertIs(spec["run"], getattr(vaultkit, f"{sub}_main", None),
                           f"{sub} does not route to {sub}_main")
+            # The typed part of the contract, checked as behaviour rather than trusted: a
+            # handler takes the leftover arguments and returns an exit code. `upgrade.py
+            # --prove` only asserts callable(); this is what says what calling it means.
+            hints = getattr(spec["run"], "__annotations__", {})
+            self.assertEqual(hints.get("return"), int, f"{sub}_main does not declare an exit code")
+            self.assertIn("argv", hints, f"{sub}_main does not declare its argument")
 
     def test_the_register_sits_after_everything_it_describes(self):
         """It is the last thing in the file, and that makes it an all-or-nothing detector.
@@ -112,7 +118,7 @@ class VaultkitTest(unittest.TestCase):
         it would simply lose a tool, quietly, which is the failure the kit is built against.
         """
         text = Path(vaultkit.__file__).read_text(encoding="utf-8")
-        register = text.index("\nCOMMANDS = {")
+        register = text.index("\nCOMMANDS: dict[str, Command] = {")
         self.assertGreater(register, text.index("\ndef main("),
                            "the register moved above the code it describes")
         after = text[register:]

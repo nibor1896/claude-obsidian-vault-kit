@@ -27,14 +27,42 @@ never a candidate. Without a manifest nothing is removed and the run says why --
 by an older kit has exactly one blind update cycle, and the run after it can act.
 """
 
+import sys
+
+# THE SAME CHECK vaultkit.py DOES, AND THE SECOND COPY IS THE POINT (2026-07-31). This file has
+# to run when the other one is destroyed -- that is why it stays a separate block at all -- so it
+# cannot ask vaultkit.py what the floor is. Same rule as the stdout/stderr fix, same reason.
+#
+# The floor is 3.10, from `Path.write_text(newline=…)`, used five times below. On an older Python
+# every one of those raises TypeError at the moment the update WRITES, i.e. after the kit file
+# has been read and classified, with a message naming nothing that points here.
+if sys.version_info < (3, 10):
+    have = ".".join(str(part) for part in sys.version_info[:3])
+    print(f"upgrade.py needs Python 3.10 or newer; this is {have}. Nothing was read or written.",
+          file=sys.stderr)
+    # The literal, not EXIT_USAGE: this runs before the constants below are defined, and a
+    # NameError here would replace the one message that explains what is wrong.
+    raise SystemExit(2)
+
 import argparse
 import json
 import re
 import subprocess
-import sys
 from pathlib import Path
 
 TOOLS = Path(__file__).resolve().parent
+
+# Spelled again rather than imported from vaultkit.py, deliberately. The one thing this file
+# takes from that one is the register, and only inside --prove, inside a try: everything else
+# here has to work on a folder where vaultkit.py is truncated, missing or unparseable. An import
+# at the top would make the repair tool depend on the thing being repaired.
+#
+# Same three meanings, and src/contract.md SECTION 6 states them once for both files:
+#   0  clean · 1  it did the work but it does not check out · 2  wrong argument, or the
+#   environment refused a file operation -- nothing was written on the strength of a guess.
+EXIT_OK = 0
+EXIT_DEFECT = 1
+EXIT_USAGE = 2
 
 # This file, by name. It is delivered like every other script, so a kit that stopped shipping it
 # would list it for removal -- and the run would delete the only tool that can repeat itself.
@@ -53,7 +81,7 @@ BLOCK_RE = re.compile(r"^### `([^`]+)`\n\n```(?:python|json)\n(.*?)\n```", re.S 
 VERSION_RE = re.compile(r"^<!-- kit-version: ([0-9a-f]{12}) -->$", re.M)
 
 
-def read_kit(path):
+def read_kit(path) -> tuple[dict[str, str], str]:
     # utf-8-sig: a downloaded kit file re-saved by a Windows editor starts with a BOM, and
     # VERSION_RE anchors at ^. The match then fails and the newer kit reads as "unversioned"
     # -- the one number the whole update path compares against.
@@ -66,7 +94,7 @@ def read_kit(path):
         # Exit 2 throughout this file means the environment refused an I/O operation, which is
         # a different repair from exit 1 (written, but it does not pass its own checks).
         print(f"{path}: cannot be read ({exc})", file=sys.stderr)
-        raise SystemExit(2)
+        raise SystemExit(EXIT_USAGE)
     blocks = {name: body + "\n" for name, body in BLOCK_RE.findall(text)}
     if not blocks:
         raise SystemExit(f"{path}: no script blocks found -- is this a kit file?")
@@ -117,7 +145,7 @@ def installed_files() -> list[str] | None:
     return [line.strip() for line in text.splitlines() if line.strip()]
 
 
-def write_stamp(version: str, files: list[str] | None = None):
+def write_stamp(version: str, files: list[str] | None = None) -> Path | None:
     """The one place kit-version.txt and kit-manifest.txt are spelled. Every writer comes here.
 
     THE MANIFEST GOES FIRST AND THE STAMP LAST, INSIDE THIS FUNCTION TOO. The stamp is what a
@@ -149,7 +177,7 @@ def write_stamp(version: str, files: list[str] | None = None):
     return target
 
 
-def stamp(kit_path):
+def stamp(kit_path) -> int:
     """Write kit-version.txt from the kit file's own stamp line. Nothing else, no --apply.
 
     WHY THIS IS A COMMAND AND NOT A SENTENCE IN THE CONTRACT (2026-07-29): SECTION 8 used to
@@ -178,21 +206,21 @@ def stamp(kit_path):
         # Same reasoning as read_kit(): --stamp is the other entry point, and a mistyped path
         # here produced the same traceback.
         print(f"{kit_path}: cannot be read ({exc})", file=sys.stderr)
-        return 2
+        return EXIT_USAGE
     found = VERSION_RE.search(text)
     if not found:
         print(f"{kit_path}: no `<!-- kit-version: … -->` line — nothing to stamp. An unstamped "
               f"file cannot say which kit this folder came from, and a guessed value is worse "
               f"than none.", file=sys.stderr)
-        return 1
+        return EXIT_DEFECT
     delivered = sorted(name for name, _ in BLOCK_RE.findall(text))
     target = write_stamp(found.group(1), delivered or None)
     if target is None:
-        return 2
+        return EXIT_USAGE
     print(f"wrote {target.name}: {found.group(1)}")
     if delivered:
         print(f"wrote {MANIFEST_NAME}: {len(delivered)} files this kit delivers")
-    return 0
+    return EXIT_OK
 
 
 def classify(blocks: dict[str, str],
@@ -336,7 +364,7 @@ def remove_file(name: str) -> bool:
     return True
 
 
-def prove():
+def prove() -> bool:
     """What can still be proven about the folder we just wrote, on this machine.
 
     IT USED TO RUN THE SUITES AND THE ACCEPTANCE DRIVER, AND THEY ARE NOT HERE ANY MORE
@@ -438,7 +466,7 @@ def prove_from_disk() -> bool:
     return result.returncode == 0
 
 
-def main(argv=None):
+def main(argv: list[str] | None = None) -> int:
     parser = argparse.ArgumentParser(description=__doc__)
     parser.add_argument("kit", nargs="?", help="path to a newer claude-obsidian-vault-kit.md")
     parser.add_argument("--apply", action="store_true", help="write the changes")
@@ -450,7 +478,7 @@ def main(argv=None):
     args = parser.parse_args(argv)
 
     if args.prove:
-        return 0 if prove() else 1
+        return EXIT_OK if prove() else EXIT_DEFECT
     if args.stamp:
         return stamp(args.stamp)
     if not args.kit:
@@ -498,7 +526,7 @@ def main(argv=None):
         if stale_stamp or delivered is None:
             if args.apply:
                 if write_stamp(new_version, sorted(blocks)) is None:
-                    return 2
+                    return EXIT_USAGE
                 if stale_stamp:
                     print(f"every script is already current · stamp corrected: "
                           f"{installed} → {new_version}")
@@ -511,13 +539,13 @@ def main(argv=None):
             else:
                 print(f"every script is already current, but there is no {MANIFEST_NAME} beside "
                       f"the stamp. Re-run with --apply to record one.")
-            return 0
+            return EXIT_OK
         print("nothing to do.")
-        return 0
+        return EXIT_OK
     if not args.apply:
         what = "write and remove these files" if removed else "write these files"
         print(f"\nnothing written, nothing removed. Re-run with --apply to {what}.")
-        return 0
+        return EXIT_OK
 
     # PER FILE, AND THE LOOP DOES NOT STOP AT THE FIRST REFUSAL (2026-07-31). One unwritable
     # target used to end the run with a traceback that named the exception and not the file, and
@@ -542,7 +570,7 @@ def main(argv=None):
               f"Nothing was removed and {STAMP_NAME} was NOT updated -- the folder is part old, "
               f"part new, and a stamp would claim otherwise. Fix the cause and re-run --apply.",
               file=sys.stderr)
-        return 2
+        return EXIT_USAGE
 
     mismatched = [name for name in changed + added if not reads_back(name, blocks[name])]
     if mismatched:
@@ -550,7 +578,7 @@ def main(argv=None):
               f"{', '.join(mismatched)}\n"
               f"Nothing was removed and nothing was stamped, so this folder still has every "
               f"file it started with. Re-run --apply once the cause is fixed.", file=sys.stderr)
-        return 2
+        return EXIT_USAGE
 
     kept = [name for name in removed if not remove_file(name)]
     if kept:
@@ -559,21 +587,21 @@ def main(argv=None):
         print(f"\n{len(kept)} file(s) could not be removed: {', '.join(kept)}\n"
               f"{MANIFEST_NAME} was NOT updated, so the next --apply tries them again.",
               file=sys.stderr)
-        return 2
+        return EXIT_USAGE
 
     if write_stamp(new_version, sorted(blocks)) is None:
         print("the scripts are current, the stamp is not -- re-run --apply once it can be written.",
               file=sys.stderr)
-        return 2
+        return EXIT_USAGE
     written = len(changed) + len(added)
     print(f"\nwrote {written} files, removed {len(removed)}. Proving them:")
     checked = prove_from_disk() if SELF in changed + added else prove()
     if not checked:
         print("the updated folder does not pass its own checks -- restore it from git.",
               file=sys.stderr)
-        return 1
+        return EXIT_DEFECT
     print(f"updated to {new_version} · every script compiles and jobs.json parses.")
-    return 0
+    return EXIT_OK
 
 
 if __name__ == "__main__":

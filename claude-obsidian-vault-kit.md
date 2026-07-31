@@ -1,4 +1,4 @@
-<!-- kit-version: 83742c4b75be -->
+<!-- kit-version: da3b9756915a -->
 # Claude × Obsidian — Vault Kit
 
 **What this file is:** a setup contract for Claude. Drop it into a Claude conversation and say
@@ -605,6 +605,37 @@ cannot tell you the check still works.
 **Refuse a silent zero.** Every script prints numerator *and* denominator, and distinguishes three
 outcomes explicitly: pass, fail, and *did not run*. A check that cannot tell "working" from "broken"
 is not evidence.
+
+The third one is a phrase, not an exit code, and it is spelled **`did not run: <why>`** — one
+wording, from one constant, because a checker that scanned nothing and a checker that found nothing
+print the same number otherwise.
+
+### The three exit codes, and what each one claims
+
+Both shipped scripts use these, and nothing else. Read them as claims about *what was measured*, not
+as severity:
+
+| | Meaning | What the user does |
+|---|---|---|
+| `0` | **Clean.** The check ran over a real population and found nothing wrong. | nothing |
+| `1` | **A defect, or `did not run`.** Either it found something, or it could not reach a verdict. | fix a note, or run the thing that was missing |
+| `2` | **The arguments or the sources are wrong, not the vault.** An unknown subcommand, a path that is not a directory, two config lists that contradict each other, a file operation the environment refused. **Nothing was measured, so nothing about the vault is being claimed.** | fix the command or the config |
+
+**`1` covers two states on purpose.** "I found a broken link" and "I could not look" are both *do not
+trust this vault yet*, and both are answered by the same next action: look at the output. Splitting
+them would put the difference in a number instead of in the sentence that already carries it.
+
+**One deliberate exception, and it is the kind that reads like a bug forever if nobody writes it
+down.** `vaultkit.py duplicates` returns **`0`** when there are fewer than two comparable notes,
+where `links` and `freshness` return `1` in their equivalent case. The reason is the first run of a
+new vault: one note is not a failure, it is Tuesday. A guard that goes red on a brand-new vault
+teaches its owner to ignore it in the first minute, and a check that gets ignored is worse than one
+that does not exist.
+
+Measured on 2026-07-31, flipping that one return to `1`: a fresh vault holding a single note goes
+from exit `0` to exit `1` — **and `acceptance.py` stays at 12/12**, because its healthy-control
+fixture has two notes. Nothing in this kit's own verification sees that decision, which is precisely
+why it is stated here rather than left in the code to be discovered and "fixed".
 
 ### Force UTF-8 on stdout and stderr in every tool — first lines of every script
 
@@ -1361,11 +1392,31 @@ one section per subcommand, each opening with the tool's own documentation, unch
 it was a file of its own. The register at the very end says which subcommand runs what.
 """
 
+import sys
+
+# BEFORE ANY WORK, AND BEFORE THE IMPORTS THAT WOULD SUCCEED ANYWAY (2026-07-31). The floor is
+# 3.10 and it comes from exactly one thing: `Path.write_text(newline=…)`, used five times in
+# this file. Below that version every one of those raises TypeError -- and it raises when the
+# tool WRITES, not when it starts. For `index` that is after the whole note tree has been read
+# and half the index rebuilt, with a message that says nothing about Python versions. A user
+# would go looking at their notes.
+#
+# Checked here rather than in a function, because a function is something you can forget to call.
+if sys.version_info < (3, 10):
+    have = ".".join(str(part) for part in sys.version_info[:3])
+    print(f"vaultkit.py needs Python 3.10 or newer; this is {have}. Nothing was read or "
+          f"written. The floor is Path.write_text(newline=…), which every generated file goes "
+          f"through -- on an older Python the first symptom would be a TypeError halfway "
+          f"through a run, naming nothing that points here.", file=sys.stderr)
+    # The literal, not EXIT_USAGE: this runs before the constants below are defined, and a
+    # NameError here would replace the one message that explains what is wrong.
+    raise SystemExit(2)
+
 import argparse
 import json
 import re
-import sys
 from collections import defaultdict
+from collections.abc import Callable
 from datetime import date, datetime, timezone
 from itertools import combinations
 from pathlib import Path
@@ -1376,6 +1427,39 @@ for _stream in (sys.stdout, sys.stderr):
         _stream.reconfigure(encoding="utf-8", errors="replace")
     except (AttributeError, ValueError):
         pass
+
+# The three verdicts, named once. Every subcommand returns one of them and `main()` hands it
+# straight to the shell, so these are what a chain, a CI step or a `/vaultkit` run reads.
+#
+# THE MEANINGS, WRITTEN DOWN RATHER THAN INFERRED FROM EXAMPLES -- src/contract.md SECTION 6
+# carries the same three sentences, because a user who has to derive them from thirty return
+# statements will derive them differently:
+#
+#   0  clean. The check ran over a real population and found nothing wrong.
+#   1  a defect, OR "did not run" -- the run could not reach a verdict. Both are "do not trust
+#      this vault yet", and both are things the user fixes by changing notes or by running
+#      something. `duplicates` is the one deliberate exception: too few notes to compare is the
+#      normal state of a fresh vault, so it returns 0. That exception is in the contract.
+#   2  the ARGUMENTS or the SOURCES are wrong, not the vault: an unknown subcommand, a path that
+#      is not a directory, or two config lists that contradict each other. Nothing was measured,
+#      so nothing about the vault is being claimed.
+EXIT_OK = 0
+EXIT_DEFECT = 1
+EXIT_USAGE = 2
+
+# THE ONE CONTRACT THAT CROSSES A FILE BOUNDARY, so it is the one thing here that is typed.
+# `upgrade.py --prove` imports this module, reads COMMANDS and requires every `run` in it to be
+# callable; that is the entire surface between the two delivered scripts. Everything else in
+# this file has one caller a few hundred lines away, and a signature there states nothing two
+# parties have to agree on.
+#
+# A handler takes the arguments left after the subcommand name -- `None` means "read sys.argv",
+# the way argparse does it -- and returns one of the three exit codes above. Nothing else.
+Handler = Callable[[list[str] | None], int]
+
+# One entry per subcommand: what runs it, and the job name it writes into runs.log. `job` is
+# `str | None`, and the None is a statement rather than a gap -- see the register at the end.
+Command = dict[str, Handler | str | None]
 
 # ---------------- shared: paths, names and the run log   (was vault_paths.py)
 """Single source of truth for every generated filename and every path rule.
@@ -1516,6 +1600,35 @@ def walk_markdown(root):
 
 def has_forbidden_chars(name: str) -> bool:
     return any(ch in FORBIDDEN_LINK_CHARS for ch in name)
+
+
+# The third outcome, spelled once. `pass` and `fail` are exit codes; this is the one a checker
+# has to say in words, because "0 broken links" and "0 links looked at" are the same number.
+#
+# THE PHRASE IS LOAD-BEARING, NOT DECORATION. src/contract.md requires it, acceptance fixture 8
+# greps for it, and four suites assert it. Changing the wording is a contract change and moves
+# five sources at once -- which is exactly why it is a constant now and was four spellings
+# before.
+DID_NOT_RUN = "did not run"
+
+
+def did_not_run(reason: str, stream=None) -> None:
+    """Say that a check could not reach a verdict, and why. One wording, five callers.
+
+    `stream` defaults to stderr, where every defect goes. `duplicates` passes stdout on purpose
+    and is the only one that does: it is also the only caller that returns 0 afterwards -- too
+    few notes to compare is the normal state of a fresh vault, not a defect -- so its line
+    belongs with the denominators rather than with the failures. That asymmetry is asserted in
+    two suites, one on `out` and three on `err`, so it cannot be tidied away by accident.
+
+    `freshness` also says it once per job, in a different shape (`<job>: did not run — why`),
+    and those two lines use DID_NOT_RUN directly rather than this function. MEASURED WHY THAT
+    MATTERS, 2026-07-31: with the five headlines routed through here but those two still
+    spelling the phrase out, acceptance stayed 12/12 when the wording was changed -- fixture 8
+    was being satisfied by a per-job line, not by the headline it means to read. Consolidating
+    five of seven spellings looks finished and leaves the guard reading the wrong one.
+    """
+    print(f"{DID_NOT_RUN}: {reason}", file=stream or sys.stderr)
 
 
 def log_run(vault_root, job: str, status: str, detail: str = ""):
@@ -2002,7 +2115,7 @@ def check_unique_basenames(vault_root, defects):
 # --------------------------------------------------------------------------- main
 
 
-def index_main(argv=None):
+def index_main(argv: list[str] | None = None) -> int:
     parser = argparse.ArgumentParser(description=__doc__)
     group = parser.add_mutually_exclusive_group(required=True)
     group.add_argument("--root", help="vault root: writes the root index and every project below it")
@@ -2015,7 +2128,7 @@ def index_main(argv=None):
         vault_root = Path(args.root).resolve()
         if not vault_root.is_dir():
             print(f"not a directory: {vault_root}", file=sys.stderr)
-            return 2
+            return EXIT_USAGE
         projects, entries, categories, created, adopted, templates = build_root(vault_root, defects)
         names = check_unique_basenames(vault_root, defects)
         print(f"{entries} entries in {categories} categories · {projects} projects · {names} distinct filenames")
@@ -2023,7 +2136,7 @@ def index_main(argv=None):
         project_dir = Path(args.vault).resolve()
         if not project_dir.is_dir():
             print(f"not a directory: {project_dir}", file=sys.stderr)
-            return 2
+            return EXIT_USAGE
         vault_root = project_dir.parent
         entries, categories, created_names, adopted_names = build_project(vault_root, project_dir, defects)
         created = [f"{project_dir.name}/{n}" for n in created_names]
@@ -2056,8 +2169,8 @@ def index_main(argv=None):
     if defects:
         defects.report()
         print(f"{len(defects)} defects", file=sys.stderr)
-        return 1
-    return 0
+        return EXIT_DEFECT
+    return EXIT_OK
 
 # ------------------------------- vaultkit.py command   (was write_command.py)
 """Write a `/vaultkit` slash command for Claude Code, with this vault's real paths already in it.
@@ -2271,7 +2384,7 @@ def target_path():
     return Path.home() / ".claude" / "commands" / f"{COMMAND_NAME}.md"
 
 
-def command_main(argv=None):
+def command_main(argv: list[str] | None = None) -> int:
     parser = argparse.ArgumentParser(description=__doc__)
     parser.add_argument("--vault", required=True, help="vault root")
     parser.add_argument("--shell", choices=("powershell", "posix"), default="powershell",
@@ -2281,7 +2394,7 @@ def command_main(argv=None):
     vault_root = Path(args.vault).resolve()
     if not vault_root.is_dir():
         print(f"not a directory: {vault_root}", file=sys.stderr)
-        return 2
+        return EXIT_USAGE
 
     target = target_path()
     projects = project_dirs(vault_root)
@@ -2289,13 +2402,13 @@ def command_main(argv=None):
         # Not a silent skip: a vault with no projects means the wrong path was given, and a
         # command file listing no projects would be a working file that does nothing.
         print(f"no projects under {vault_root} — nothing to write a command for", file=sys.stderr)
-        return 1
+        return EXIT_DEFECT
 
     if target.exists():
         if written_by_us(target):
             # Ours from a previous run, possibly hand-edited since. Nothing to say.
             log_run(vault_root, "write_command", "ok", f"{target} already ours · nothing written")
-            return 0
+            return EXIT_OK
         # Someone else's file under the name we wanted. Nothing is overwritten and nothing is
         # written either -- and a silent zero here is the most expensive answer in this kit,
         # because the setup would report /vaultkit as ready while the user's own command still
@@ -2307,7 +2420,7 @@ def command_main(argv=None):
               f"to fall back to, because a command anywhere else would not load.",
               file=sys.stderr)
         log_run(vault_root, "write_command", "blocked", f"{target} held by a foreign command")
-        return 1
+        return EXIT_DEFECT
 
     target.parent.mkdir(parents=True, exist_ok=True)
     target.write_text(command_text(vault_root, projects, args.shell),
@@ -2315,7 +2428,7 @@ def command_main(argv=None):
     print(f"wrote {target} — /{COMMAND_NAME} covers {len(projects)} projects; "
           f"edit it freely, no run overwrites it")
     log_run(vault_root, "write_command", "ok", f"{target} written · {len(projects)} projects")
-    return 0
+    return EXIT_OK
 
 # ----------------------------------- vaultkit.py links   (was check_links.py)
 """Check that every [[wikilink]] in the vault resolves to a file.
@@ -2401,7 +2514,7 @@ def link_targets(text):
     return targets
 
 
-def links_main(argv=None):
+def links_main(argv: list[str] | None = None) -> int:
     parser = argparse.ArgumentParser(description=__doc__)
     parser.add_argument("--vault", required=True, help="vault root")
     args = parser.parse_args(argv)
@@ -2409,7 +2522,7 @@ def links_main(argv=None):
     vault_root = Path(args.vault).resolve()
     if not vault_root.is_dir():
         print(f"not a directory: {vault_root}", file=sys.stderr)
-        return 2
+        return EXIT_USAGE
 
     table = linkable_files(vault_root)
     files = walk_markdown(vault_root)
@@ -2438,9 +2551,9 @@ def links_main(argv=None):
                 broken.append((path, raw))
 
     if scanned == 0:
-        print(f"did not run: 0 of {len(files)} markdown files scanned", file=sys.stderr)
+        did_not_run(f"0 of {len(files)} markdown files scanned")
         log_run(vault_root, "check_links", "did-not-run", "0 files scanned")
-        return 1
+        return EXIT_DEFECT
 
     resolved = total - len(broken)
     print(f"{resolved}/{total} wikilinks resolve · {scanned} files scanned · {skipped} skipped")
@@ -2455,11 +2568,11 @@ def links_main(argv=None):
             print(f"{path.relative_to(vault_root).as_posix()}: [[{raw}]] resolves to nothing",
                   file=sys.stderr)
         print(f"{len(broken)} broken wikilinks", file=sys.stderr)
-        return 1
+        return EXIT_DEFECT
     if skipped:
         print(f"{skipped} files skipped — denominator incomplete", file=sys.stderr)
-        return 1
-    return 0
+        return EXIT_DEFECT
+    return EXIT_OK
 
 # ------------------------- vaultkit.py duplicates   (was check_duplicates.py)
 """Flag notes whose content overlaps, so one insight does not end up living in two files.
@@ -2500,7 +2613,7 @@ def jaccard(a, b):
     return len(a & b) / len(a | b)
 
 
-def duplicates_main(argv=None):
+def duplicates_main(argv: list[str] | None = None) -> int:
     parser = argparse.ArgumentParser(description=__doc__)
     parser.add_argument("--vault", required=True, help="vault root or a single project directory")
     parser.add_argument("--threshold", type=float, default=DEFAULT_THRESHOLD)
@@ -2509,7 +2622,7 @@ def duplicates_main(argv=None):
     root = Path(args.vault).resolve()
     if not root.is_dir():
         print(f"not a directory: {root}", file=sys.stderr)
-        return 2
+        return EXIT_USAGE
 
     notes = [p for p in walk_markdown(root) if not is_index_file(p)]
     shingles = {}
@@ -2530,12 +2643,10 @@ def duplicates_main(argv=None):
     ]
 
     if len(comparable) < 2:
-        print(
-            f"did not run: {len(comparable)} comparable notes — "
-            f"a pair needs two (threshold {args.threshold})"
-        )
+        did_not_run(f"{len(comparable)} comparable notes — a pair needs two "
+                    f"(threshold {args.threshold})", sys.stdout)
         log_run(root, "check_duplicates", "did-not-run", f"{len(comparable)} notes")
-        return 0
+        return EXIT_OK
 
     print(
         f"{len(flagged)} pairs flagged of {len(pairs)} compared · "
@@ -2547,11 +2658,11 @@ def duplicates_main(argv=None):
         for a, b, score in sorted(flagged, key=lambda t: -t[2]):
             print(f"{a.name}: {score:.2f} overlap with {b.name}", file=sys.stderr)
         print(f"{len(flagged)} duplicate pairs need a decision", file=sys.stderr)
-        return 1
+        return EXIT_DEFECT
     if skipped:
         print(f"{skipped} files skipped — denominator incomplete", file=sys.stderr)
-        return 1
-    return 0
+        return EXIT_DEFECT
+    return EXIT_OK
 
 # --------------------------- vaultkit.py freshness   (was check_freshness.py)
 """Report the age of the last HEALTHY run of each expected job.
@@ -2748,7 +2859,7 @@ def parse_log(log_path):
     return healthy, seen, lines, malformed
 
 
-def freshness_main(argv=None):
+def freshness_main(argv: list[str] | None = None) -> int:
     parser = argparse.ArgumentParser(description=__doc__)
     parser.add_argument("--vault", required=True, help="vault root")
     parser.add_argument("--log", help="run log path (defaults to the vault's own)")
@@ -2782,20 +2893,20 @@ def freshness_main(argv=None):
               file=sys.stderr)
         log_run(vault_root, "check_freshness", "did-not-run",
                 f"{len(clash)} jobs in more than one list")
-        return 2
+        return EXIT_USAGE
 
     if not jobs:
-        print("did not run: no expected jobs configured", file=sys.stderr)
+        did_not_run("no expected jobs configured")
         log_run(vault_root, "check_freshness", "did-not-run", "no expected jobs configured")
-        return 1
+        return EXIT_DEFECT
 
     if not log_path.exists() or log_path.stat().st_size == 0:
-        print(f"did not run: no run log at {log_path}", file=sys.stderr)
+        did_not_run(f"no run log at {log_path}")
         for job in jobs:
-            print(f"{job}: did not run — no log", file=sys.stderr)
+            print(f"{job}: {DID_NOT_RUN} — no log", file=sys.stderr)
         print(f"0/{len(jobs)} jobs have a healthy run", file=sys.stderr)
         log_run(vault_root, "check_freshness", "did-not-run", f"no run log at {log_path}")
-        return 1
+        return EXIT_DEFECT
 
     healthy, seen, lines, malformed = parse_log(log_path)
     now = datetime.now(timezone.utc)
@@ -2805,7 +2916,7 @@ def freshness_main(argv=None):
     for job in jobs:
         when = healthy.get(job)
         if when is None:
-            problems.append(f"{job}: did not run — no healthy line in {lines} log lines")
+            problems.append(f"{job}: {DID_NOT_RUN} — no healthy line in {lines} log lines")
             continue
         age_h = (now - when).total_seconds() / 3600.0
         if age_h > args.max_age_hours:
@@ -2852,8 +2963,8 @@ def freshness_main(argv=None):
             print(problem, file=sys.stderr)
         if malformed:
             print(f"{malformed} malformed log lines", file=sys.stderr)
-        return 1
-    return 0
+        return EXIT_DEFECT
+    return EXIT_OK
 
 # --------------------------------- vaultkit.py tokens   (was count_tokens.py)
 """Report the size of what was read, for cost.
@@ -2876,7 +2987,7 @@ def tokenizer():
         return None, None
 
 
-def tokens_main(argv=None):
+def tokens_main(argv: list[str] | None = None) -> int:
     parser = argparse.ArgumentParser(description=__doc__)
     parser.add_argument("paths", nargs="+", help="files or directories")
     args = parser.parse_args(argv)
@@ -2893,7 +3004,7 @@ def tokens_main(argv=None):
             files.append(path)
         else:
             print(f"not found: {path}", file=sys.stderr)
-            return 2
+            return EXIT_USAGE
 
     chars = 0
     tokens = 0
@@ -2910,18 +3021,18 @@ def tokens_main(argv=None):
         tokens += encode(text) if encode else int(len(text) / CHARS_PER_TOKEN)
 
     if not files:
-        print("did not run: 0 files matched", file=sys.stderr)
-        return 1
+        did_not_run("0 files matched")
+        return EXIT_DEFECT
 
     source = name if name else f"chars/{CHARS_PER_TOKEN:g} heuristic"
     print(f"{tokens} tokens ({precision}, {source}) · {chars} chars · {len(files) - skipped}/{len(files)} files")
     if skipped:
         print(f"{skipped} files skipped — denominator incomplete", file=sys.stderr)
-        return 1
-    return 0
+        return EXIT_DEFECT
+    return EXIT_OK
 
 
-def main(argv=None):
+def main(argv: list[str] | None = None) -> int:
     """Hand the remaining arguments to the subcommand's own parser, untouched.
 
     NO SHARED ARGUMENT PARSING, ON PURPOSE. `--vault` means one project directory after `index`
@@ -2938,13 +3049,13 @@ def main(argv=None):
         parser.add_argument("subcommand", choices=sorted(COMMANDS),
                             help="the guard to run; each has its own --help")
         parser.parse_args(argv)
-        return 2
+        return EXIT_USAGE
 
     name, rest = argv[0], argv[1:]
     if name not in COMMANDS:
         print(f"vaultkit.py: no subcommand {name!r}. Known: {', '.join(sorted(COMMANDS))}",
               file=sys.stderr)
-        return 2
+        return EXIT_USAGE
     return COMMANDS[name]["run"](rest)
 
 
@@ -2972,7 +3083,7 @@ def main(argv=None):
 # The folder scan in `freshness` stays, for the user's OWN tools: this register describes what
 # the kit brought, not what they wrote.
 
-COMMANDS = {
+COMMANDS: dict[str, Command] = {
     "index": {"run": index_main, "job": "build_index"},
     "links": {"run": links_main, "job": "check_links"},
     "duplicates": {"run": duplicates_main, "job": "check_duplicates"},
@@ -3022,14 +3133,42 @@ never a candidate. Without a manifest nothing is removed and the run says why --
 by an older kit has exactly one blind update cycle, and the run after it can act.
 """
 
+import sys
+
+# THE SAME CHECK vaultkit.py DOES, AND THE SECOND COPY IS THE POINT (2026-07-31). This file has
+# to run when the other one is destroyed -- that is why it stays a separate block at all -- so it
+# cannot ask vaultkit.py what the floor is. Same rule as the stdout/stderr fix, same reason.
+#
+# The floor is 3.10, from `Path.write_text(newline=…)`, used five times below. On an older Python
+# every one of those raises TypeError at the moment the update WRITES, i.e. after the kit file
+# has been read and classified, with a message naming nothing that points here.
+if sys.version_info < (3, 10):
+    have = ".".join(str(part) for part in sys.version_info[:3])
+    print(f"upgrade.py needs Python 3.10 or newer; this is {have}. Nothing was read or written.",
+          file=sys.stderr)
+    # The literal, not EXIT_USAGE: this runs before the constants below are defined, and a
+    # NameError here would replace the one message that explains what is wrong.
+    raise SystemExit(2)
+
 import argparse
 import json
 import re
 import subprocess
-import sys
 from pathlib import Path
 
 TOOLS = Path(__file__).resolve().parent
+
+# Spelled again rather than imported from vaultkit.py, deliberately. The one thing this file
+# takes from that one is the register, and only inside --prove, inside a try: everything else
+# here has to work on a folder where vaultkit.py is truncated, missing or unparseable. An import
+# at the top would make the repair tool depend on the thing being repaired.
+#
+# Same three meanings, and src/contract.md SECTION 6 states them once for both files:
+#   0  clean · 1  it did the work but it does not check out · 2  wrong argument, or the
+#   environment refused a file operation -- nothing was written on the strength of a guess.
+EXIT_OK = 0
+EXIT_DEFECT = 1
+EXIT_USAGE = 2
 
 # This file, by name. It is delivered like every other script, so a kit that stopped shipping it
 # would list it for removal -- and the run would delete the only tool that can repeat itself.
@@ -3048,7 +3187,7 @@ BLOCK_RE = re.compile(r"^### `([^`]+)`\n\n```(?:python|json)\n(.*?)\n```", re.S 
 VERSION_RE = re.compile(r"^<!-- kit-version: ([0-9a-f]{12}) -->$", re.M)
 
 
-def read_kit(path):
+def read_kit(path) -> tuple[dict[str, str], str]:
     # utf-8-sig: a downloaded kit file re-saved by a Windows editor starts with a BOM, and
     # VERSION_RE anchors at ^. The match then fails and the newer kit reads as "unversioned"
     # -- the one number the whole update path compares against.
@@ -3061,7 +3200,7 @@ def read_kit(path):
         # Exit 2 throughout this file means the environment refused an I/O operation, which is
         # a different repair from exit 1 (written, but it does not pass its own checks).
         print(f"{path}: cannot be read ({exc})", file=sys.stderr)
-        raise SystemExit(2)
+        raise SystemExit(EXIT_USAGE)
     blocks = {name: body + "\n" for name, body in BLOCK_RE.findall(text)}
     if not blocks:
         raise SystemExit(f"{path}: no script blocks found -- is this a kit file?")
@@ -3112,7 +3251,7 @@ def installed_files() -> list[str] | None:
     return [line.strip() for line in text.splitlines() if line.strip()]
 
 
-def write_stamp(version: str, files: list[str] | None = None):
+def write_stamp(version: str, files: list[str] | None = None) -> Path | None:
     """The one place kit-version.txt and kit-manifest.txt are spelled. Every writer comes here.
 
     THE MANIFEST GOES FIRST AND THE STAMP LAST, INSIDE THIS FUNCTION TOO. The stamp is what a
@@ -3144,7 +3283,7 @@ def write_stamp(version: str, files: list[str] | None = None):
     return target
 
 
-def stamp(kit_path):
+def stamp(kit_path) -> int:
     """Write kit-version.txt from the kit file's own stamp line. Nothing else, no --apply.
 
     WHY THIS IS A COMMAND AND NOT A SENTENCE IN THE CONTRACT (2026-07-29): SECTION 8 used to
@@ -3173,21 +3312,21 @@ def stamp(kit_path):
         # Same reasoning as read_kit(): --stamp is the other entry point, and a mistyped path
         # here produced the same traceback.
         print(f"{kit_path}: cannot be read ({exc})", file=sys.stderr)
-        return 2
+        return EXIT_USAGE
     found = VERSION_RE.search(text)
     if not found:
         print(f"{kit_path}: no `<!-- kit-version: … -->` line — nothing to stamp. An unstamped "
               f"file cannot say which kit this folder came from, and a guessed value is worse "
               f"than none.", file=sys.stderr)
-        return 1
+        return EXIT_DEFECT
     delivered = sorted(name for name, _ in BLOCK_RE.findall(text))
     target = write_stamp(found.group(1), delivered or None)
     if target is None:
-        return 2
+        return EXIT_USAGE
     print(f"wrote {target.name}: {found.group(1)}")
     if delivered:
         print(f"wrote {MANIFEST_NAME}: {len(delivered)} files this kit delivers")
-    return 0
+    return EXIT_OK
 
 
 def classify(blocks: dict[str, str],
@@ -3331,7 +3470,7 @@ def remove_file(name: str) -> bool:
     return True
 
 
-def prove():
+def prove() -> bool:
     """What can still be proven about the folder we just wrote, on this machine.
 
     IT USED TO RUN THE SUITES AND THE ACCEPTANCE DRIVER, AND THEY ARE NOT HERE ANY MORE
@@ -3433,7 +3572,7 @@ def prove_from_disk() -> bool:
     return result.returncode == 0
 
 
-def main(argv=None):
+def main(argv: list[str] | None = None) -> int:
     parser = argparse.ArgumentParser(description=__doc__)
     parser.add_argument("kit", nargs="?", help="path to a newer claude-obsidian-vault-kit.md")
     parser.add_argument("--apply", action="store_true", help="write the changes")
@@ -3445,7 +3584,7 @@ def main(argv=None):
     args = parser.parse_args(argv)
 
     if args.prove:
-        return 0 if prove() else 1
+        return EXIT_OK if prove() else EXIT_DEFECT
     if args.stamp:
         return stamp(args.stamp)
     if not args.kit:
@@ -3493,7 +3632,7 @@ def main(argv=None):
         if stale_stamp or delivered is None:
             if args.apply:
                 if write_stamp(new_version, sorted(blocks)) is None:
-                    return 2
+                    return EXIT_USAGE
                 if stale_stamp:
                     print(f"every script is already current · stamp corrected: "
                           f"{installed} → {new_version}")
@@ -3506,13 +3645,13 @@ def main(argv=None):
             else:
                 print(f"every script is already current, but there is no {MANIFEST_NAME} beside "
                       f"the stamp. Re-run with --apply to record one.")
-            return 0
+            return EXIT_OK
         print("nothing to do.")
-        return 0
+        return EXIT_OK
     if not args.apply:
         what = "write and remove these files" if removed else "write these files"
         print(f"\nnothing written, nothing removed. Re-run with --apply to {what}.")
-        return 0
+        return EXIT_OK
 
     # PER FILE, AND THE LOOP DOES NOT STOP AT THE FIRST REFUSAL (2026-07-31). One unwritable
     # target used to end the run with a traceback that named the exception and not the file, and
@@ -3537,7 +3676,7 @@ def main(argv=None):
               f"Nothing was removed and {STAMP_NAME} was NOT updated -- the folder is part old, "
               f"part new, and a stamp would claim otherwise. Fix the cause and re-run --apply.",
               file=sys.stderr)
-        return 2
+        return EXIT_USAGE
 
     mismatched = [name for name in changed + added if not reads_back(name, blocks[name])]
     if mismatched:
@@ -3545,7 +3684,7 @@ def main(argv=None):
               f"{', '.join(mismatched)}\n"
               f"Nothing was removed and nothing was stamped, so this folder still has every "
               f"file it started with. Re-run --apply once the cause is fixed.", file=sys.stderr)
-        return 2
+        return EXIT_USAGE
 
     kept = [name for name in removed if not remove_file(name)]
     if kept:
@@ -3554,21 +3693,21 @@ def main(argv=None):
         print(f"\n{len(kept)} file(s) could not be removed: {', '.join(kept)}\n"
               f"{MANIFEST_NAME} was NOT updated, so the next --apply tries them again.",
               file=sys.stderr)
-        return 2
+        return EXIT_USAGE
 
     if write_stamp(new_version, sorted(blocks)) is None:
         print("the scripts are current, the stamp is not -- re-run --apply once it can be written.",
               file=sys.stderr)
-        return 2
+        return EXIT_USAGE
     written = len(changed) + len(added)
     print(f"\nwrote {written} files, removed {len(removed)}. Proving them:")
     checked = prove_from_disk() if SELF in changed + added else prove()
     if not checked:
         print("the updated folder does not pass its own checks -- restore it from git.",
               file=sys.stderr)
-        return 1
+        return EXIT_DEFECT
     print(f"updated to {new_version} · every script compiles and jobs.json parses.")
-    return 0
+    return EXIT_OK
 
 
 if __name__ == "__main__":
