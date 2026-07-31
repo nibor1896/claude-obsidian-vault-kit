@@ -3,18 +3,19 @@
 The verification chain in SECTION 8 is six commands with three traps in them, and every one of
 the three was hit on a real run:
 
-  1. `--vault` means two different things. `check_links.py` wants the vault ROOT,
-     `build_index.py` wants ONE PROJECT, `check_duplicates.py` takes either. Typing the same
-     path after every `--vault` is wrong in two places out of three.
+  1. `--vault` means two different things. `links` wants the vault ROOT, `index` wants ONE
+     PROJECT, `duplicates` takes either. Typing the same path after every `--vault` is wrong in
+     two places out of three -- and folding the guards into one `vaultkit.py` did not remove
+     that, it only put the collision inside one file. Each subcommand keeps its own parser.
   2. The tool folder is `<VaultRoot>/00_Global/06_tools/`, not `06_tools/`. A relative prefix is
      an invitation to run it from a directory where it does not resolve.
   3. `--root`, not `--vault`, for the sweep. Rerunning only `--vault` after adding a note leaves
      the root index on yesterday's count -- green, silent, and wrong. Measured on a cold run:
      one added note left the root index reading 5 entries against a vault holding 6.
 
-There is a fourth thing the file gets right and a typed chain cannot: ORDER. `check_freshness.py`
-stands first, because every other step appends an `ok` line and a freshness check measured after
-them reports the side effect of its own chain as health.
+There is a fourth thing the file gets right and a typed chain cannot: ORDER. `freshness` stands
+first, because every other step appends an `ok` line and a freshness check measured after them
+reports the side effect of its own chain as health.
 
 A command file removes all three by spelling out the answers once, per vault, with the paths
 filled in. It is a convenience for Claude Code and nothing depends on it: the workflow page in
@@ -45,7 +46,7 @@ a state file beside it: both of those answer "when", and the question is "whose"
 
 Undo recipe for that guard, re-measured on this machine 2026-07-29 after the stranger case was
 added: copy tools/ somewhere, make the `if target.exists():` block in main() unreachable, and run
-the three drivers there -- test_write_command 8/12, acceptance 11/12, verify_setup 13/14.
+the three drivers there -- test_write_command 8/12, acceptance 11/12, verify_setup 14/15.
 """
 
 import argparse
@@ -106,8 +107,12 @@ def command_text(vault_root, projects, shell):
     vault_root = Path(vault_root).resolve()
     tools = vault_root / "00_Global" / "06_tools"
 
-    def tool(name):
-        return show(tools / name, shell)
+    # ONE ENTRY POINT, SPELLED ONCE. Every step below is `vaultkit.py <sub>`, so the chain the
+    # user reads has one path in it instead of six -- and a step that named a tool the delivery
+    # no longer carries cannot happen by editing five lines and forgetting the sixth. It did:
+    # this file went on emitting a "Run the suites" step with `run_suites.py` after that tool
+    # left the delivery, and nothing read this text, so no run said so.
+    kit = show(tools / "vaultkit.py", shell)
 
     root = show(vault_root, shell)
     lines = [
@@ -125,8 +130,8 @@ def command_text(vault_root, projects, shell):
         "numbers. Name any step you did not run; an unmeasured step and a passing one look "
         "identical from the outside.",
         "",
-        "**Before you start:** `build_index.py` writes. Say so, and check `git status` first, so "
-        "its output is not mistaken for someone else's uncommitted work.",
+        "**Before you start:** the index steps write. Say so, and check `git status` first, so "
+        "their output is not mistaken for someone else's uncommitted work.",
         "",
         "## 1 · Read the run log before anything writes to it",
         "",
@@ -139,7 +144,7 @@ def command_text(vault_root, projects, shell):
         "chain produces the present. Carry its numbers into the report and run the other steps "
         "either way.",
         "",
-        f"- `python {tool('check_freshness.py')} --vault {root}`",
+        f"- `python {kit} freshness --vault {root}`",
         "",
         "## 2 · Index each project",
         "",
@@ -147,7 +152,7 @@ def command_text(vault_root, projects, shell):
         "",
     ]
     for project in projects:
-        lines.append(f"- `python {tool('build_index.py')} --vault {show(project, shell)}`")
+        lines.append(f"- `python {kit} index --vault {show(project, shell)}`")
     lines += [
         "",
         "## 3 · Index the vault root",
@@ -157,7 +162,7 @@ def command_text(vault_root, projects, shell):
         "holding yesterday's entry count, with no message and a green exit — measured on a cold "
         "run: one added note left it reading `5 entries` against a vault holding 6.",
         "",
-        f"- `python {tool('build_index.py')} --root {root}`",
+        f"- `python {kit} index --root {root}`",
         "",
         "## 4 · Check the links",
         "",
@@ -165,24 +170,20 @@ def command_text(vault_root, projects, shell):
         "hubs link back to the root index, so anything narrower reports a broken link that is "
         "not broken:",
         "",
-        f"- `python {tool('check_links.py')} --vault {root}`",
+        f"- `python {kit} links --vault {root}`",
         "",
         "## 5 · Check for duplicates",
         "",
         "`--vault` here takes either the root or a single project:",
         "",
-        f"- `python {tool('check_duplicates.py')} --vault {root}`",
+        f"- `python {kit} duplicates --vault {root}`",
         "",
-        "## 6 · Run the suites",
-        "",
-        f"- `python {tool('run_suites.py')}`",
-        "",
-        "## 7 · Prove the second run changes nothing",
+        "## 6 · Prove the second run changes nothing",
         "",
         "A generator that drifts on every run is indistinguishable from a clean one after a "
         "single pass, and it turns every later `git status` into noise nobody reads.",
         "",
-        f"- `python {tool('build_index.py')} --root {root}`",
+        f"- `python {kit} index --root {root}`",
     ]
     # The git line is written only into a vault that has a repository. SECTION 7 recommends git
     # and step 2 of verify_setup requires it, but a user may still have declined -- and a command

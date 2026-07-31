@@ -91,6 +91,17 @@ def tool(vault, script, *args, expect_zero=True, home=None):
                cwd=vault, expect_zero=expect_zero, label=script, home=home)
 
 
+def guard(vault, subcommand, *args, expect_zero=True, home=None):
+    """A guard the way a user reaches it since 2026-07-31: `vaultkit.py <sub>`.
+
+    Deliberately not a thin alias for tool(): the point of this driver is to walk the chain the
+    contract prints, and the contract prints subcommands now. Calling the modules directly here
+    would leave the dispatcher itself unexercised by the one run that claims to cover the whole
+    setup.
+    """
+    return tool(vault, "vaultkit.py", subcommand, *args, expect_zero=expect_zero, home=home)
+
+
 def write_note(path, title, summary, body):
     path.parent.mkdir(parents=True, exist_ok=True)
     path.write_text(f'---\ntitle: "{title}"\nsummary: "{summary}"\ncreated: "2026-07-27"\n---\n\n{body}\n',
@@ -155,8 +166,8 @@ def git_commit_all(root, message):
 
 def index_all(root):
     for project in ["00_Global"] + PROJECTS:
-        tool(root, "build_index.py", "--vault", str(root / project))
-    tool(root, "build_index.py", "--root", ".")
+        guard(root, "index", "--vault", str(root / project))
+    guard(root, "index", "--root", ".")
 
 
 def snapshot(root):
@@ -202,21 +213,21 @@ def _s3(root):
 
 @step("4 link checker green with a denominator")
 def _s4(root):
-    _, out, err = tool(root, "check_links.py", "--vault", ".")
+    _, out, err = guard(root, "links", "--vault", ".")
     if "wikilinks resolve" not in out or not any(c.isdigit() for c in out):
         raise Failed(f"no denominator: {out!r} {err!r}")
 
 
 @step("5 duplicate check green with a denominator")
 def _s5(root):
-    _, out, _ = tool(root, "check_duplicates.py", "--vault", ".")
+    _, out, _ = guard(root, "duplicates", "--vault", ".")
     if "compared" not in out:
         raise Failed(f"no denominator: {out!r}")
 
 
 @step("6 freshness sees the healthy runs the tools just logged")
 def _s6(root):
-    _, out, err = tool(root, "check_freshness.py", "--vault", ".")
+    _, out, err = guard(root, "freshness", "--vault", ".")
     if "jobs fresh" not in (out + err):
         raise Failed(f"freshness did not report per-job freshness: {out!r} {err!r}")
 
@@ -241,7 +252,30 @@ def _s7(root):
         raise Failed(f"jobs.json in the built tree does not parse: {exc}")
 
 
-@step("8 the tool folder holds exactly what the kit delivers, and nothing else")
+@step("8 the delivered entry point imports, not just compiles")
+def _s7b(root):
+    """compileall finds syntax errors. It does not find a broken import, and that is the exact
+    hole the block-size probe fell into on 2026-07-31.
+
+    The probe was a plain concatenation of the seven tools. It compiled green -- and
+    `import vaultkit` would have failed, because the `from vault_paths import …` lines at the
+    top of six of them point at a module that is part of the same file once they are merged.
+    A setup that only ran compileall would have reported a tool folder as verified while every
+    subcommand raised ImportError on its first use.
+
+    Run as a subprocess with the tool folder as the working directory, which is what puts that
+    folder on `sys.path` -- the same way the user's own `python …/vaultkit.py` invocation
+    resolves it. Importing it into THIS process would resolve against the repository instead
+    and prove nothing about the tree that was just built.
+
+    Undo recipe: add `from nirgendwo import nichts` to the top of tools/vaultkit.py. Step 7
+    stays green -- it compiles -- and this one fails with ModuleNotFoundError.
+    """
+    tools = root / "00_Global" / "06_tools"
+    run([sys.executable, "-c", "import vaultkit"], cwd=tools, label="import vaultkit")
+
+
+@step("9 the tool folder holds exactly what the kit delivers, and nothing else")
 def _s8(root):
     """The other half of the same move, and it has no earlier equivalent.
 
@@ -264,7 +298,7 @@ def _s8(root):
                      f"  unexpected: {extra}\n  missing: {missing}")
 
 
-@step("9 second index run is byte-identical")
+@step("10 second index run is byte-identical")
 def _s9(root):
     before = snapshot(root)
     index_all(root)
@@ -276,7 +310,7 @@ def _s9(root):
         raise Failed(f"index churn: {changed or set(after) ^ set(before)}")
 
 
-@step("10 working tree clean after committing the generated files")
+@step("11 working tree clean after committing the generated files")
 def _s10(root):
     git_commit_all(root, "chore: generated indexes")
     index_all(root)
@@ -285,7 +319,7 @@ def _s10(root):
         raise Failed(f"tree not clean after a rerun:\n{out}")
 
 
-@step("11 a project and a folder added by hand are scaffolded, adopted and stable")
+@step("12 a project and a folder added by hand are scaffolded, adopted and stable")
 def _s11(root):
     """What the user does the week after setup, which no earlier step covers.
 
@@ -297,7 +331,7 @@ def _s11(root):
     (root / "ProjektDrei" / "Rechnungen").mkdir(parents=True)
     write_note(root / "ProjektDrei" / "Rechnungen" / "eine-rechnung.md",
                "Eine Rechnung", "Was darauf stand.", "Betrag, Datum und wofuer sie ausgestellt war.")
-    _, out, _ = tool(root, "build_index.py", "--root", ".")
+    _, out, _ = guard(root, "index", "--root", ".")
 
     missing = [f for f in CATEGORY_FOLDERS if not (root / "ProjektDrei" / f).is_dir()]
     if missing:
@@ -309,13 +343,13 @@ def _s11(root):
         raise Failed("the hand-made folder has an index but the note is not in it")
 
     git_commit_all(root, "chore: a project added by hand")
-    tool(root, "build_index.py", "--root", ".")
+    guard(root, "index", "--root", ".")
     _, status, _ = run(["git", "status", "--porcelain"], cwd=root, label="git status")
     if status.strip():
         raise Failed(f"tree not clean after scaffolding and a rerun:\n{status}")
 
 
-@step("12 a note template per project, and a hand-edited one survives a rerun")
+@step("13 a note template per project, and a hand-edited one survives a rerun")
 def _s12(root):
     """The two promises write_templates makes, neither of which any earlier step looks at.
 
@@ -336,12 +370,12 @@ def _s12(root):
     victim = folder / template_name(PROJECTS[0])
     edited = victim.read_text(encoding="utf-8") + "\nfield the user added by hand\n"
     victim.write_text(edited, encoding="utf-8", newline="\n")
-    tool(root, "build_index.py", "--root", ".")
+    guard(root, "index", "--root", ".")
     if victim.read_text(encoding="utf-8") != edited:
         raise Failed(f"a rerun overwrote a hand-edited template: {victim.name}")
 
 
-@step("13 the tool folder knows which kit version installed it")
+@step("14 the tool folder knows which kit version installed it")
 def _s13(root):
     """The one value the whole update path compares against, and nothing used to write it.
 
@@ -357,11 +391,11 @@ def _s13(root):
 
     Undo recipe, to watch it go red: copy tools/ somewhere, delete the two `if args.stamp:` lines
     from upgrade.py's main(), and run both drivers there. Re-measured on this machine 2026-07-31
-    -- verify_setup 13/14, failing in step 1 with `upgrade.py --stamp exited 2`, and test_upgrade
+    -- verify_setup 14/15, failing in step 1 with `upgrade.py --stamp exited 2`, and test_upgrade
     26/34. Both, which is the point of covering it in two places: the driver proves the setup
     does it, the suite proves the tool can.
 
-    That 13/14 was 12/13 for one commit, because it was measured before step 14 existed and then
+    That number was 12/13 for one commit, because it was measured before a step existed and then
     typed rather than re-run. The test_upgrade half then sat at `7/9` through two commits that
     grew that suite, for the same reason, until it was re-run on 2026-07-31. Nothing catches
     this: check_prose_claims() reads the contract, the SECTION 10 header and README.md, and never
@@ -398,11 +432,11 @@ def _s13(root):
     #
     # Undo recipe, re-measured on this machine 2026-07-31: force `stale_stamp = False` in
     # upgrade.py's main(), which is what the early return amounted to.
-    # verify_setup 13/14 here, and test_upgrade 31/34.
+    # verify_setup 14/15 here, and test_upgrade 31/34.
     # ON THE SENTENCE, NOT ON THE HEX (2026-07-31). This read `if "ffffffffffff" not in out`, and
     # the header line `installed: … · kit file: ffffffffffff` always contains it -- so the
     # assertion passed whether or not the tool ever compared the two. Caught by running the undo
-    # recipe below rather than by reading: it came back 14/14 where it had been 13/14, which is
+    # recipe below rather than by reading: it came back full marks where it had been one short, which is
     # the step announcing it had stopped looking. test_upgrade.py carries the same warning about
     # the same fixture, one level down.
     if "stamp still reads" not in out or "record ffffffffffff" not in out:
@@ -424,7 +458,7 @@ def _s13(root):
                      f"-- silence there reads as 'nothing to remove':\n{out}")
 
 
-@step("14 a /vaultkit command is written once, carries this vault's own paths, and is left alone")
+@step("15 a /vaultkit command is written once, carries this vault's own paths, and is left alone")
 def _s14(root):
     """The convenience the setup offers, held to the same three things as step 12.
 
@@ -440,19 +474,19 @@ def _s14(root):
     Undo recipes, measured on this machine 2026-07-30 against a copy of tools/:
 
       - Make the `if target.exists():` block in write_command.py's main() unreachable: the hand
-        edit is eaten and the second run reports work. verify_setup 13/14, acceptance 11/12,
+        edit is eaten and the second run reports work. verify_setup 14/15, acceptance 11/12,
         test_write_command 8/12.
       - Remove `.claude` from SKIP_DIRS in vault_paths.py: the link checker counts a `.claude/`
-        file in the vault as a note. verify_setup 13/14, test_write_command 11/12 -- and
+        file in the vault as a note. verify_setup 14/15, test_write_command 11/12 -- and
         acceptance stays 12/12, because fixture 11 checks the file and the message, not the
         denominators. That gap is the reason this step carries the denominator half at all.
     """
     home = root.parent / "FakeHome"
     home.mkdir(parents=True, exist_ok=True)
     target = home / ".claude" / "commands" / "vaultkit.md"
-    _, links_before, _ = tool(root, "check_links.py", "--vault", ".")
+    _, links_before, _ = guard(root, "links", "--vault", ".")
 
-    _, out, _ = tool(root, "write_command.py", "--vault", str(root),
+    _, out, _ = guard(root, "command", "--vault", str(root),
                      "--shell", "posix", home=home)
     if not target.is_file():
         raise Failed(f"no /vaultkit command at {target}\n{out}")
@@ -473,7 +507,7 @@ def _s14(root):
 
     edited = text + "\n## 7 · A step the user added\n"
     target.write_text(edited, encoding="utf-8", newline="\n")
-    _, second, _ = tool(root, "write_command.py", "--vault", str(root),
+    _, second, _ = guard(root, "command", "--vault", str(root),
                         "--shell", "posix", home=home)
     if second.strip():
         raise Failed(f"the second run reported work it did not do:\n{second}")
@@ -485,7 +519,7 @@ def _s14(root):
     # command itself no longer lands in the vault at all.
     (root / ".claude").mkdir(exist_ok=True)
     (root / ".claude" / "settings.json").write_text("{}\n", encoding="utf-8", newline="\n")
-    _, links_after, _ = tool(root, "check_links.py", "--vault", ".")
+    _, links_after, _ = guard(root, "links", "--vault", ".")
     if links_before != links_after:
         raise Failed(f"a file under .claude/ entered the note denominators:\n"
                      f"  before: {links_before.strip()}\n  after:  {links_after.strip()}")

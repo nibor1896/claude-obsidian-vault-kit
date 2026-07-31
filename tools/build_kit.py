@@ -35,8 +35,8 @@ for _stream in (sys.stdout, sys.stderr):
 
 # Order matters for a human reading top to bottom: shared modules, then tools, then suites.
 SHARED = ["vault_paths.py", "jobs.json"]
-TOOLS_ORDER = ["build_index.py", "write_command.py", "check_links.py", "check_duplicates.py",
-               "check_freshness.py", "count_tokens.py"]
+TOOLS_ORDER = ["vaultkit.py", "build_index.py", "write_command.py", "check_links.py",
+               "check_duplicates.py", "check_freshness.py", "count_tokens.py"]
 DRIVERS = ["upgrade.py"]
 
 # Files that live in tools/ and are deliberately not delivered, name -> why.
@@ -69,6 +69,7 @@ REPO_ONLY = {
     "test_check_freshness.py": "suite for check_freshness.py -- release verification",
     "test_count_tokens.py": "suite for count_tokens.py -- release verification",
     "test_vault_paths.py": "suite for vault_paths.py -- release verification",
+    "test_vaultkit.py": "suite for vaultkit.py -- release verification",
     "test_run_suites.py": "suite for run_suites.py, which is itself repo-only",
     "test_upgrade.py": "suite for upgrade.py -- release verification",
 }
@@ -151,8 +152,8 @@ when it has run.
 - **No file carries a byte-order mark** — see below.
 
 **How this release was verified, in its own repository, before this file existed:** on Windows 11,
-Python 3.13, under PowerShell 5.1 **and** Git Bash — 10/10 suites green, 12/12 acceptance checks
-correct, 14/14 end-to-end setup steps, ten consecutive runs under each shell, against these exact
+Python 3.13, under PowerShell 5.1 **and** Git Bash — 11/11 suites green, 12/12 acceptance checks
+correct, 15/15 end-to-end setup steps, ten consecutive runs under each shell, against these exact
 bytes. Copy them and that measurement still applies to what you handed the user. Rewrite them and it
 does not, and nothing in their folder can tell them.
 
@@ -272,6 +273,24 @@ def check_prose_claims():
 # `python <VaultRoot>/00_Global/06_tools/x.py`, `python 06_tools/x.py`, `python <vault>/…/x.py`.
 # `python --version` and `python -m compileall` carry no `.py` and are correctly not commands here.
 COMMAND_RE = re.compile(r"python[3]?\s+(?:-\S+\s+)*(?:\S*[/\\])?([A-Za-z_][A-Za-z0-9_]*\.py)")
+
+# The same line, one word further along. Since the guards are reached as `vaultkit.py <sub>`,
+# the filename alone stopped being the unit: it is one name for six tools, so a subcommand that
+# nothing ever calls would sit inside a file the chain plainly runs and no check would see it.
+SUBCOMMAND_RE = re.compile(
+    r"python[3]?\s+(?:-\S+\s+)*(?:\S*[/\\])?vaultkit\.py\s+([a-z_]+)")
+
+
+def dispatch_register():
+    """`COMMANDS` out of vaultkit.py: subcommand -> which module runs it, under which job name.
+
+    Imported rather than respelled. A second copy of this mapping would answer "what can this
+    kit run" one way here and another way in the tool, and the guard would go on passing while
+    the two drifted -- which is the shape of every defect check_prose_chain() exists for.
+    """
+    sys.path.insert(0, str(TOOLS))
+    import vaultkit
+    return vaultkit.COMMANDS
 
 
 def chain_commands():
@@ -405,6 +424,36 @@ def check_prose_chain():
               + "\n  A page may name a repo-only tool -- that is how the release verification is "
                 "described. It may not name a file that does not exist.", file=sys.stderr)
         return 1
+
+    # Subcommands, and they are checked in both directions for the same reasons the filenames
+    # are. A name the prose invents is a line the user types and gets an error from; a
+    # subcommand nothing calls is a tool sitting inside a file that IS called, which is the one
+    # way a delivered guard can now go unnoticed. The way out is the same `not_invoked` in
+    # jobs.json, read through the module the subcommand runs -- no second mechanism.
+    register = dispatch_register()
+    named_subs = {sub for _, text in prose_sources() for sub in SUBCOMMAND_RE.findall(text)}
+    invented = sorted(named_subs - set(register))
+    if invented:
+        print(f"{OUT.name}: the prose names a vaultkit.py subcommand that does not exist.\n"
+              + "\n".join(f"  vaultkit.py {sub}: no such subcommand" for sub in invented)
+              + f"\n  Known: {', '.join(sorted(register))}. Either the register lost it or the "
+                f"line has a typo.", file=sys.stderr)
+        return 1
+    silent_subs = sorted(sub for sub, spec in register.items()
+                         if sub not in named_subs and spec["module"] not in uninvoked)
+    if silent_subs:
+        print(f"{OUT.name}: a subcommand that ships and no chain calls.\n"
+              + "\n".join(f"  vaultkit.py {sub}: runs {register[sub]['module']}.py, and no "
+                          f"command line names it" for sub in silent_subs)
+              + "\n  A filename no longer tells you this: one file now carries six tools, so an "
+                "uncalled one hides inside a file the chain does run. Add it to a chain in "
+                "src/contract.md, or add its module to `not_invoked` in tools/jobs.json.",
+              file=sys.stderr)
+        return 1
+    # A module the prose reaches through a subcommand is invoked, exactly as if it had been
+    # named directly. This is what keeps the six tools out of the orphan list once the contract
+    # stops spelling their filenames.
+    commanded |= {f"{register[sub]['module']}.py" for sub in named_subs}
 
     both = sorted(name for name in delivered
                   if Path(name).stem in uninvoked and name in commanded)
@@ -623,6 +672,49 @@ def check_stream_reconfigure():
     return 0
 
 
+def check_generated_command():
+    """The `/vaultkit` chain write_command.py emits, held to the same rule as the contract.
+
+    WHY THIS EXISTS (2026-07-31): the delivered file the user reads most often is not in this
+    repository at all -- it is generated into `~/.claude/commands/vaultkit.md` at setup. Every
+    prose guard reads Markdown sources; this text is a Python f-string, so none of them saw it.
+    Measured the day this was written: it had gone on emitting a step
+    `## 6 · Run the suites` with `python …/run_suites.py` for a full release after that tool
+    left the delivery. A user following their own maintenance command would have typed a line
+    that cannot work, and no run anywhere was red about it.
+
+    Rendered rather than pattern-matched over the source: what has to be right is the text the
+    user gets, and a check reading the f-strings instead would pass over any name assembled at
+    runtime.
+
+    Undo recipe: put `run_suites.py` back into command_text()'s step list. `--check` exits 1
+    with `the /vaultkit chain names run_suites.py, which is not delivered`.
+    """
+    sys.path.insert(0, str(TOOLS))
+    import write_command
+
+    # A vault that does not exist and is never touched: command_text() only formats paths.
+    text = write_command.command_text(REPO / "not-a-real-vault", [], "posix")
+    delivered = {name for name in delivered_files() if name.endswith(".py")}
+    register = dispatch_register()
+
+    ghosts = sorted(set(COMMAND_RE.findall(text)) - delivered)
+    if ghosts:
+        print(f"{OUT.name}: the /vaultkit chain tells the user to run something undelivered.\n"
+              + "\n".join(f"  the /vaultkit chain names {name}, which is not delivered"
+                          for name in ghosts)
+              + "\n  That file is generated into the user's own commands folder at setup, so a "
+                "stale line there is one they type every time they sync.", file=sys.stderr)
+        return 1
+    invented = sorted(set(SUBCOMMAND_RE.findall(text)) - set(register))
+    if invented:
+        print(f"{OUT.name}: the /vaultkit chain names a subcommand that does not exist.\n"
+              + "\n".join(f"  vaultkit.py {sub}: no such subcommand" for sub in invented)
+              + f"\n  Known: {', '.join(sorted(register))}.", file=sys.stderr)
+        return 1
+    return 0
+
+
 def all_guards():
     """Every build-time check, in the order a failure is cheapest to act on.
 
@@ -631,7 +723,8 @@ def all_guards():
     """
     return (check_delivery_lists() or check_every_delivered_tool_has_a_suite()
             or check_jobs_config_matches_code() or check_log_labels()
-            or check_stream_reconfigure() or check_prose_claims() or check_prose_chain())
+            or check_stream_reconfigure() or check_prose_claims() or check_prose_chain()
+            or check_generated_command())
 
 
 def block(name):

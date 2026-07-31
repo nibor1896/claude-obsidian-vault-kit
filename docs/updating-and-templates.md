@@ -166,6 +166,18 @@ You can check the folder at any time without an update:
 python <VaultRoot>/00_Global/06_tools/upgrade.py --prove
 ```
 
+### One update rewrites every index file, once
+
+The guards are reached as `vaultkit.py <subcommand>` now — one file with a subcommand each,
+instead of one file per guard. The header line every generated index carries names the command
+that wrote it, so it changed from `06_tools/build_index.py` to `06_tools/vaultkit.py index`.
+
+The first index run after that update therefore rewrites **every** `INDEX - *.md` in your vault:
+one line each, nothing else. It is a single commit's worth of churn and it never repeats — the run
+after it leaves `git status` empty again, which is the property step 10 of the setup check exists
+for. Without this paragraph it reads exactly like the drift the whole kit is built to prevent, so:
+it is announced, it is one line per file, and it happens once.
+
 ### If your update ended in `FAIL run_suites.py`
 
 `upgrade.py` rewrites itself, and the process doing that keeps the code it started with. So an

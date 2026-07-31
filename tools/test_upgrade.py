@@ -625,7 +625,7 @@ class UpgradeTest(unittest.TestCase):
         Undo recipe, re-measured on this machine 2026-07-31: force `stale_stamp = False` in
         upgrade.py's main(), which is what returning early amounted to.
         test_upgrade 31/34 -- this case, the unstamped one and the --apply one -- and
-        verify_setup 13/14 at step 13. Before the assertions above were moved off the header
+        verify_setup 14/15 at step 14. Before the assertions above were moved off the header
         line the same recipe moved exactly ONE test, and the difference between one and three
         is the whole reason this recipe gets run instead of reasoned about. Named rather than
         given as a fraction, because that older run cannot be repeated: the code it measured

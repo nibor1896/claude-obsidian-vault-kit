@@ -299,7 +299,7 @@ class BuildIndexTest(unittest.TestCase):
 
         Recipe for the failure without the exemption: drop TEMPLATES_DIR from SKIP_DIRS in
         vault_paths.py and rerun. Re-measured on this machine 2026-07-31 -- 31/33 here, 11/12 in
-        acceptance.py and 13/14 in verify_setup.py. The run then reports six `created
+        acceptance.py and 14/15 in verify_setup.py. The run then reports six `created
         _templates/<category>` lines and writes a `TEMPLATE - _templates.md` for the folder it
         just mistook for a project.
         """

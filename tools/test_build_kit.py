@@ -344,10 +344,10 @@ class BuildKitTest(unittest.TestCase):
         better without one.
         """
         edit(self.tmp, "docs/how-it-works.md",
-             lambda t: t.replace("06_tools/check_links.py", "06_tools/check_link.py"))
+             lambda t: t.replace("06_tools/vaultkit.py links", "06_tools/vaultkitt.py links", 1))
         code, out, err = run_check(self.tmp)
         self.assertNotEqual(code, 0, f"a docs page naming a missing tool passed: {out}")
-        self.assertIn("check_link.py", err)
+        self.assertIn("vaultkitt.py", err)
         self.assertIn("docs/how-it-works.md", err)
 
     def test_the_docs_are_not_read_for_number_claims(self):
@@ -390,12 +390,16 @@ class BuildKitTest(unittest.TestCase):
         it" -- written in the two places that tell the user anything, not two defects.
         """
         edit(self.tmp, "src/contract.md",
-             lambda t: re.sub(r"^python 06_tools/check_freshness\.py.*\n", "", t, flags=re.M))
+             lambda t: re.sub(r"^python 06_tools/vaultkit\.py freshness.*\n", "", t, flags=re.M))
         edit(self.tmp, "docs/how-it-works.md",
-             lambda t: re.sub(r"^python .*check_freshness\.py.*\n", "", t, flags=re.M))
+             lambda t: re.sub(r"^python .*vaultkit\.py freshness.*\n", "", t, flags=re.M))
         code, out, err = run_check(self.tmp)
-        self.assertNotEqual(code, 0, f"a tool nothing runs passed: {out}")
-        self.assertIn("check_freshness.py: ships, and no command line runs it", err)
+        self.assertNotEqual(code, 0, f"a subcommand nothing runs passed: {out}")
+        # Since the guards are reached through one file, the unit that falls out of the chain is
+        # the SUBCOMMAND, not the filename -- check_freshness.py is still delivered and
+        # vaultkit.py is still commanded, so a filename-level check would see nothing at all.
+        self.assertIn("vaultkit.py freshness: runs check_freshness.py, and no command line "
+                      "names it", err)
 
     def test_a_misspelled_tool_in_a_command_line_is_refused(self):
         """Direction one, and the cheap half: the user types the line and gets an error.
@@ -406,11 +410,11 @@ class BuildKitTest(unittest.TestCase):
         found by a cold run rather than by a check.
         """
         edit(self.tmp, "src/contract.md",
-             lambda t: t.replace("python 06_tools/check_links.py", "python 06_tools/check_link.py"))
+             lambda t: t.replace("python 06_tools/vaultkit.py links",
+                                 "python 06_tools/vaultkit.py linkss"))
         code, out, err = run_check(self.tmp)
-        self.assertNotEqual(code, 0, f"a command naming a missing tool passed: {out}")
-        self.assertIn("check_link.py", err)
-        self.assertIn("not delivered", err)
+        self.assertNotEqual(code, 0, f"a command naming a missing subcommand passed: {out}")
+        self.assertIn("vaultkit.py linkss: no such subcommand", err)
 
     def test_a_new_tool_in_no_chain_and_no_list_is_refused(self):
         """The case that actually happens the next time somebody writes a tool.
@@ -468,6 +472,32 @@ class BuildKitTest(unittest.TestCase):
         self.assertEqual(code, 2, f"a name classified twice did not stop the run: {out}\n{err}")
         self.assertIn("check_links.py", err)
         self.assertIn("classified twice", err)
+
+    def test_the_generated_vaultkit_chain_is_held_to_the_delivery(self):
+        """The one delivered text that is not in this repository, and nothing read it.
+
+        `/vaultkit` is generated into the user's own commands folder at setup, out of an
+        f-string in write_command.py. Every prose guard reads Markdown sources, so this text was
+        outside all of them -- measured 2026-07-31, it had gone on emitting a step
+        `## 6 · Run the suites` with `run_suites.py` for a full release after that tool left the
+        delivery. A user following their own maintenance command would have typed a line that
+        cannot work, and no run was red about it.
+        """
+        edit(self.tmp, "tools/write_command.py",
+             lambda t: t.replace('        "## 6 · Prove the second run changes nothing",',
+                                 '        "## 6 · Run the suites",\n'
+                                 '        "",\n'
+                                 '        f"- `python {tool(\'run_suites.py\')}`",\n'
+                                 '        "",\n'
+                                 '        "## 7 · Prove the second run changes nothing",', 1))
+        edit(self.tmp, "tools/write_command.py",
+             lambda t: t.replace("    kit = show(tools / \"vaultkit.py\", shell)",
+                                 "    kit = show(tools / \"vaultkit.py\", shell)\n\n"
+                                 "    def tool(name):\n"
+                                 "        return show(tools / name, shell)", 1))
+        code, out, err = run_check(self.tmp)
+        self.assertNotEqual(code, 0, f"a stale line in the generated chain passed: {out}")
+        self.assertIn("the /vaultkit chain names run_suites.py, which is not delivered", err)
 
     def test_the_section_10_header_no_longer_carries_a_command_line(self):
         """A pin over an absence, and the absence is what makes another test impossible.

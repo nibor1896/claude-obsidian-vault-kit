@@ -72,11 +72,16 @@ after setup, so a vault re-running them daily would re-answer a settled question
 touched. What your vault runs is the guard chain over your notes, which do change:
 
 ```
-python <vault>/00_Global/06_tools/check_freshness.py --vault <vault>
-python <vault>/00_Global/06_tools/build_index.py --root <vault>
-python <vault>/00_Global/06_tools/check_links.py --vault <vault>
-python <vault>/00_Global/06_tools/check_duplicates.py --vault <vault>
+python <vault>/00_Global/06_tools/vaultkit.py freshness  --vault <vault>
+python <vault>/00_Global/06_tools/vaultkit.py index      --root  <vault>
+python <vault>/00_Global/06_tools/vaultkit.py links      --vault <vault>
+python <vault>/00_Global/06_tools/vaultkit.py duplicates --vault <vault>
 ```
+
+One file, one front door: `vaultkit.py` carries every guard as a subcommand, each with its own
+`--help`. `--vault` still means two different things — one project after `index`, the vault root
+after `links` — and nothing papers over that, because the collision is real and the `/vaultkit`
+command exists to spell it out.
 
 What a setup does check on your machine is that the blocks arrived whole:
 `python -m compileall -q <vault>/00_Global/06_tools`, and that `jobs.json` parses. A block truncated

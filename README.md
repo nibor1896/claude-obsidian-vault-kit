@@ -28,8 +28,8 @@ describing them. No example notes, no demo content, nothing invented.
 
 The tools are shipped, not generated: the file carries every script verbatim, and the setup writes
 them to disk instead of composing its own. Those exact bytes were verified in this repository before
-the file was published — on Windows 11, Python 3.13, under PowerShell 5.1 **and** Git Bash: **10/10
-suites green, 12/12 acceptance checks correct and 14/14 end-to-end setup steps, ten consecutive runs
+the file was published — on Windows 11, Python 3.13, under PowerShell 5.1 **and** Git Bash: **11/11
+suites green, 12/12 acceptance checks correct and 15/15 end-to-end setup steps, ten consecutive runs
 under each shell.** The suites stay here rather than going into your vault; your vault runs the
 guards over your notes, not unit tests over code that has not
 changed. [Reproduce it yourself](docs/how-it-works.md#reproduce-the-numbers) before you trust it.

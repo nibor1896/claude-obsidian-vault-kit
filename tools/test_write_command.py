@@ -2,8 +2,8 @@
 
 The command file exists to answer three traps in the SECTION 8 chain, so the cases that matter
 are not "a file appeared" but "the file answers them". `--vault` means a PROJECT after
-build_index.py and the ROOT after check_links.py; getting that backwards is the failure the
-command is written to prevent, and a test that only checks the file exists would pass over it.
+`vaultkit.py index` and the ROOT after `vaultkit.py links`; getting that backwards is the failure
+the command is written to prevent, and a test that only checks the file exists would pass over it.
 
 THE DESTINATION IS THE USER'S OWN `~/.claude/commands/`, AND IT IS THE ONLY ONE. That is also
 what makes this suite dangerous to write badly: run it against the real home folder and it edits
@@ -26,6 +26,20 @@ from vault_paths import project_dirs  # noqa: E402
 import write_command  # noqa: E402
 
 COMMAND_RELPATH = Path(".claude") / "commands" / "vaultkit.md"
+
+
+def step_lines(lines, subcommand):
+    """The runnable lines of one `vaultkit.py <sub>` step.
+
+    Matched on the two parts rather than on one string: the tool path is rendered quoted and in
+    the shell's own separator, so the text between the filename and the subcommand is
+    `vaultkit.py" ` on both shells and neither `vaultkit.py index` nor a plain `in` test finds
+    it. Runnable lines only -- the prose around a step names tools too, and matching that would
+    let these cases pass on the wrong evidence.
+    """
+    return [line for line in lines
+            if line.startswith("- `python ") and "vaultkit.py" in line
+            and f" {subcommand} " in line]
 
 
 class WriteCommandTest(unittest.TestCase):
@@ -89,9 +103,9 @@ class WriteCommandTest(unittest.TestCase):
         lines = self.target.read_text(encoding="utf-8").splitlines()
 
         projects = project_dirs(self.vault)   # counted, never typed -- 00_Global is one of them
-        generator = [line for line in lines if "build_index.py" in line and "--vault" in line]
+        generator = [line for line in step_lines(lines, "index") if "--vault" in line]
         self.assertEqual(len(generator), len(projects),
-                         "one build_index --vault line per project, no more and no fewer")
+                         "one `index --vault` line per project, no more and no fewer")
         for line in generator:
             self.assertNotIn(f"--vault {root}", line,
                              "the generator was handed the vault root, which it refuses")
@@ -99,7 +113,7 @@ class WriteCommandTest(unittest.TestCase):
             self.assertTrue(any(write_command.show(project, "powershell") in line
                                 for line in generator), f"{project.name} has no index line")
 
-        links = [line for line in lines if "check_links.py" in line]
+        links = step_lines(lines, "links")
         self.assertEqual(len(links), 1)
         self.assertIn(f"--vault {root}", links[0],
                       "the link checker was handed something narrower than the vault root")
@@ -116,8 +130,8 @@ class WriteCommandTest(unittest.TestCase):
         The numbering is held too, because renumbering by hand is how a chain ends up with two
         step 3s and a reader who skips one.
 
-        Recipe without the fix, measured on this machine 2026-07-30: move the check_freshness
-        command line in command_text() below the build_index loop, leaving the headings where
+        Recipe without the fix, measured on this machine 2026-07-30: move the freshness
+        command line in command_text() below the index loop, leaving the headings where
         they are. test_write_command 13/14 -- this case and nothing else, which is the point of
         having it: the command still contains every tool, and only the order is wrong.
         """
@@ -128,17 +142,18 @@ class WriteCommandTest(unittest.TestCase):
         numbers = [int(line.split()[1]) for line in headings]
         self.assertEqual(numbers, list(range(1, len(numbers) + 1)),
                          f"the steps are not numbered through: {headings}")
-        # Runnable lines only. The prose above step 1 names `build_index.py` as a warning that it
-        # writes, and matching that would have this test pass on the wrong evidence.
-        def first(needle):
-            return next(i for i, line in enumerate(lines)
-                        if line.startswith("- `python ") and needle in line)
+        # Runnable lines only. The prose above step 1 warns that indexing writes, and matching
+        # that sentence would have this test pass on the wrong evidence.
+        def first(sub):
+            return next(i for i, line in enumerate(lines) if line in step_lines(lines, sub))
 
-        freshness = first("check_freshness.py")
+        freshness = first("freshness")
         self.assertLess(lines.index(headings[0]), freshness)
         self.assertLess(freshness, lines.index(headings[1]),
                         f"the freshness command is not inside step 1: {headings[0]}")
-        for writer in ("build_index.py", "check_links.py", "check_duplicates.py", "run_suites.py"):
+        # `run_suites.py` was in this list until 2026-07-31 and is not delivered any more; the
+        # step it belonged to went with it.
+        for writer in ("index", "links", "duplicates"):
             self.assertLess(freshness, first(writer),
                             f"{writer} logs before the freshness check reads the log")
 
