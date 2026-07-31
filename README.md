@@ -1,3 +1,8 @@
+<p align="center">
+  <img src="docs/media/neural_hero-animated-880x440.gif" width="880"
+       alt="Claude × Obsidian Vault Kit — neural strands drifting behind the title, sweeping between the Claude and Obsidian brand colours">
+</p>
+
 # Claude × Obsidian — Vault Kit
 
 [![license MIT](https://img.shields.io/badge/license-MIT-3b82f6?style=flat&labelColor=24292f)](LICENSE)
