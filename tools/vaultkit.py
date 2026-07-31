@@ -998,8 +998,23 @@ def command_text(vault_root, projects, shell):
     # The git line is written only into a vault that has a repository. SECTION 7 recommends git
     # and step 2 of verify_setup requires it, but a user may still have declined -- and a command
     # that ends in a line failing every single time teaches them to skip the last step.
+    #
+    # IT SAID "must print nothing" UNTIL 2026-07-31, AND THAT IS STRICTER THAN THE CONTRACT. The
+    # contract's own block says `# no generated file may appear here` and then spells out two
+    # things that legitimately do appear: `?? .obsidian/` once the app has been opened, and notes
+    # the user wrote with the index entries now pointing at them. Drift is a changed
+    # `INDEX - *.md` WITHOUT a new note. Measured on the cold run of 2026-07-31: step 6 showed
+    # three changed index files, correctly, and a reader holding only this command file would
+    # have reported a defect that was not one.
+    #
+    # KNOWN GAP, deliberately left for its own round: check_generated_command() in build_kit.py
+    # renders against REPO/"not-a-real-vault", a path with no .git, so it only ever sees the
+    # else-branch below and cannot read this line at all. Closing it means rendering against a
+    # path WITH a .git, which is a guard rebuild, not a text fix.
     if (vault_root / ".git").is_dir():
-        lines.append(f"- `git -C {root} status --porcelain`  — must print nothing")
+        lines.append(f"- `git -C {root} status --porcelain`  — no `INDEX - *.md` may appear "
+                     f"without a note having been added. `?? .obsidian/` and notes you wrote "
+                     f"yourself, with the index entries pointing at them, are not drift.")
     else:
         lines.append("- Compare the index files before and after by hand: this vault has no git "
                      "repository, so there is nothing that can answer the question for you. "
