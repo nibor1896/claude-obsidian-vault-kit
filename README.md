@@ -10,7 +10,7 @@
 [![license MIT](https://img.shields.io/badge/license-MIT-1E6FF5?style=flat&labelColor=24292f)](LICENSE)
 [![python ≥3.10](https://img.shields.io/badge/python-%E2%89%A53.10-1E6FF5?style=flat&labelColor=24292f&logo=python&logoColor=white)](docs/how-it-works.md#requirements)
 [![dependencies zero](https://img.shields.io/badge/dependencies-zero-178841?style=flat&labelColor=24292f)](docs/how-it-works.md#requirements)
-[![website live](https://img.shields.io/badge/website-live-178841?style=flat&labelColor=24292f&logo=githubpages&logoColor=white)](https://nibor1896.github.io/claude-obsidian-vault-kit/)
+[![docs live](https://img.shields.io/badge/docs-live-178841?style=flat&labelColor=24292f&logo=github&logoColor=white)](docs/how-it-works.md)
 
 A setup contract for Claude that builds you a project-knowledge vault in Obsidian: predictable
 structure, a **generated** index, and guards that go red instead of quietly passing.
