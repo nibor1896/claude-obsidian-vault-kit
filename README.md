@@ -1,5 +1,5 @@
 <p align="center">
-  <img src="docs/media/neural_hero-animated-880x440.gif" width="880"
+  <img src="docs/media/neural_hero-animated-960x480.gif" width="960"
        alt="Claude × Obsidian Vault Kit — neural strands drifting behind the title, sweeping between the Claude and Obsidian brand colours">
 </p>
 
