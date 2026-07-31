@@ -44,9 +44,15 @@ SOURCES = ("README.md", "claude-obsidian-vault-kit.md")
 
 
 def sandbox():
-    """A throwaway copy of the repository, complete enough for build_kit.py to run in."""
+    """A throwaway copy of the repository, complete enough for build_kit.py to run in.
+
+    `docs/` comes along since 2026-07-31: prose_sources() reads the pages for the command lines
+    they hand the user, and a sandbox without them would make that guard check nothing while
+    every case here still passed.
+    """
     tmp = Path(tempfile.mkdtemp(prefix="vaultkit_buildkit_"))
     shutil.copytree(HERE, tmp / "tools", ignore=shutil.ignore_patterns("__pycache__"))
+    shutil.copytree(REPO / "docs", tmp / "docs")
     (tmp / "src").mkdir()
     shutil.copy2(REPO / "src" / "contract.md", tmp / "src" / "contract.md")
     for name in SOURCES:
@@ -181,6 +187,12 @@ class BuildKitTest(unittest.TestCase):
         """
         (self.tmp / "tools" / "test_dummy.py").write_text(
             "print('a suite for a tool nobody ships')\n", encoding="utf-8", newline="\n")
+        # Declared repo-only, because since 2026-07-31 check_delivery_lists() refuses a file in
+        # tools/ that no list mentions -- and it runs first, so without this line the run goes
+        # red over the declaration rather than over the delivery, which is a different subject.
+        edit(self.tmp, "tools/build_kit.py",
+             lambda t: t.replace('REPO_ONLY = {\n',
+                                 'REPO_ONLY = {\n    "test_dummy.py": "a fixture",\n', 1))
         before = (self.tmp / "claude-obsidian-vault-kit.md").read_text(encoding="utf-8")
 
         code, out, err = run_check(self.tmp)
@@ -198,14 +210,161 @@ class BuildKitTest(unittest.TestCase):
         Dropping a tool from the delivery silently drops its suite too. The number the user is
         promised then describes a folder that no longer exists, so the prose has to go red --
         in every source at once, which is what says "the tool left" rather than "the prose rotted".
+
+        The two files go with the list entry since 2026-07-31: check_delivery_lists() runs first
+        and a tool left on disk in no list is its own defect now. Deleting them is also the more
+        faithful fixture -- a tool that leaves the kit leaves the repository.
         """
         edit(self.tmp, "tools/build_kit.py", lambda t: t.replace('"count_tokens.py", ', "", 1))
+        (self.tmp / "tools" / "count_tokens.py").unlink()
+        (self.tmp / "tools" / "test_count_tokens.py").unlink()
         code, out, err = run_check(self.tmp)
         self.assertNotEqual(code, 0, f"a shrunken delivery passed: {out}")
         # Counted from the delivery list, never typed: this number moves whenever a tool does.
         self.assertIn(f"counted {len(build_kit.delivered_suites()) - 1}", err)
         for source in ("src/contract.md", "tools/build_kit.py", "README.md"):
             self.assertIn(source, err, "only some sources noticed the tool leaving")
+
+    # ------------------------------------- the five build-time guards, one probe each
+    #
+    # Each case mutates exactly ONE thing and requires exit 1 on its own. Two broken things at
+    # once can leave a check green -- the second failure short-circuits before the first is
+    # reached, or the two cancel in the same comparison -- so nothing here is combined.
+
+    def test_a_file_in_tools_that_no_list_mentions_is_refused(self):
+        """Guard (a), the direction that used to fall through in silence.
+
+        SHARED, TOOLS_ORDER and DRIVERS are typed by hand and nothing compared them against the
+        folder. A tool written and never added simply was not in the kit, and no run said so.
+        """
+        (self.tmp / "tools" / "dummy.py").write_text("print('nobody listed me')\n",
+                                                     encoding="utf-8", newline="\n")
+        code, out, err = run_check(self.tmp)
+        self.assertNotEqual(code, 0, f"an unlisted file passed: {out}")
+        self.assertIn("dummy.py: in tools/ and in no list", err)
+        self.assertIn("REPO_ONLY", err, "the message did not name the way out")
+
+    def test_a_list_entry_with_no_file_behind_it_is_refused(self):
+        """Guard (a), the other direction, and the one with a worse symptom.
+
+        A name in a list with no file behind it got as far as block(), which opens the file. The
+        first sign was a bare FileNotFoundError out of the renderer -- after every check had
+        already reported the delivery as fine.
+        """
+        edit(self.tmp, "tools/build_kit.py",
+             lambda t: t.replace('"run_suites.py"]', '"run_suites.py", "nie_geschrieben.py"]', 1))
+        code, out, err = run_check(self.tmp)
+        self.assertNotEqual(code, 0, f"a list entry with no file passed: {out}")
+        self.assertIn("nie_geschrieben.py: listed, and no such file", err)
+        self.assertNotIn("Traceback", err, "the renderer crashed instead of the guard reporting")
+
+    def test_a_delivered_tool_without_its_suite_is_refused(self):
+        """Guard (b). The contract states the rule in this direction; only the converse was held.
+
+        delivered_suites() stops a repo-side suite shipping itself. Nothing stopped a tool
+        arriving with no suite at all -- acceptance.py and verify_setup.py were in exactly that
+        state, and they are exempt in writing now rather than by omission.
+        """
+        # Deleted rather than renamed inside tools/: a rename leaves an unaccounted file behind
+        # and check_delivery_lists() would report that instead, which is a different subject.
+        (self.tmp / "tools" / "test_count_tokens.py").unlink()
+        code, out, err = run_check(self.tmp)
+        self.assertNotEqual(code, 0, f"a tool without its suite passed: {out}")
+        self.assertIn("count_tokens.py: delivered, and no test_count_tokens.py ships with it", err)
+
+    def test_an_exemption_for_something_not_delivered_is_refused(self):
+        """Guard (b), the other half: SUITE_EXEMPT must not outlive what it excuses.
+
+        An exemption nobody needs reads as a decision somebody made about a file that is still
+        there. Three entries today, each with its reason; a fourth has to be defended.
+        """
+        edit(self.tmp, "tools/build_kit.py",
+             lambda t: t.replace('SUITE_EXEMPT = {\n',
+                                 'SUITE_EXEMPT = {\n    "laengst_weg.py": "no reason left",\n', 1))
+        code, out, err = run_check(self.tmp)
+        self.assertNotEqual(code, 0, f"a stale exemption passed: {out}")
+        self.assertIn("laengst_weg.py: exempt from having a suite, and not in the kit", err)
+
+    def test_jobs_json_drifting_from_its_copy_in_code_is_refused(self):
+        """Guard (c). The suite has never once read the shipped file.
+
+        check_freshness.py carries the same three lists as defaults, for a vault with no config.
+        The acceptance fixture builds a vault WITHOUT a jobs.json, so it takes the default path
+        every time -- measured 2026-07-31. Both statements existed, nothing compared them, and
+        the one the user gets was the untested one.
+        """
+        edit(self.tmp, "tools/jobs.json",
+             lambda t: t.replace("runs in the verification chain and by hand, never on a schedule",
+                                 "runs whenever, honestly"))
+        code, out, err = run_check(self.tmp)
+        self.assertNotEqual(code, 0, f"a drifted jobs.json passed: {out}")
+        self.assertIn("on_demand", err)
+        self.assertIn("disagree", err)
+
+    def test_a_log_label_that_does_not_match_its_file_is_refused(self):
+        """Guard (d), and the whole failure class it covers is silent.
+
+        check_freshness takes the population from the filenames. A label that drifts puts BOTH
+        names into `unclassified` -- the job nobody logged and the label nobody declared -- and
+        unclassified deliberately does not change the exit code. The job stops being watched and
+        no run anywhere goes red about it.
+        """
+        edit(self.tmp, "tools/build_index.py",
+             lambda t: t.replace('log_run(vault_root, "build_index"',
+                                 'log_run(vault_root, "build_indexx"'))
+        code, out, err = run_check(self.tmp)
+        self.assertNotEqual(code, 0, f"a drifted log label passed: {out}")
+        self.assertIn('build_index.py: logs as "build_indexx"', err)
+        self.assertIn("unclassified", err, "the message did not say why it is silent otherwise")
+
+    def test_a_runnable_script_without_the_stream_fix_is_refused(self):
+        """Guard (e). The block is copied twelve times on purpose, so it can go missing once.
+
+        Three of these files do not import vault_paths at all, and in the rest the block sits
+        ABOVE the import so an ImportError traceback lands on a reconfigured stderr. That is why
+        it is not factored out -- and why nothing would notice one copy disappearing.
+        """
+        edit(self.tmp, "tools/count_tokens.py",
+             lambda t: t.replace('        _stream.reconfigure(encoding="utf-8", errors="replace")',
+                                 "        pass"))
+        code, out, err = run_check(self.tmp)
+        self.assertNotEqual(code, 0, f"a script with no stream fix passed: {out}")
+        self.assertIn("count_tokens.py: runnable, and no stdout/stderr reconfigure", err)
+
+    def test_a_docs_page_naming_a_tool_that_does_not_ship_is_refused(self):
+        """Guard (f). The docs hand the user six command lines and nothing read them.
+
+        prose_sources() gained `docs/*.md`; check_prose_claims()'s own source list deliberately
+        did NOT. The two ask different questions: this one asks whether every `python …x.py`
+        names something the user has, and that one treats zero `n/m` matches in a source as a
+        defect. docs/ carries no `n/m` by choice, so adding it there would fire
+        "states no claim at all" on the first run and force a number into prose that reads
+        better without one.
+        """
+        edit(self.tmp, "docs/how-it-works.md",
+             lambda t: t.replace("06_tools/run_suites.py", "06_tools/run_suite.py"))
+        code, out, err = run_check(self.tmp)
+        self.assertNotEqual(code, 0, f"a docs page naming a missing tool passed: {out}")
+        self.assertIn("run_suite.py", err)
+        self.assertIn("not delivered", err)
+
+    def test_the_docs_are_not_read_for_number_claims(self):
+        """The other half of guard (f), and the reason it is a half at all.
+
+        If docs/ ever reached check_prose_claims()'s source list, the zero-matches branch would
+        fire immediately -- that branch exists because a claim a pattern stopped seeing looks
+        exactly like a claim that agrees. Asserted as a property of the pages rather than of the
+        code: as long as they carry no `n/m`, the separation is load-bearing and someone tidying
+        the two lists together will find out here rather than in a delivered file.
+        """
+        for page in sorted((self.tmp / "docs").glob("*.md")):
+            text = page.read_text(encoding="utf-8")
+            for pattern, what in build_kit.CLAIMS:
+                self.assertEqual(
+                    re.findall(pattern, text), [],
+                    f"{page.name} now states a {what} claim. Either it belongs in "
+                    f"check_prose_claims()'s sources -- and then every docs page needs every "
+                    f"claim -- or the number belongs out of the page.")
 
     # ------------------------------------------- the chain, not the numbers in it (#19)
 
@@ -256,7 +415,19 @@ class BuildKitTest(unittest.TestCase):
         Undo recipe: same as the deleted-command case -- drop the `orphans` block.
         """
         (self.tmp / "tools" / "neues_werkzeug.py").write_text(
-            "print('ships, and nothing calls it')\n", encoding="utf-8", newline="\n")
+            'import sys\n\nfor _stream in (sys.stdout, sys.stderr):\n    try:\n'
+            '        _stream.reconfigure(encoding="utf-8", errors="replace")\n'
+            '    except (AttributeError, ValueError):\n        pass\n\n\n'
+            'if __name__ == "__main__":\n    print("ships, and nothing calls it")\n',
+            encoding="utf-8", newline="\n")
+        # The stream block and the SUITE_EXEMPT line are here so this fixture keeps testing what
+        # it says. Since 2026-07-31 a delivered script without either is refused by an earlier
+        # guard, and the run would then be red about the fixture rather than about the chain.
+        # Exempt rather than given a suite on purpose: a tenth suite would move the counted
+        # number and make check_prose_claims() fire first instead.
+        edit(self.tmp, "tools/build_kit.py",
+             lambda t: t.replace('SUITE_EXEMPT = {\n',
+                                 'SUITE_EXEMPT = {\n    "neues_werkzeug.py": "a fixture",\n', 1))
         edit(self.tmp, "tools/build_kit.py",
              lambda t: t.replace('"run_suites.py"]', '"run_suites.py", "neues_werkzeug.py"]', 1))
         code, out, err = run_check(self.tmp)
@@ -275,22 +446,38 @@ class BuildKitTest(unittest.TestCase):
         Undo recipe: return 1 instead of 2 from the `both` block. This case is the only one that
         moves, and a reader then cannot tell the two repairs apart from the exit code.
         """
+        # The same entry goes into jobs.json AND into check_freshness.py's copy of it. That is
+        # one statement written in the two places the kit requires it, not two defects: since
+        # 2026-07-31 check_jobs_config_matches_code() runs first, and editing only the file would
+        # make this case red about the drift instead of about the contradiction.
         edit(self.tmp, "tools/jobs.json",
              lambda t: t.replace('"not_invoked": {',
                                  '"not_invoked": {\n    "check_links": "widerspruch",', 1))
+        edit(self.tmp, "tools/check_freshness.py",
+             lambda t: t.replace("DEFAULT_NOT_INVOKED = {",
+                                 'DEFAULT_NOT_INVOKED = {\n    "check_links": "widerspruch",', 1))
         code, out, err = run_check(self.tmp)
         self.assertEqual(code, 2, f"a name classified twice did not stop the run: {out}\n{err}")
         self.assertIn("check_links.py", err)
         self.assertIn("classified twice", err)
 
-    def test_the_chain_check_reads_the_header_as_well_as_the_contract(self):
+    def test_the_chain_check_reads_the_header_and_the_docs_as_well_as_the_contract(self):
         """verify_setup.py appears in src/contract.md ZERO times, measured 2026-07-30.
 
-        It ships, its 14/14 is guarded in three places by the check above, and the only line that
-        ever runs it lives in this file's SECTION 10 header. A chain check reading the contract
-        alone would report the guarded tool as uninvoked -- and the reflex fix would be to add it
-        to `not_invoked`, writing down that nothing runs it while the header does.
+        It ships, its 14/14 is guarded in three places by the check above, and no line in the
+        contract ever runs it. A chain check reading the contract alone would report the guarded
+        tool as uninvoked -- and the reflex fix would be to add it to `not_invoked`, writing down
+        that nothing runs it while two other sources plainly do.
+
+        Since 2026-07-31 there are three sources, not two: `docs/how-it-works.md` also names it.
+        So the test comes in two halves, and the first half is what proves the header is read at
+        all -- with the docs line gone and the header intact, the tool is still commanded.
         """
+        edit(self.tmp, "docs/how-it-works.md",
+             lambda t: t.replace("python <vault>/00_Global/06_tools/verify_setup.py", "(removed)"))
+        code, out, err = run_check(self.tmp)
+        self.assertEqual(code, 0, f"the header alone no longer covers the tool:\n{out}\n{err}")
+
         edit(self.tmp, "tools/build_kit.py",
              lambda t: t.replace("python <vault>/00_Global/06_tools/verify_setup.py", "(removed)"))
         code, out, err = run_check(self.tmp)

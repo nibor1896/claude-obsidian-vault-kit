@@ -69,6 +69,23 @@ added, renamed or broke shows up as a changed index line or as a red run, not as
 - **[Updating and templates](docs/updating-and-templates.md)** — the two quiet parts: note templates and the version stamp
 - **[Website](https://nibor1896.github.io/claude-obsidian-vault-kit/)**
 
+## Changing the kit
+
+`claude-obsidian-vault-kit.md` is **generated** from `src/contract.md` and `tools/*` — edit those,
+never the result. Then, before every commit:
+
+```
+python tools/build_kit.py --check
+```
+
+It is the only check that sits above the delivery, and nothing triggers it automatically: there is
+no CI here, so it runs when a person runs it. It compares the delivered file against its sources and
+refuses a build whose lists, prose, guards or config have drifted apart — a file in `tools/` that no
+delivery list mentions, a tool shipped without its suite, `jobs.json` disagreeing with its copy in
+code, a run-log label that no longer matches its filename, a runnable script missing the
+stdout/stderr fix, a command line naming a tool nobody gets, or a count in the text the code does
+not count.
+
 ## License
 
 MIT — see [LICENSE](LICENSE).

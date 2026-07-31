@@ -23,6 +23,7 @@ from pathlib import Path
 REPO = Path(__file__).resolve().parent.parent
 CONTRACT = REPO / "src" / "contract.md"
 README = REPO / "README.md"
+DOCS = REPO / "docs"
 TOOLS = REPO / "tools"
 OUT = REPO / "claude-obsidian-vault-kit.md"
 
@@ -37,6 +38,25 @@ SHARED = ["vault_paths.py", "_testkit.py", "jobs.json"]
 TOOLS_ORDER = ["build_index.py", "write_command.py", "check_links.py", "check_duplicates.py",
                "check_freshness.py", "count_tokens.py", "run_suites.py"]
 DRIVERS = ["acceptance.py", "verify_setup.py", "upgrade.py"]
+
+# Files that live in tools/ and are deliberately not delivered, name -> why. The reason is the
+# entry: an exception without one cannot be told apart from a file somebody forgot to add.
+REPO_ONLY = {
+    "build_kit.py": "the generator itself -- it builds the kit, a vault does not have one",
+    "test_build_kit.py": "the generator's suite; delivered_suites() ships a suite only with its "
+                         "tool, and the tool it tests is not delivered either",
+}
+
+# Delivered scripts that ship without a `test_X.py`, name -> why. Exactly these three, and every
+# new entry is a decision somebody has to defend in writing.
+SUITE_EXEMPT = {
+    "_testkit.py": "fixtures, not behaviour -- it has no assertions of its own, and every suite "
+                   "that imports it fails the moment it stops working",
+    "acceptance.py": "it IS a suite: twelve fixtures that each hand a guard bad input. A suite "
+                     "for the suite would assert the same twelve facts one level up",
+    "verify_setup.py": "the same, over the whole setup chain rather than one guard. Its fourteen "
+                       "steps are its assertions",
+}
 
 
 def delivered_suites():
@@ -54,15 +74,17 @@ def delivered_suites():
     in HEADER and in README.md describe the PRODUCT**, which is why check_prose_claims() counts
     this list and not the folder. Do not raise those numbers because the repo grew a suite.
 
-    Undo recipes, both measured on this machine 2026-07-29:
+    Undo recipes, both re-measured on this machine 2026-07-31:
 
-      1. Write an empty `tools/test_dummy.py` with no `dummy.py` beside it. It must not appear in
-         claude-obsidian-vault-kit.md and `--check` must stay green -- the counted number does
-         not move. Delete the file afterwards.
-      2. Drop `count_tokens.py` from TOOLS_ORDER. `test_count_tokens.py` leaves the delivery with
-         it, the counted number falls by one, and `--check` exits 1 against prose that still
-         states the old one -- in all three sources at once, which is what tells you a tool left
-         rather than one sentence rotting.
+      1. Write an empty `tools/test_dummy.py` with no `dummy.py` beside it AND declare it in
+         REPO_ONLY. It must not appear in claude-obsidian-vault-kit.md and `--check` must stay
+         green -- the counted number does not move. Delete both afterwards. (Without the
+         REPO_ONLY line `--check` now goes red first, in check_delivery_lists(): since
+         2026-07-31 a file in tools/ that no list mentions is itself the defect.)
+      2. Drop `count_tokens.py` from TOOLS_ORDER and delete `tools/count_tokens.py` and
+         `tools/test_count_tokens.py`. The counted number falls by one and `--check` exits 1
+         against prose that still states the old one -- in all three sources at once, which is
+         what tells you a tool left rather than one sentence rotting.
 
     Both recipes are also `test_build_kit.py`, which is where they run on every acceptance pass.
     """
@@ -250,9 +272,37 @@ def chain_commands():
 
 
 def prose_sources():
-    """The two texts that tell a user what to type. README.md describes, it does not instruct."""
-    return (("src/contract.md", CONTRACT.read_text(encoding="utf-8")),
-            ("tools/build_kit.py (SECTION 10 header)", HEADER))
+    """Every text that tells a user what to type. README.md describes, it does not instruct.
+
+    `docs/*.md` IS ON THIS LIST AND IS NOT ON check_prose_claims()'s (2026-07-31). The two
+    functions ask different questions of a source, and only one of them can be asked of docs/:
+
+      - This one asks "does every `python …x.py` name a tool that ships". A page telling a user
+        to run something that is not in their folder is a page that wastes their time, and the
+        docs are the only prose outside the contract that hands them command lines -- six of
+        them today, in how-it-works.md and updating-and-templates.md.
+      - check_prose_claims() asks "does every `n/m` match what the code counts", and it treats
+        ZERO matches in a source as a defect, deliberately: a claim a pattern stopped seeing
+        looks exactly like a claim that agrees. docs/ carries no `n/m` at all -- by choice, the
+        pages describe rather than quote measurements -- so adding it there would fire
+        "states no claim at all" on the first run and force a number into prose that is better
+        off without one.
+
+    So: commands yes, counts no. Written down because the obvious tidy-up is to pass the same
+    list to both.
+    """
+    sources = [("src/contract.md", CONTRACT.read_text(encoding="utf-8")),
+               ("tools/build_kit.py (SECTION 10 header)", HEADER)]
+    pages = sorted(DOCS.glob("*.md"))
+    if not pages:
+        # Not a silent empty list. A docs folder that disappeared or moved would take this whole
+        # guard with it and nothing would say so -- the same shape as the wrapped `n/m` claim
+        # that made --check green over a delivered file saying 99/99.
+        raise SystemExit(f"{DOCS}: no .md pages found -- the command lines the docs hand the "
+                         f"user cannot be checked against what ships, and an unchecked source "
+                         f"reads exactly like a source that agrees.")
+    sources += [(f"docs/{page.name}", page.read_text(encoding="utf-8")) for page in pages]
+    return tuple(sources)
 
 
 def declared_uninvoked():
@@ -348,6 +398,212 @@ def check_prose_chain():
     return 0
 
 
+def check_delivery_lists():
+    """The folder and the three hand-kept lists have to agree, in both directions.
+
+    WHY (2026-07-31): SHARED, TOOLS_ORDER and DRIVERS are typed by hand, and nothing compared
+    them against tools/ at all. A new tool written and never added fell through in silence -- it
+    simply was not in the kit, and no run said so. The other direction was worse only in where
+    it surfaced: a list entry with no file behind it got as far as block(), which reads the file,
+    so the first symptom was a bare FileNotFoundError out of the renderer, after the guard had
+    already reported everything as fine.
+
+    `not_invoked` in jobs.json is NOT an escape hatch here. That key answers "no chain calls it",
+    which is a statement about a delivered file; this asks "is it delivered at all". A file can
+    honestly be both delivered and uncalled -- count_tokens.py is -- and conflating the two would
+    let a repo-only tool hide behind a jobs.json entry.
+
+    Undo recipe: write an empty `tools/dummy.py`. `--check` exits 1 with
+    `dummy.py: in tools/ and in no list`. Delete it afterwards.
+    """
+    on_disk = {path.name for path in TOOLS.iterdir()
+               if path.is_file() and path.suffix in (".py", ".json")}
+    accounted = set(delivered_files()) | set(REPO_ONLY)
+    strays = sorted(on_disk - accounted)
+    if strays:
+        print(f"{OUT.name}: a file in tools/ that no list mentions.\n"
+              + "\n".join(f"  {name}: in tools/ and in no list" for name in strays)
+              + "\n  Add it to SHARED, TOOLS_ORDER or DRIVERS in build_kit.py if the user gets "
+                "it, or to REPO_ONLY with the reason if they do not. A tool nobody listed is a "
+                "tool that silently is not in the kit.", file=sys.stderr)
+        return 1
+    ghosts = sorted(name for name in accounted if not (TOOLS / name).is_file())
+    if ghosts:
+        print(f"{OUT.name}: a list names a file that is not there.\n"
+              + "\n".join(f"  {name}: listed, and no such file in tools/" for name in ghosts)
+              + "\n  Without this the first symptom is a FileNotFoundError out of the renderer, "
+                "long after every check has reported the delivery as fine.", file=sys.stderr)
+        return 1
+    return 0
+
+
+def check_suites_ship_with_their_tools():
+    """The contract's rule, checked in the direction the contract states it.
+
+    delivered_suites() already holds the converse -- a `test_X.py` ships only when `X.py` does --
+    and that is what stops a repo-side suite installing itself into a vault. It says nothing
+    about a tool arriving WITHOUT a suite, which is the direction SECTION 0 actually promises,
+    and that direction was unguarded: measured 2026-07-31, acceptance.py and verify_setup.py had
+    no suite and nothing had ever mentioned it.
+
+    They are exempt now, in writing, with the reason each -- they are suites themselves. An
+    exemption list is the honest form of "we thought about it"; silence is not.
+
+    Undo recipe: move `tools/test_count_tokens.py` OUT of tools/. `--check` exits 1 with
+    `count_tokens.py: delivered, and no test_count_tokens.py ships with it`. Move it back. A
+    rename inside the folder measures something else -- check_delivery_lists() runs first and
+    reports the renamed file as unaccounted for.
+    """
+    delivered = [name for name in delivered_files() if name.endswith(".py")]
+    suites = set(delivered_suites())
+    naked = sorted(name for name in delivered
+                   if not name.startswith("test_")
+                   and name not in SUITE_EXEMPT
+                   and f"test_{name}" not in suites)
+    if naked:
+        print(f"{OUT.name}: a delivered tool ships without its suite.\n"
+              + "\n".join(f"  {name}: delivered, and no test_{name} ships with it"
+                          for name in naked)
+              + "\n  SECTION 0 states this as a doctrine rule. Write the suite, or add the tool "
+                "to SUITE_EXEMPT in build_kit.py with the reason it does not need one.",
+              file=sys.stderr)
+        return 1
+    unused = sorted(name for name in SUITE_EXEMPT if name not in delivered)
+    if unused:
+        print(f"{OUT.name}: SUITE_EXEMPT excuses something that is not delivered.\n"
+              + "\n".join(f"  {name}: exempt from having a suite, and not in the kit"
+                          for name in unused)
+              + "\n  An exemption nobody needs outlives the reason it was written for.",
+              file=sys.stderr)
+        return 1
+    return 0
+
+
+def check_jobs_config_matches_code():
+    """tools/jobs.json against the copy of it inside check_freshness.py.
+
+    The copy is deliberate and stays: a vault with no jobs.json still has to classify its tools,
+    so the defaults live in code. What was missing is anything comparing the two. And the
+    acceptance fixture that exercises check_freshness builds a vault WITHOUT a jobs.json, so it
+    takes the default path every single time -- measured 2026-07-31: the suite tests the copy and
+    has never once read the original.
+
+    Compared as parsed structures, not as text: the file may be reformatted, the statement may
+    not change.
+
+    Undo recipe: change one word in any reason string in tools/jobs.json. `--check` exits 1 and
+    names the key that disagrees. Put the word back.
+    """
+    sys.path.insert(0, str(TOOLS))
+    import check_freshness
+
+    try:
+        config = json.loads((TOOLS / "jobs.json").read_text(encoding="utf-8-sig"))
+    except (OSError, ValueError) as exc:
+        print(f"{OUT.name}: tools/jobs.json cannot be read as JSON ({exc}). It is the only "
+              f"non-Python block in the kit, so no compile step covers it.", file=sys.stderr)
+        return 1
+
+    pairs = (("jobs", config.get("jobs"), check_freshness.DEFAULT_JOBS),
+             ("on_demand", config.get("on_demand"), check_freshness.DEFAULT_ON_DEMAND),
+             ("not_invoked", config.get("not_invoked"), check_freshness.DEFAULT_NOT_INVOKED))
+    wrong = [f"  {key}: jobs.json says {shipped!r}, check_freshness.py says {code!r}"
+             for key, shipped, code in pairs if shipped != code]
+    if wrong:
+        print(f"{OUT.name}: the shipped jobs.json and its copy in code disagree.\n"
+              + "\n".join(wrong)
+              + "\n  The user gets the file; a vault without one gets the copy. Two answers to "
+                "the same question, and which one a run uses depends on whether a file exists.",
+              file=sys.stderr)
+        return 1
+    return 0
+
+
+LOG_CALL_RE = re.compile(r"log_run\(\s*\w+\s*,\s*\"([^\"]*)\"")
+
+
+def check_log_labels():
+    """Every log_run() label equals the stem of the file it is written in.
+
+    THE WHOLE FAILURE CLASS IS SILENT, WHICH IS WHY IT NEEDS A BUILD-TIME CHECK. check_freshness
+    matches log lines against tool names taken from the file stems. A label that drifts from its
+    filename puts BOTH names into `unclassified` -- the job nobody logged, and the label nobody
+    declared -- and `unclassified` deliberately does not change the exit code. So a typo here
+    costs a watched job its watching and prints two lines nothing acts on.
+
+    Suites are skipped: they call log_run() with other tools' names on purpose, as fixtures.
+    vault_paths.py is skipped because it DEFINES log_run and names nothing.
+
+    Undo recipe: change the label in build_index.py's log_run() call to `"build_indexx"`.
+    `--check` exits 1 with `build_index.py: logs as "build_indexx"`. Change it back.
+    """
+    wrong = []
+    for name in delivered_files():
+        if not name.endswith(".py") or name.startswith("test_") or name == "vault_paths.py":
+            continue
+        stem = name[:-3]
+        for label in LOG_CALL_RE.findall((TOOLS / name).read_text(encoding="utf-8")):
+            if label != stem:
+                wrong.append(f'  {name}: logs as "{label}", which is not "{stem}"')
+    if wrong:
+        print(f"{OUT.name}: a run log label does not match the file that writes it.\n"
+              + "\n".join(sorted(set(wrong)))
+              + "\n  check_freshness.py takes the population from the filenames, so both names "
+                "land in `unclassified` -- and unclassified does not change an exit code. The "
+                "job stops being watched and no run goes red over it.", file=sys.stderr)
+        return 1
+    return 0
+
+
+RECONFIGURE = '_stream.reconfigure(encoding="utf-8", errors="replace")'
+
+
+def check_stream_reconfigure():
+    """Every delivered script you can RUN carries the stdout/stderr fix before its first print.
+
+    A module you import does not need one -- it inherits whatever the caller set up -- so the
+    scope is exactly "has an `if __name__ == '__main__':` guard and is not a suite". The suites
+    are covered by run_suites.py, which sets PYTHONIOENCODING for the subprocesses it starts.
+
+    The block is copied into each file rather than imported, and that stays: three of these do
+    not import vault_paths at all, and in the rest it sits ABOVE the import so that an
+    ImportError traceback lands on a reconfigured stderr. A vault path with an umlaut plus a
+    cp1252 console otherwise produces a UnicodeEncodeError on top of the real error.
+
+    Undo recipe: delete the four-line block from the top of count_tokens.py. `--check` exits 1
+    with `count_tokens.py: runnable, and no stdout/stderr reconfigure`. Put it back.
+    """
+    missing = []
+    for name in delivered_files():
+        if not name.endswith(".py") or name.startswith("test_"):
+            continue
+        text = (TOOLS / name).read_text(encoding="utf-8")
+        if 'if __name__ == "__main__":' not in text:
+            continue
+        if RECONFIGURE not in text:
+            missing.append(f"  {name}: runnable, and no stdout/stderr reconfigure")
+    if missing:
+        print(f"{OUT.name}: a script that can be run does not fix its own streams.\n"
+              + "\n".join(missing)
+              + "\n  On a cp1252 console every non-ASCII filename it tries to print raises "
+                "UnicodeEncodeError, and the traceback replaces the defect the tool was "
+                "reporting. Copy the block from any other tool -- above the imports.",
+              file=sys.stderr)
+        return 1
+    return 0
+
+
+def all_guards():
+    """Every build-time check, in the order a failure is cheapest to act on.
+
+    Delivery first: check_prose_claims() imports acceptance and verify_setup, so a list naming a
+    file that is not there has to be caught before anything tries to import from that folder.
+    """
+    return (check_delivery_lists() or check_suites_ship_with_their_tools()
+            or check_jobs_config_matches_code() or check_log_labels()
+            or check_stream_reconfigure() or check_prose_claims() or check_prose_chain())
+
+
 def block(name):
     text = (TOOLS / name).read_text(encoding="utf-8")
     lang = "json" if name.endswith(".json") else "python"
@@ -435,12 +691,15 @@ def verify():
             print(f"  ok   {script} runs from the deliverable")
     finally:
         shutil.rmtree(work.parent, ignore_errors=True)
-    failed = check_prose_claims() or check_prose_chain()
+    failed = all_guards()
     if failed:
         return failed
     print(f"{OUT.name}: {len(blocks)} blocks extract, match tools/, and run green · "
-          f"every count in the text matches the code · no stale stamp quoted in the prose · "
-          f"every command names a delivered tool and every delivered tool is called or excused")
+          f"tools/ and the delivery lists agree · every delivered tool has its suite or its "
+          f"reason · jobs.json matches its copy in code · every log label matches its file · "
+          f"every runnable script fixes its streams · every count in the text matches the code · "
+          f"no stale stamp quoted in the prose · every command in the contract, the header and "
+          f"docs/ names a delivered tool, and every delivered tool is called or excused")
     return 0
 
 
@@ -460,7 +719,7 @@ def main(argv=None):
     # the acceptance run uses, and the write path refuses to mint a deliverable that lies.
     # Exit 2 travels: a name classified twice is a contradiction in the sources, not a stale
     # number, and flattening it to 1 would hide which of the two a reader has to go fix.
-    failed = check_prose_claims() or check_prose_chain()
+    failed = all_guards()
     if failed:
         return failed
 
