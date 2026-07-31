@@ -5,10 +5,12 @@
 
 # Claude × Obsidian — Vault Kit
 
-[![license MIT](https://img.shields.io/badge/license-MIT-3b82f6?style=flat&labelColor=24292f)](LICENSE)
-[![python ≥3.10](https://img.shields.io/badge/python-%E2%89%A53.10-3b82f6?style=flat&labelColor=24292f&logo=python&logoColor=white)](docs/how-it-works.md#requirements)
-[![dependencies zero](https://img.shields.io/badge/dependencies-zero-22c55e?style=flat&labelColor=24292f)](docs/how-it-works.md#requirements)
-[![docs live](https://img.shields.io/badge/docs-live-22c55e?style=flat&labelColor=24292f&logo=github&logoColor=white)](https://nibor1896.github.io/claude-obsidian-vault-kit/)
+[![Claude — setup contract](https://img.shields.io/badge/Claude-setup_contract-C4522C?style=flat&labelColor=24292f&logo=claude&logoColor=white)](https://claude.ai)
+[![Obsidian — vault](https://img.shields.io/badge/Obsidian-vault-7C3AED?style=flat&labelColor=24292f&logo=obsidian&logoColor=white)](https://obsidian.md)
+[![license MIT](https://img.shields.io/badge/license-MIT-1E6FF5?style=flat&labelColor=24292f)](LICENSE)
+[![python ≥3.10](https://img.shields.io/badge/python-%E2%89%A53.10-1E6FF5?style=flat&labelColor=24292f&logo=python&logoColor=white)](docs/how-it-works.md#requirements)
+[![dependencies zero](https://img.shields.io/badge/dependencies-zero-178841?style=flat&labelColor=24292f)](docs/how-it-works.md#requirements)
+[![docs live](https://img.shields.io/badge/docs-live-178841?style=flat&labelColor=24292f&logo=github&logoColor=white)](https://nibor1896.github.io/claude-obsidian-vault-kit/)
 
 A setup contract for Claude that builds you a project-knowledge vault in Obsidian: predictable
 structure, a **generated** index, and guards that go red instead of quietly passing.
