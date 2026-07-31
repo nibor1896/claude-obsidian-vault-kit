@@ -1,5 +1,6 @@
 """Suite for check_freshness.py."""
 
+import os
 import shutil
 import sys
 import unittest
@@ -400,6 +401,87 @@ class CheckFreshnessTest(unittest.TestCase):
         self.assertIn("\tok\t", mine[0])
         # It reads before it writes, so its own line must not be in the denominator it reports.
         self.assertIn("1 log lines", out)
+
+    # ------------------------------------------- the update pointer, and its condition
+
+    VERSION = "0f1e2d3c4b5a"
+
+    def write_stamp(self, content=VERSION, days_old=0.0):
+        """kit-version.txt in the vault's tool folder, at a chosen age."""
+        target = self.log.parent / "kit-version.txt"
+        target.parent.mkdir(parents=True, exist_ok=True)
+        target.write_text(content + "\n", encoding="utf-8", newline="\n")
+        when = (datetime.now(timezone.utc) - timedelta(days=days_old)).timestamp()
+        os.utime(target, (when, when))
+        return target
+
+    def two_healthy_lines(self):
+        self.write_log(f"{stamp(1)}\tbuild_index\tok\t0 defects",
+                       f"{stamp(2)}\tcheck_links\tok\t3/3 resolve")
+
+    def test_an_old_installation_is_told_which_version_it_has_and_where_to_compare(self):
+        """The entrance to the update path, which existed and had none.
+
+        `upgrade.py` could always compare and apply, but nothing pointed at it: the /vaultkit
+        chain contains no occurrence of "version" or "upgrade", and the only mention in the whole
+        kit was the footer of the delivered file. A user holding only that file had no way from
+        inside their vault to learn that a newer one might exist.
+
+        It states what is measurable here -- the version installed, its age, and where to look --
+        and asks nobody. Answering "is there a newer one" means a network call, and "GitHub is
+        the optional part" is a promise this kit makes.
+        """
+        self.two_healthy_lines()
+        self.write_stamp(days_old=73)
+        code, out, err = run_tool("vaultkit.py", "freshness", "--vault", self.vault)
+        self.assertEqual(code, 0, out + err)
+        self.assertIn(self.VERSION, out)
+        self.assertIn("73 days ago", out)
+        self.assertIn("github.com/nibor1896/claude-obsidian-vault-kit", out)
+
+    def test_a_recent_installation_is_told_nothing(self):
+        """THE CASE THAT MATTERS MOST: it proves the line has a condition.
+
+        A pointer printed on every run is read for about a week and skimmed forever after, which
+        makes it worth less than no line at all. Without this case the two below cannot be read:
+        a display that never fires passes both of them.
+
+        Recipe without the fix: drop the STAMP_AGE_DAYS comparison from installed_kit_note().
+        This case goes red and nothing else moves.
+        """
+        self.two_healthy_lines()
+        self.write_stamp(days_old=0)
+        code, out, err = run_tool("vaultkit.py", "freshness", "--vault", self.vault)
+        self.assertEqual(code, 0, out + err)
+        self.assertNotIn("kit-version", out + err)
+
+    def test_no_stamp_at_all_says_nothing_and_changes_no_exit_code(self):
+        """A folder assembled by hand has no kit-version.txt. Never guess -- the same rule
+        upgrade.py applies to a missing manifest.
+
+        The exit code is asserted because that is the real risk here: this display sits in the
+        middle of a guard, and a guard that goes red because a file it merely reads is absent
+        would be a defect invented by a convenience.
+        """
+        self.two_healthy_lines()
+        code, out, err = run_tool("vaultkit.py", "freshness", "--vault", self.vault)
+        self.assertEqual(code, 0, out + err)
+        self.assertNotIn("kit-version", out + err)
+        self.assertIn("2/2 jobs fresh", out)
+
+    def test_a_stamp_that_is_not_a_version_is_not_read_as_one(self):
+        """Old enough to qualify, and still nothing -- because the content is not a stamp.
+
+        The control for it is the first case in this block: same age, real stamp, line printed.
+        So the difference comes from the content and from nothing else. Reporting `unversioned`
+        as a version would put a value into a comparison whose entire purpose is that the two
+        sides can be told apart; `upgrade.py` is where that file gets diagnosed.
+        """
+        self.two_healthy_lines()
+        self.write_stamp("unversioned", days_old=73)
+        code, out, err = run_tool("vaultkit.py", "freshness", "--vault", self.vault)
+        self.assertEqual(code, 0, out + err)
+        self.assertNotIn("kit-version", out + err)
 
 
 if __name__ == "__main__":

@@ -116,6 +116,31 @@ stay a single line: every copy of `upgrade.py` already installed anywhere reads 
 compares it against twelve characters, so growing it would break the update path in exactly the
 folders an update is for.
 
+### How you find out that any of this exists
+
+Nothing here phones home, so nothing can tell you a newer kit was published. What the vault does
+instead is remind you to look, once the reminder is worth reading. After about two months, the
+freshness check — step 1 of your daily chain — ends its counts with two extra lines:
+
+```
+kit-version a1b2c3d4e5f6 · installed 73 days ago
+compare it against the kit-version on line 1 at github.com/nibor1896/claude-obsidian-vault-kit
+```
+
+Those twelve characters are a made-up example, deliberately: a real stamp printed on this page
+would go stale on the next build and read as though your copy were the outdated one. Yours comes
+out of your own folder.
+
+That is the whole mechanism. It states what is on your disk and where to look; you open the
+published file, glance at line 1, and either the twelve characters match or they do not.
+
+**It is silent for the first sixty days**, on purpose: a line printed on every single run is read
+for about a week and skimmed forever afterwards, which is worse than no line at all. It is also
+silent if your tool folder has no `kit-version.txt`, or if that file holds something other than a
+version — a folder put together by hand gets no invented answer, and a stamp that looks wrong is
+what `upgrade.py` is for. And it never changes the check's exit code: an old installation is not a
+defect, it is an installation.
+
 ### Seeing what a newer kit would change
 
 Download a newer `claude-obsidian-vault-kit.md` and point the updater at it:

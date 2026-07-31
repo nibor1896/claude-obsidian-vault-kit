@@ -793,6 +793,29 @@ Four consequences, and each one is a behaviour, not a preference:
   check that runs and finds nothing. Watching the watcher would be the regress; logging is not
   watching.
 
+**It also carries the one pointer to the update path, and only when that pointer is worth
+printing.** After the counts, `freshness` prints the `kit-version` this tool folder was installed
+with, how many days ago that was, and where to compare it — but **only once the stamp is older than
+sixty days**. It asks nobody: answering *"is there a newer one"* means a network call, and
+**GitHub is the optional part of this kit**. What it states is measurable on the machine it runs
+on; the comparison is one glance at line 1 of the published file, and `upgrade.py` does the rest.
+
+Three properties, each deliberate, and the middle one is the reason the other two are worth
+anything:
+
+- **Nothing is printed on a fresh install.** A line on every run is read for about a week and
+  skimmed forever after, which makes it worth less than no line at all.
+- **Nothing is printed when the stamp is missing or is not twelve hex characters.** A folder
+  assembled by hand has no `kit-version.txt`, and a file holding something else is a question for
+  `upgrade.py`, which reports it properly. Never guess a version into a comparison whose whole
+  point is that the two sides can be told apart.
+- **It never changes the exit code.** An old installation is not a defect. A chain that goes red
+  because two months passed is a chain that gets switched off.
+
+Without it the update path had no entrance: this chain contains no other occurrence of "version"
+or "upgrade", and the only mention in the whole kit was the footer of the delivered file, which
+nobody reads twice.
+
 **It runs FIRST in any chain that also runs other tools** — see the verification run in SECTION 8.
 Every other tool appends an `ok` line, so a freshness check measured afterwards sees the side effect
 of the chain it belongs to and reports fresh over a job that died a week ago.

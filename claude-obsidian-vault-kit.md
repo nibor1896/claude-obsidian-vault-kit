@@ -1,4 +1,4 @@
-<!-- kit-version: 2fbee0d602d5 -->
+<!-- kit-version: 69ed94e49d83 -->
 # Claude × Obsidian — Vault Kit
 
 **What this file is:** a setup contract for Claude. Drop it into a Claude conversation and say
@@ -793,6 +793,29 @@ Four consequences, and each one is a behaviour, not a preference:
   runs in the chain" is a claim about a command file: delete the step and it looks exactly like a
   check that runs and finds nothing. Watching the watcher would be the regress; logging is not
   watching.
+
+**It also carries the one pointer to the update path, and only when that pointer is worth
+printing.** After the counts, `freshness` prints the `kit-version` this tool folder was installed
+with, how many days ago that was, and where to compare it — but **only once the stamp is older than
+sixty days**. It asks nobody: answering *"is there a newer one"* means a network call, and
+**GitHub is the optional part of this kit**. What it states is measurable on the machine it runs
+on; the comparison is one glance at line 1 of the published file, and `upgrade.py` does the rest.
+
+Three properties, each deliberate, and the middle one is the reason the other two are worth
+anything:
+
+- **Nothing is printed on a fresh install.** A line on every run is read for about a week and
+  skimmed forever after, which makes it worth less than no line at all.
+- **Nothing is printed when the stamp is missing or is not twelve hex characters.** A folder
+  assembled by hand has no `kit-version.txt`, and a file holding something else is a question for
+  `upgrade.py`, which reports it properly. Never guess a version into a comparison whose whole
+  point is that the two sides can be told apart.
+- **It never changes the exit code.** An old installation is not a defect. A chain that goes red
+  because two months passed is a chain that gets switched off.
+
+Without it the update path had no entrance: this chain contains no other occurrence of "version"
+or "upgrade", and the only mention in the whole kit was the footer of the delivered file, which
+nobody reads twice.
 
 **It runs FIRST in any chain that also runs other tools** — see the verification run in SECTION 8.
 Every other tool appends an `ok` line, so a freshness check measured afterwards sees the side effect
@@ -2767,6 +2790,25 @@ that died a week ago.
 DEFAULT_MAX_AGE_HOURS = 24.0
 HEALTHY = {"ok"}
 
+# Spelled again rather than imported from upgrade.py, AND THE DIRECTION IS THE WHOLE REASON.
+# upgrade.py is the repair tool: it has to run on a folder where this file is truncated, missing
+# or unparseable, which is why it imports nothing from here except the register, inside --prove,
+# inside a try. An import the other way round -- this file reaching into upgrade.py for one
+# string -- would put the thing being repaired on the repair tool's import path and invert the
+# failure domain for the sake of eleven characters. upgrade.py states the same trade over its own
+# copies of BLOCK_RE and the reconfigure block; this is that reasoning, mirrored.
+STAMP_NAME = "kit-version.txt"
+
+# Where a newer kit file comes from. No network call is made -- see the note on the display
+# below; this is a place to look, printed for a human.
+KIT_HOME = "github.com/nibor1896/claude-obsidian-vault-kit"
+
+# How old an installation gets before the run mentions it. A line printed on EVERY run is read
+# for about a week and skimmed forever after, which makes it worth less than no line at all; one
+# that appears after two months is read. Sixty days is a choice, not a measurement -- nothing has
+# been run long enough to say what interval a person actually notices.
+STAMP_AGE_DAYS = 60.0
+
 
 DEFAULT_JOBS = ["build_index", "check_links"]
 
@@ -2937,6 +2979,47 @@ def parse_log(log_path):
     return healthy, seen, lines, malformed
 
 
+def installed_kit_note(vault_root, now):
+    """Two lines naming the installed kit and where to compare it, or None. Never a network call.
+
+    WHY THIS EXISTS: until 2026-07-31 a user holding only the delivered `.md` had no way inside
+    the vault to learn that a newer kit might exist. `upgrade.py` has done the whole job for a
+    while -- compare, list, apply -- but nothing ever pointed at it: the `/vaultkit` chain
+    contains no occurrence of "version" or "upgrade", and the only mention anywhere was the
+    footer of the delivered file, which nobody reads twice. The update path existed and had no
+    entrance.
+
+    WHY IT SAYS NOTHING ABOUT WHETHER A NEWER ONE EXISTS. Answering that means asking GitHub,
+    and "GitHub is the optional part" is a promise this kit makes -- a vault that phones home to
+    stay honest is a different product. So the line states what is locally measurable, which is
+    what is installed and how old it is, and names the one place to look. The comparison is the
+    user's, and it is one glance at line 1 of the published file.
+
+    WHY IT IS IN freshness: this runs FIRST in the daily chain, it already reads ages against
+    thresholds, and tool_folder() already resolves the folder the stamp lives in. No new path, no
+    new tool, no new command.
+
+    NOTHING IS PRINTED WHEN THE STAMP IS ABSENT OR NOT A STAMP -- the same rule upgrade.py
+    applies to a missing manifest: never guess. A folder assembled by hand has no
+    kit-version.txt, and a file holding something other than twelve hex characters is a question
+    for `upgrade.py`, which reports it properly; inventing a version here would put a wrong
+    answer where the whole point is a comparison.
+    """
+    stamp = tool_folder(vault_root) / STAMP_NAME
+    try:
+        version = stamp.read_text(encoding="utf-8-sig").strip()
+        installed = datetime.fromtimestamp(stamp.stat().st_mtime, timezone.utc)
+    except OSError:
+        return None
+    if not re.fullmatch(r"[0-9a-f]{12}", version):
+        return None
+    age_days = (now - installed).total_seconds() / 86400.0
+    if age_days < STAMP_AGE_DAYS:
+        return None
+    return (f"  kit-version {version} · installed {age_days:.0f} days ago\n"
+            f"  compare it against the kit-version on line 1 at {KIT_HOME}")
+
+
 def freshness_main(argv: list[str] | None = None) -> int:
     parser = argparse.ArgumentParser(description=__doc__)
     parser.add_argument("--vault", required=True, help="vault root")
@@ -3028,6 +3111,12 @@ def freshness_main(argv: list[str] | None = None) -> int:
         print(f"  {job}: {age_h:.1f}h ago")
     if unclassified:
         print(f"  in none of the three lists: {', '.join(unclassified)}")
+    # After the measurement, never instead of it: this says nothing about the vault's health and
+    # must not read as a verdict. It also cannot change the exit code -- an old installation is
+    # not a defect, and a chain that goes red because two months passed is one that gets skipped.
+    kit_note = installed_kit_note(vault_root, now)
+    if kit_note:
+        print(kit_note)
     if unreadable:
         print(f"  {unreadable} file(s) in {tool_folder(vault_root)} could not be read, so they "
               f"are outside every count above", file=sys.stderr)
