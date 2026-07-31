@@ -10,8 +10,8 @@ numbers yourself.
 - A three-level index — vault → project → category — **generated from note frontmatter only**. The
   generator has no access to note bodies, which is what structurally prevents prose from leaking into
   the index.
-- Guard scripts that each refuse a silent zero: link resolution, duplicate detection, freshness of
-  scheduled jobs, and a test runner that will not report green over zero collected suites.
+- One `vaultkit.py`, carrying every guard as a subcommand, and each one refuses a silent zero: link
+  resolution, duplicate detection, freshness of scheduled jobs, size for cost.
 - A note template per project, so the frontmatter header is filled in before you type anything.
 - A `/vaultkit` slash command in `~/.claude/commands/`, carrying your vault's real paths, that runs
   the whole chain in the order that leaves nothing stale.
@@ -36,9 +36,9 @@ The folder names are cosmetic. These are not:
 - **A number written into a versioned file carries the command that reproduces it.** Otherwise it
   goes stale and gets quoted anyway.
 
-Section 9 of the kit is an **acceptance test**: Claude has to feed each guard deliberately broken
-input on your machine and show that it goes red. Clean input proves nothing, so the setup is not
-reported as finished until that passes.
+Section 9 of the kit is the **specification each guard was held to**: one deliberately broken input
+per guard, and a required refusal. Clean input proves nothing, so that table is what a changed
+script has to keep true — measured in this repository before the release, not on your machine.
 
 ## Requirements
 
@@ -53,8 +53,8 @@ reported as finished until that passes.
 
 **No third-party packages.** Every shipped tool imports the standard library and nothing else, so
 there is no `pip install` and no `requirements.txt`. The single optional import is `tiktoken` in
-`count_tokens.py`; without it that tool falls back to a character estimate and says so. No Obsidian
-community plugin is required either — Templater was considered and deliberately dropped.
+`vaultkit.py tokens`; without it that subcommand falls back to a character estimate and says so. No
+Obsidian community plugin is required either — Templater was considered and deliberately dropped.
 
 ## Reproduce the numbers
 

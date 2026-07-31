@@ -40,7 +40,7 @@ class CheckDuplicatesTest(unittest.TestCase):
     def test_healthy_control(self):
         note_with_body(self.notes / "eins.md", SAME_BODY, title="Eins")
         note_with_body(self.notes / "zwei.md", OTHER_BODY, title="Zwei")
-        code, out, err = run_tool("check_duplicates.py", "--vault", self.vault)
+        code, out, err = run_tool("vaultkit.py", "duplicates", "--vault", self.vault)
         self.assertEqual(code, 0, err)
         self.assertIn("0 pairs flagged of 1 compared", out)
 
@@ -49,14 +49,14 @@ class CheckDuplicatesTest(unittest.TestCase):
     def test_overlapping_notes_are_flagged_and_red(self):
         note_with_body(self.notes / "eins.md", SAME_BODY, title="Eins")
         note_with_body(self.notes / "kopie.md", SAME_BODY, title="Kopie")
-        code, out, err = run_tool("check_duplicates.py", "--vault", self.vault)
+        code, out, err = run_tool("vaultkit.py", "duplicates", "--vault", self.vault)
         self.assertEqual(code, 1)
         self.assertIn("1 pairs flagged of 1 compared", out)
         self.assertIn("kopie.md", err)
 
     def test_one_note_is_did_not_run(self):
         note_with_body(self.notes / "eins.md", SAME_BODY)
-        code, out, err = run_tool("check_duplicates.py", "--vault", self.vault)
+        code, out, err = run_tool("vaultkit.py", "duplicates", "--vault", self.vault)
         self.assertEqual(code, 0, err)
         self.assertIn("did not run", out)
         self.assertIn("1 comparable notes", out)
@@ -64,7 +64,7 @@ class CheckDuplicatesTest(unittest.TestCase):
     def test_threshold_is_printed_with_every_result(self):
         note_with_body(self.notes / "eins.md", SAME_BODY, title="Eins")
         note_with_body(self.notes / "zwei.md", OTHER_BODY, title="Zwei")
-        _, out, _ = run_tool("check_duplicates.py", "--vault", self.vault, "--threshold", "0.9")
+        _, out, _ = run_tool("vaultkit.py", "duplicates", "--vault", self.vault, "--threshold", "0.9")
         self.assertIn("threshold 0.9", out)
 
     def test_a_bom_does_not_hide_a_duplicate(self):
@@ -80,7 +80,7 @@ class CheckDuplicatesTest(unittest.TestCase):
         """
         note_with_body(self.notes / "eins.md", SAME_BODY, title="Eins")
         note_with_body(self.notes / "kopie.md", SAME_BODY, title="Kopie", bom=True)
-        code, out, err = run_tool("check_duplicates.py", "--vault", self.vault,
+        code, out, err = run_tool("vaultkit.py", "duplicates", "--vault", self.vault,
                                   "--threshold", "0.9")
         self.assertEqual(code, 1, out)
         self.assertIn("1 pairs flagged of 1 compared", out)
@@ -89,7 +89,7 @@ class CheckDuplicatesTest(unittest.TestCase):
     def test_non_ascii_filename_survives_the_subprocess_round_trip(self):
         note_with_body(self.notes / "Übergröße.md", SAME_BODY, title="Eins")
         note_with_body(self.notes / "Ärgernis.md", SAME_BODY, title="Zwei")
-        code, _, err = run_tool("check_duplicates.py", "--vault", self.vault)
+        code, _, err = run_tool("vaultkit.py", "duplicates", "--vault", self.vault)
         self.assertEqual(code, 1)
         self.assertIn("Übergröße.md", err + "")
         self.assertIn("Ärgernis.md", err)
@@ -110,7 +110,7 @@ class CheckDuplicatesTest(unittest.TestCase):
         """
         note_with_body(self.notes / "eins.md", SAME_BODY, title="Eins")
         note_with_body(self.notes / "zwei.md", OTHER_BODY, title="Zwei")
-        code, _, err = run_tool("check_duplicates.py", "--vault", self.vault)
+        code, _, err = run_tool("vaultkit.py", "duplicates", "--vault", self.vault)
         self.assertEqual(code, 0, err)
 
         logs = sorted(p.relative_to(self.vault).as_posix() for p in self.vault.rglob("runs.log"))

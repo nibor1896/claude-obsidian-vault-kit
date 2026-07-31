@@ -162,7 +162,7 @@ class UpgradeTest(unittest.TestCase):
         told they have a local edit they never made.
 
         Undo recipe, re-measured on this machine 2026-07-31: in upgrade.py's classify(), read the
-        target with `encoding="utf-8"` again. test_upgrade 32/34 -- this case fails with
+        target with `encoding="utf-8"` again. test_upgrade 33/35 -- this case fails with
         `1 would be overwritten` where it expects `1 unchanged`, and the undecodable case goes
         with it, because dropping the replacement handler is part of the same reversal. The run
         stays exit 0 throughout, which is why nothing caught it before.
@@ -209,7 +209,7 @@ class UpgradeTest(unittest.TestCase):
         tool that no longer exists, and nothing in their folder explains why.
 
         Undo recipe, measured on this machine 2026-07-31: force `removed = []` in upgrade.py's
-        classify(), replacing the conditional expression. test_upgrade 29/34 -- this case, the
+        classify(), replacing the conditional expression. test_upgrade 30/35 -- this case, the
         cached-bytecode one, the already-gone one and the dry-run listing. The orphan then sits
         in the folder after --apply, which is the state before this change and the reason for it.
         """
@@ -239,7 +239,7 @@ class UpgradeTest(unittest.TestCase):
         Undo recipe, measured on this machine 2026-07-31: in classify(), take `removed` from the
         folder instead of the manifest --
         `sorted(p.name for p in TOOLS.glob("*.py") if p.name not in blocks and p.name != SELF)`.
-        test_upgrade 31/34. Three cases move, and they are worth reading together: this one
+        test_upgrade 32/35. Three cases move, and they are worth reading together: this one
         (the user's files are deleted), the no-manifest one (a folder that must not be touched
         at all is touched) and the already-gone one (the manifest stops driving anything). The
         folder and the manifest answer different questions, and the recipe makes the run answer
@@ -463,13 +463,49 @@ class UpgradeTest(unittest.TestCase):
         -- and that the one non-Python file parses. A truncated write lands there, and so does a
         block that never arrived.
         """
-        # A real tool folder always has one -- it is a delivered block -- and --prove is right to
-        # insist. The sandbox is otherwise the two files setUp writes.
+        # A real tool folder always has both -- they are delivered blocks -- and --prove is right
+        # to insist on them. Spelled out here rather than copied from the repository so this
+        # fixture keeps saying what a WHOLE folder looks like: a register with something callable
+        # in it, and the entry point after it.
         (self.tools / "jobs.json").write_text('{"jobs": []}\n', encoding="utf-8", newline="\n")
+        (self.tools / "vaultkit.py").write_text(
+            'def index_main(argv=None):\n    return 0\n\n\n'
+            'COMMANDS = {"index": {"run": index_main, "job": "build_index"}}\n\n\n'
+            'if __name__ == "__main__":\n    raise SystemExit(0)\n',
+            encoding="utf-8", newline="\n")
         code, out, err = run_upgrade(self.tools, "--prove")
         self.assertEqual(code, 0, out + err)
         self.assertIn("compiles", out)
         self.assertIn("jobs.json", out + err)
+        self.assertIn("whole", out, "it did not check that vaultkit.py arrived complete")
+
+    def test_prove_catches_a_vaultkit_that_arrived_truncated(self):
+        """The failure a single-file delivery makes quieter, not louder -- and the reason this
+        check lives in upgrade.py rather than in the file it checks.
+
+        Measured on this machine 2026-07-31, cutting the real vaultkit.py in two places, once
+        just above its register and once mid-file after a complete function:
+
+            compileall exit 0 · import exit 0 · `vaultkit.py index` exit 0, having done nothing
+
+        Both cuts take the trailing `if __name__ == "__main__":` with them, so the script runs to
+        the end of what arrived and reports success. Nothing inside that file can catch it:
+        whatever you put at the end goes with the same cut. `upgrade.py` is a separate block, so
+        it can ask the file for the register it is supposed to end with.
+
+        Undo recipe: remove the register block from prove() in upgrade.py. This case then exits 0
+        over a tool folder whose only guard does nothing at all.
+        """
+        (self.tools / "jobs.json").write_text('{"jobs": []}\n', encoding="utf-8", newline="\n")
+        # Valid Python, compiles cleanly, and stops where a cut would: no register, no entry
+        # point. This is what an interrupted extraction leaves behind.
+        (self.tools / "vaultkit.py").write_text(
+            "def index_main(argv=None):\n    return 0\n", encoding="utf-8", newline="\n")
+
+        code, out, err = run_upgrade(self.tools, "--prove")
+        self.assertNotEqual(code, 0, f"a truncated vaultkit.py passed:\n{out}\n{err}")
+        self.assertIn("vaultkit.py", out + err)
+        self.assertIn("truncated", out + err, "the message did not say what this looks like")
 
     def test_prove_goes_red_on_a_script_that_does_not_compile(self):
         """The healthy control above proves it runs; this proves it can tell working from broken.
@@ -624,7 +660,7 @@ class UpgradeTest(unittest.TestCase):
 
         Undo recipe, re-measured on this machine 2026-07-31: force `stale_stamp = False` in
         upgrade.py's main(), which is what returning early amounted to.
-        test_upgrade 31/34 -- this case, the unstamped one and the --apply one -- and
+        test_upgrade 32/35 -- this case, the unstamped one and the --apply one -- and
         verify_setup 14/15 at step 14. Before the assertions above were moved off the header
         line the same recipe moved exactly ONE test, and the difference between one and three
         is the whole reason this recipe gets run instead of reasoned about. Named rather than

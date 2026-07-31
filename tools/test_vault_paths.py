@@ -8,7 +8,7 @@ from pathlib import Path
 sys.path.insert(0, str(Path(__file__).resolve().parent))
 
 from _testkit import make_vault
-from vault_paths import (
+from vaultkit import (
     RUN_LOG_RELPATH,
     category_index_name,
     category_label,

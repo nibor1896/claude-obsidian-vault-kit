@@ -31,27 +31,27 @@ class CheckFreshnessTest(unittest.TestCase):
 
     def test_healthy_control(self):
         self.write_log(f"{stamp(1)}\tbuild_index\tok\t0 defects")
-        code, out, err = run_tool("check_freshness.py", "--vault", self.vault, "--jobs", "build_index")
+        code, out, err = run_tool("vaultkit.py", "freshness", "--vault", self.vault, "--jobs", "build_index")
         self.assertEqual(code, 0, err)
         self.assertIn("1/1 jobs fresh", out)
 
     # ------------------------------------------------------------ failure modes
 
     def test_missing_log_is_did_not_run_not_fine(self):
-        code, out, err = run_tool("check_freshness.py", "--vault", self.vault, "--jobs", "build_index")
+        code, out, err = run_tool("vaultkit.py", "freshness", "--vault", self.vault, "--jobs", "build_index")
         self.assertEqual(code, 1)
         self.assertIn("did not run", err)
         self.assertNotIn("fresh", out)
 
     def test_blank_log_is_did_not_run(self):
         self.write_log()
-        code, _, err = run_tool("check_freshness.py", "--vault", self.vault, "--jobs", "build_index")
+        code, _, err = run_tool("vaultkit.py", "freshness", "--vault", self.vault, "--jobs", "build_index")
         self.assertEqual(code, 1)
         self.assertIn("did not run", err)
 
     def test_stale_healthy_run_is_red(self):
         self.write_log(f"{stamp(72)}\tbuild_index\tok\t0 defects")
-        code, out, err = run_tool("check_freshness.py", "--vault", self.vault,
+        code, out, err = run_tool("vaultkit.py", "freshness", "--vault", self.vault,
                                   "--jobs", "build_index", "--max-age-hours", "24")
         self.assertEqual(code, 1)
         self.assertIn("0/1 jobs fresh", out)
@@ -59,14 +59,14 @@ class CheckFreshnessTest(unittest.TestCase):
 
     def test_only_failed_runs_count_as_did_not_run(self):
         self.write_log(f"{stamp(1)}\tbuild_index\tdefects\t3 defects")
-        code, _, err = run_tool("check_freshness.py", "--vault", self.vault, "--jobs", "build_index")
+        code, _, err = run_tool("vaultkit.py", "freshness", "--vault", self.vault, "--jobs", "build_index")
         self.assertEqual(code, 1)
         self.assertIn("did not run", err)
         self.assertIn("no healthy line", err)
 
     def test_malformed_lines_are_counted_not_swallowed(self):
         self.write_log(f"{stamp(1)}\tbuild_index\tok\t0 defects", "kaputte zeile ohne tabs")
-        code, out, err = run_tool("check_freshness.py", "--vault", self.vault, "--jobs", "build_index")
+        code, out, err = run_tool("vaultkit.py", "freshness", "--vault", self.vault, "--jobs", "build_index")
         self.assertEqual(code, 1)
         self.assertIn("1 malformed", out)
         self.assertIn("malformed", err)
@@ -83,7 +83,7 @@ class CheckFreshnessTest(unittest.TestCase):
         config.parent.mkdir(parents=True, exist_ok=True)
         config.write_text('{"jobs": ["build_index"]}', encoding="utf-8-sig", newline="\n")
         self.write_log(f"{stamp(1)}\tbuild_index\tok\t0 defects")
-        code, out, err = run_tool("check_freshness.py", "--vault", self.vault)
+        code, out, err = run_tool("vaultkit.py", "freshness", "--vault", self.vault)
         self.assertEqual(code, 0, out + err)
         self.assertIn("1/1 jobs fresh", out)
 
@@ -92,13 +92,13 @@ class CheckFreshnessTest(unittest.TestCase):
         config.parent.mkdir(parents=True, exist_ok=True)
         config.write_text("{ das ist kein json", encoding="utf-8", newline="\n")
         self.write_log(f"{stamp(1)}\tbuild_index\tok\t0 defects")
-        code, out, err = run_tool("check_freshness.py", "--vault", self.vault)
+        code, out, err = run_tool("vaultkit.py", "freshness", "--vault", self.vault)
         self.assertIn("jobs.json", err)
         self.assertIn("unreadable", err)
 
     def test_non_ascii_job_name_survives_the_subprocess_round_trip(self):
         self.write_log(f"{stamp(1)}\tbuild_index\tok\t0 defects")
-        code, _, err = run_tool("check_freshness.py", "--vault", self.vault, "--jobs", "Zählung")
+        code, _, err = run_tool("vaultkit.py", "freshness", "--vault", self.vault, "--jobs", "Zählung")
         self.assertEqual(code, 1)
         self.assertIn("Zählung", err)
 
@@ -110,6 +110,17 @@ class CheckFreshnessTest(unittest.TestCase):
         config.write_text(text, encoding="utf-8", newline="\n")
         return config
 
+    # Every job the register declares, spelled the way a real jobs.json spells them. Since
+    # 2026-07-31 the population comes from that register rather than from whichever files
+    # happen to sit in the folder, so a config that classifies only the fixture's own tool
+    # leaves the kit's five genuinely unclassified -- correctly, and loudly. A real vault
+    # ships a jobs.json that names all five; these fixtures have to as well, or they measure
+    # an incomplete config instead of the thing they are about.
+    KIT_ON_DEMAND = ('"check_duplicates": "chain and by hand", '
+                     '"write_command": "setup only", '
+                     '"check_freshness": "this job itself"')
+    KIT_WATCHED = '"build_index", "check_links"'
+
     def test_an_on_demand_tool_stays_out_of_the_unclassified_line(self):
         """The reason the second list exists at all.
 
@@ -118,18 +129,20 @@ class CheckFreshnessTest(unittest.TestCase):
         chain. Classified means silent here, and only here.
 
         Recipe without the fix, measured on this machine 2026-07-30: drop the `- set(on_demand)`
-        term from `unclassified` in check_freshness.py. test_check_freshness 13/15 -- this case
+        term from `unclassified` in vaultkit.py. test_check_freshness 13/15 -- this case
         and the bare-list one, which asserts the same count from the other shape. The healthy
         control stays green, which is why the control alone could never have caught it.
         """
-        self.write_config('{"jobs": ["build_index"], '
-                          '"on_demand": {"mein_werkzeug": "laeuft von Hand"}}')
+        self.write_config(f'{{"jobs": [{self.KIT_WATCHED}], '
+                          f'"on_demand": {{"mein_werkzeug": "laeuft von Hand", '
+                          f'{self.KIT_ON_DEMAND}}}}}')
         self.write_log(f"{stamp(1)}\tbuild_index\tok\t0 defects",
+                       f"{stamp(2)}\tcheck_links\tok\t3/3 resolve",
                        f"{stamp(5)}\tmein_werkzeug\tok\tetwas getan")
-        code, out, err = run_tool("check_freshness.py", "--vault", self.vault)
+        code, out, err = run_tool("vaultkit.py", "freshness", "--vault", self.vault)
         self.assertEqual(code, 0, out + err)
-        self.assertIn("1/1 jobs fresh", out)
-        self.assertIn("1 on demand", out)
+        self.assertIn("2/2 jobs fresh", out)
+        self.assertIn("4 on demand", out)
         self.assertIn("0 unclassified", out)
         self.assertNotIn("mein_werkzeug", out)
 
@@ -147,7 +160,7 @@ class CheckFreshnessTest(unittest.TestCase):
         """
         self.write_log(f"{stamp(1)}\tbuild_index\tok\t0 defects",
                        f"{stamp(2)}\tmein_werkzeug\tok\tetwas getan")
-        code, out, err = run_tool("check_freshness.py", "--vault", self.vault,
+        code, out, err = run_tool("vaultkit.py", "freshness", "--vault", self.vault,
                                   "--jobs", "build_index")
         self.assertEqual(code, 0, out + err)
         self.assertIn("1 unclassified", out)
@@ -180,7 +193,7 @@ class CheckFreshnessTest(unittest.TestCase):
         """
         self.write_log(f"{stamp(1)}\tbuild_index\tok\t0 defects")
         self.write_tool("mein_werkzeug.py")
-        code, out, err = run_tool("check_freshness.py", "--vault", self.vault,
+        code, out, err = run_tool("vaultkit.py", "freshness", "--vault", self.vault,
                                   "--jobs", "build_index")
         self.assertEqual(code, 0, out + err)
         self.assertIn("1 unclassified", out)
@@ -199,7 +212,7 @@ class CheckFreshnessTest(unittest.TestCase):
         """
         self.write_log(f"{stamp(1)}\tbuild_index\tok\t0 defects")
         self.write_tool("stilles_werkzeug.py", "print('reaches a verdict, writes no line')\n")
-        code, out, err = run_tool("check_freshness.py", "--vault", self.vault,
+        code, out, err = run_tool("vaultkit.py", "freshness", "--vault", self.vault,
                                   "--jobs", "build_index")
         self.assertEqual(code, 0, out + err)
         self.assertIn("0 unclassified", out)
@@ -214,7 +227,7 @@ class CheckFreshnessTest(unittest.TestCase):
         """
         self.write_log(f"{stamp(1)}\tbuild_index\tok\t0 defects")
         self.write_tool("test_mein_werkzeug.py")
-        code, out, err = run_tool("check_freshness.py", "--vault", self.vault,
+        code, out, err = run_tool("vaultkit.py", "freshness", "--vault", self.vault,
                                   "--jobs", "build_index")
         self.assertEqual(code, 0, out + err)
         self.assertIn("0 unclassified", out)
@@ -226,11 +239,13 @@ class CheckFreshnessTest(unittest.TestCase):
         The same key build_kit.py's chain check reads: one structure, so "deliberately outside
         the chain" is stated once and cannot be answered two different ways by two tools.
         """
-        self.write_config('{"jobs": ["build_index"], '
-                          '"not_invoked": {"mein_werkzeug": "ein Modul, kein Kommando"}}')
-        self.write_log(f"{stamp(1)}\tbuild_index\tok\t0 defects")
+        self.write_config(f'{{"jobs": [{self.KIT_WATCHED}], '
+                          f'"on_demand": {{{self.KIT_ON_DEMAND}}}, '
+                          f'"not_invoked": {{"mein_werkzeug": "ein Modul, kein Kommando"}}}}')
+        self.write_log(f"{stamp(1)}\tbuild_index\tok\t0 defects",
+                       f"{stamp(2)}\tcheck_links\tok\t3/3 resolve")
         self.write_tool("mein_werkzeug.py")
-        code, out, err = run_tool("check_freshness.py", "--vault", self.vault)
+        code, out, err = run_tool("vaultkit.py", "freshness", "--vault", self.vault)
         self.assertEqual(code, 0, out + err)
         self.assertIn("1 not invoked", out)
         self.assertIn("0 unclassified", out)
@@ -249,7 +264,7 @@ class CheckFreshnessTest(unittest.TestCase):
         self.write_config('{"jobs": ["build_index", "mein_werkzeug"], '
                           '"not_invoked": {"mein_werkzeug": "kein Kommando"}}')
         self.write_log(f"{stamp(1)}\tbuild_index\tok\t0 defects")
-        code, out, err = run_tool("check_freshness.py", "--vault", self.vault)
+        code, out, err = run_tool("vaultkit.py", "freshness", "--vault", self.vault)
         self.assertEqual(code, 2, out + err)
         self.assertIn("mein_werkzeug", err)
         self.assertIn("jobs.json", err)
@@ -269,7 +284,7 @@ class CheckFreshnessTest(unittest.TestCase):
         self.write_config('{"jobs": ["build_index", "mein_werkzeug"], '
                           '"on_demand": {"mein_werkzeug": "laeuft von Hand"}}')
         self.write_log(f"{stamp(1)}\tbuild_index\tok\t0 defects")
-        code, out, err = run_tool("check_freshness.py", "--vault", self.vault)
+        code, out, err = run_tool("vaultkit.py", "freshness", "--vault", self.vault)
         self.assertEqual(code, 2, out + err)
         self.assertIn("mein_werkzeug", err)
         self.assertIn("jobs.json", err)
@@ -291,7 +306,7 @@ class CheckFreshnessTest(unittest.TestCase):
         self.write_config('{"jobs": ["build_index"]}')
         self.write_log(f"{stamp(1)}\tbuild_index\tok\t0 defects",
                        f"{stamp(3)}\tcheck_duplicates\tok\t0 flagged")
-        code, out, err = run_tool("check_freshness.py", "--vault", self.vault)
+        code, out, err = run_tool("vaultkit.py", "freshness", "--vault", self.vault)
         self.assertEqual(code, 0, out + err)
         self.assertIn("0 on demand", out)
         self.assertIn("check_duplicates", out)
@@ -308,12 +323,15 @@ class CheckFreshnessTest(unittest.TestCase):
         the built-in ones: the run then demands check_links, which the log never mentions, and
         exits 1 over a config that was merely written in the other shape.
         """
-        self.write_config('{"jobs": ["build_index"], "on_demand": ["mein_werkzeug"]}')
+        self.write_config(f'{{"jobs": [{self.KIT_WATCHED}], '
+                          f'"on_demand": ["mein_werkzeug", "check_duplicates", '
+                          f'"write_command", "check_freshness"]}}')
         self.write_log(f"{stamp(1)}\tbuild_index\tok\t0 defects",
+                       f"{stamp(2)}\tcheck_links\tok\t3/3 resolve",
                        f"{stamp(2)}\tmein_werkzeug\tok\tetwas getan")
-        code, out, err = run_tool("check_freshness.py", "--vault", self.vault)
+        code, out, err = run_tool("vaultkit.py", "freshness", "--vault", self.vault)
         self.assertEqual(code, 0, out + err)
-        self.assertIn("1 on demand", out)
+        self.assertIn("4 on demand", out)
         self.assertIn("0 unclassified", out)
 
     def test_the_check_logs_its_own_run_like_every_other_tool(self):
@@ -328,7 +346,7 @@ class CheckFreshnessTest(unittest.TestCase):
         because no other case reads the log back after the run.
         """
         self.write_log(f"{stamp(1)}\tbuild_index\tok\t0 defects")
-        code, out, err = run_tool("check_freshness.py", "--vault", self.vault,
+        code, out, err = run_tool("vaultkit.py", "freshness", "--vault", self.vault,
                                   "--jobs", "build_index")
         self.assertEqual(code, 0, out + err)
         written = self.log.read_text(encoding="utf-8").splitlines()

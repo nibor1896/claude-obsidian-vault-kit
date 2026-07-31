@@ -1,4 +1,4 @@
-"""Suite for write_command.py.
+﻿"""Suite for write_command.py.
 
 The command file exists to answer three traps in the SECTION 8 chain, so the cases that matter
 are not "a file appeared" but "the file answers them". `--vault` means a PROJECT after
@@ -21,9 +21,9 @@ from pathlib import Path
 sys.path.insert(0, str(Path(__file__).resolve().parent))
 
 from _testkit import make_vault, run_tool, write_note  # noqa: E402
-from vault_paths import project_dirs  # noqa: E402
+from vaultkit import project_dirs  # noqa: E402
 
-import write_command  # noqa: E402
+import vaultkit  # noqa: E402
 
 COMMAND_RELPATH = Path(".claude") / "commands" / "vaultkit.md"
 
@@ -54,7 +54,7 @@ class WriteCommandTest(unittest.TestCase):
         shutil.rmtree(self.vault.parent, ignore_errors=True)
 
     def write(self, *extra):
-        return run_tool("write_command.py", "--vault", self.vault, *extra, home=self.home)
+        return run_tool("vaultkit.py", "command", "--vault", self.vault, *extra, home=self.home)
 
     # ------------------------------------------------------------------ control
 
@@ -87,7 +87,7 @@ class WriteCommandTest(unittest.TestCase):
         block = text.split("---")[1]
         keys = [line.split(":")[0] for line in block.strip().splitlines() if ":" in line]
         self.assertEqual(keys, ["description"])
-        self.assertNotIn(write_command.MARKER_PREFIX, block, "the marker is inside the frontmatter")
+        self.assertNotIn(vaultkit.MARKER_PREFIX, block, "the marker is inside the frontmatter")
 
     # -------------------------------------------------------------- the traps
 
@@ -99,7 +99,7 @@ class WriteCommandTest(unittest.TestCase):
         three, and both wrong invocations exit non-zero at the user rather than here.
         """
         self.write("--shell", "powershell")
-        root = write_command.show(self.vault, "powershell")
+        root = vaultkit.show(self.vault, "powershell")
         lines = self.target.read_text(encoding="utf-8").splitlines()
 
         projects = project_dirs(self.vault)   # counted, never typed -- 00_Global is one of them
@@ -110,7 +110,7 @@ class WriteCommandTest(unittest.TestCase):
             self.assertNotIn(f"--vault {root}", line,
                              "the generator was handed the vault root, which it refuses")
         for project in projects:
-            self.assertTrue(any(write_command.show(project, "powershell") in line
+            self.assertTrue(any(vaultkit.show(project, "powershell") in line
                                 for line in generator), f"{project.name} has no index line")
 
         links = step_lines(lines, "links")
@@ -161,7 +161,7 @@ class WriteCommandTest(unittest.TestCase):
         """`--vault` alone leaves the root index on yesterday's count, green and silent."""
         self.write("--shell", "powershell")
         text = self.target.read_text(encoding="utf-8")
-        self.assertIn(f"--root {write_command.show(self.vault, 'powershell')}", text)
+        self.assertIn(f"--root {vaultkit.show(self.vault, 'powershell')}", text)
         self.assertIn("`--root`, not `--vault`", text)
 
     def test_the_tool_folder_is_written_as_a_full_path(self):
@@ -212,7 +212,7 @@ class WriteCommandTest(unittest.TestCase):
         stranger and turn a working setup red for having been relocated."""
         self.write()
         text = self.target.read_text(encoding="utf-8")
-        self.assertIn(write_command.MARKER_PREFIX, text)
+        self.assertIn(vaultkit.MARKER_PREFIX, text)
         moved = text.replace(self.vault.as_posix(), "/somewhere/else/Vault")
         self.target.write_text(moved, encoding="utf-8", newline="\n")
         code, out, err = self.write()
@@ -243,12 +243,12 @@ class WriteCommandTest(unittest.TestCase):
         went red, which is exactly why it needs a test -- the numbers were quietly wrong and no
         run had a reason to mention it.
 
-        Recipe without the fix: take ".claude" out of SKIP_DIRS in vault_paths.py and run this
+        Recipe without the fix: take ".claude" out of SKIP_DIRS in vaultkit.py and run this
         suite there; this case fails and no other does.
         """
         write_note(self.vault / "ProjektEins" / "00_Notes" / "eine-erkenntnis.md",
                    title="Eine Erkenntnis")
-        run_tool("build_index.py", "--root", self.vault)
+        run_tool("vaultkit.py", "index", "--root", self.vault)
         before = [run_tool(script, "--vault", self.vault)[1]
                   for script in ("check_links.py", "check_duplicates.py")]
 
@@ -266,7 +266,7 @@ class WriteCommandTest(unittest.TestCase):
         path was given, and that has to be said, not written out."""
         empty = self.vault.parent / "NotAVault"
         empty.mkdir()
-        code, out, err = run_tool("write_command.py", "--vault", empty, home=self.home)
+        code, out, err = run_tool("vaultkit.py", "command", "--vault", empty, home=self.home)
         self.assertNotEqual(code, 0, "an empty vault produced a command file")
         self.assertIn("no projects", out + err)
         self.assertFalse(self.target.exists())
@@ -275,7 +275,7 @@ class WriteCommandTest(unittest.TestCase):
         """`target_path()` takes no argument on purpose. A parameter here would be the door back
         to an in-vault copy, and that copy is the thing that got removed -- it loads only in a
         session started at the vault root, which is not how anyone runs a sync command."""
-        self.assertEqual(write_command.target_path(),
+        self.assertEqual(vaultkit.target_path(),
                          Path.home() / ".claude" / "commands" / "vaultkit.md")
 
 

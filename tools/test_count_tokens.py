@@ -20,25 +20,25 @@ class CountTokensTest(unittest.TestCase):
 
     def test_healthy_control_labels_its_precision(self):
         write_note(self.notes / "eins.md")
-        code, out, err = run_tool("count_tokens.py", self.vault)
+        code, out, err = run_tool("vaultkit.py", "tokens", self.vault)
         self.assertEqual(code, 0, err)
         self.assertTrue("estimated" in out or "exact" in out, out)
         self.assertIn("chars", out)
         self.assertIn("1/1 files", out)
 
     def test_missing_path_is_red(self):
-        code, _, err = run_tool("count_tokens.py", self.vault / "gibt-es-nicht")
+        code, _, err = run_tool("vaultkit.py", "tokens", self.vault / "gibt-es-nicht")
         self.assertEqual(code, 2)
         self.assertIn("not found", err)
 
     def test_empty_directory_is_did_not_run(self):
-        code, _, err = run_tool("count_tokens.py", self.notes)
+        code, _, err = run_tool("vaultkit.py", "tokens", self.notes)
         self.assertEqual(code, 1)
         self.assertIn("did not run", err)
 
     def test_non_ascii_file_is_counted(self):
         write_note(self.notes / "Übergröße.md", title="Umlaut", summary="Ärger.")
-        code, out, err = run_tool("count_tokens.py", self.vault)
+        code, out, err = run_tool("vaultkit.py", "tokens", self.vault)
         self.assertEqual(code, 0, err)
         self.assertIn("1/1 files", out)
 

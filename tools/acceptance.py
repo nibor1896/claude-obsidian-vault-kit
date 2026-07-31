@@ -28,7 +28,7 @@ from pathlib import Path
 sys.path.insert(0, str(Path(__file__).resolve().parent))
 
 from _testkit import make_vault, run_tool, write_note
-from vault_paths import category_index_name
+from vaultkit import category_index_name
 
 for _stream in (sys.stdout, sys.stderr):
     try:
@@ -61,19 +61,19 @@ def build_both(vault, project):
     back-links to the root index, and --vault alone never writes it. Skipping --root leaves
     exactly one broken link, which makes an unrelated fixture pass for the wrong reason.
     """
-    run_tool("build_index.py", "--vault", project)
-    run_tool("build_index.py", "--root", vault)
+    run_tool("vaultkit.py", "index", "--vault", project)
+    run_tool("vaultkit.py", "index", "--root", vault)
 
 
 def fixture_1_missing_title(vault, project):
     write_note(project / "00_Notes" / "ohne-titel.md", title=None)
-    code, _, err = run_tool("build_index.py", "--vault", project)
+    code, _, err = run_tool("vaultkit.py", "index", "--vault", project)
     return code != 0 and "ohne-titel.md" in err
 
 
 def fixture_2_summary_debris(vault, project):
     write_note(project / "00_Notes" / "debris.md", summary="> Ein Zitatrest")
-    code, _, err = run_tool("build_index.py", "--vault", project)
+    code, _, err = run_tool("vaultkit.py", "index", "--vault", project)
     return code != 0 and "debris.md" in err and "— > Ein Zitatrest" not in index_text(project)
 
 
@@ -83,35 +83,35 @@ def fixture_3_dead_wikilink(vault, project):
         '---\ntitle: "Toter Link"\nsummary: "Zeigt ins Leere."\n---\n\n'
         "[[gibt-es-nicht-im-vault]]\n", encoding="utf-8", newline="\n")
     build_both(vault, project)
-    code, out, err = run_tool("check_links.py", "--vault", vault)
+    code, out, err = run_tool("vaultkit.py", "links", "--vault", vault)
     scanned = any(ch.isdigit() for ch in out)
     return code != 0 and scanned and "toter-link.md" in (out + err)
 
 
 def fixture_4_forbidden_filename(vault, project):
     write_note(project / "00_Notes" / "kaputt#name.md", title="Kaputter Name")
-    code, _, err = run_tool("build_index.py", "--vault", project)
+    code, _, err = run_tool("vaultkit.py", "index", "--vault", project)
     text = index_text(project)
     return code != 0 and "kaputt#name.md" in err and "[Kaputter Name](" in text
 
 
 def fixture_5_non_ascii_filename(vault, project):
     write_note(project / "00_Notes" / "Übergröße-Ärger.md", title="Umlaut-Notiz")
-    code, out, err = run_tool("build_index.py", "--vault", project)
+    code, out, err = run_tool("vaultkit.py", "index", "--vault", project)
     if code != 0:
         return False
     if "Übergröße-Ärger" not in index_text(project):
         return False
-    run_tool("build_index.py", "--root", vault)
-    code2, out2, err2 = run_tool("check_links.py", "--vault", vault)
+    run_tool("vaultkit.py", "index", "--root", vault)
+    code2, out2, err2 = run_tool("vaultkit.py", "links", "--vault", vault)
     return code2 == 0 and "0 files scanned" not in out2 and "Übergröße-Ärger" not in err2
 
 
 def fixture_6_second_run_is_a_noop(vault, project):
     write_note(project / "00_Notes" / "stabil.md")
-    run_tool("build_index.py", "--vault", project)
+    run_tool("vaultkit.py", "index", "--vault", project)
     before = {p.name: p.read_bytes() for p in project.rglob("INDEX - *.md")}
-    run_tool("build_index.py", "--vault", project)
+    run_tool("vaultkit.py", "index", "--vault", project)
     after = {p.name: p.read_bytes() for p in project.rglob("INDEX - *.md")}
     return bool(before) and before == after
 
@@ -128,7 +128,7 @@ def fixture_7_empty_suite_dir(vault, project):
 def fixture_8_freshness_without_log(vault, project):
     blank = vault / "leeres-protokoll.log"
     blank.write_text("", encoding="utf-8")
-    code, out, err = run_tool("check_freshness.py", "--vault", vault, "--log", blank)
+    code, out, err = run_tool("vaultkit.py", "freshness", "--vault", vault, "--log", blank)
     return code != 0 and "did not run" in (out + err)
 
 
@@ -142,7 +142,7 @@ def fixture_9_hand_made_folder_is_adopted(vault, project):
     """
     (project / "99_extra").mkdir(exist_ok=True)
     write_note(project / "99_extra" / "verlorene-notiz.md", title="Verloren")
-    code, out, _ = run_tool("build_index.py", "--vault", project)
+    code, out, _ = run_tool("vaultkit.py", "index", "--vault", project)
     if code != 0 or not (project / "99_extra").is_dir():
         return False
     if "99_extra" not in out or "adopted" not in out:
@@ -166,7 +166,7 @@ def fixture_11_command_is_written_named_and_left_alone(vault, project):
     """
     home = vault.parent / "FakeHome"
     home.mkdir(parents=True, exist_ok=True)
-    code, out, _ = run_tool("write_command.py", "--vault", vault,
+    code, out, _ = run_tool("vaultkit.py", "command", "--vault", vault,
                             "--shell", "posix", home=home)
     target = home / ".claude" / "commands" / "vaultkit.md"
     if code != 0 or not target.is_file():
@@ -181,7 +181,7 @@ def fixture_11_command_is_written_named_and_left_alone(vault, project):
     # Second run: nothing said, nothing written, the hand edit still there.
     edited = text + "\nA line the user added.\n"
     target.write_text(edited, encoding="utf-8", newline="\n")
-    _, second, _ = run_tool("write_command.py", "--vault", vault,
+    _, second, _ = run_tool("vaultkit.py", "command", "--vault", vault,
                             "--shell", "posix", home=home)
     if second.strip() or target.read_text(encoding="utf-8") != edited:
         return False
@@ -190,7 +190,7 @@ def fixture_11_command_is_written_named_and_left_alone(vault, project):
     # zero, which would let a setup report /vaultkit ready while a stranger holds the name.
     foreign = "---\ndescription: A command the user already had\n---\n\nMine.\n"
     target.write_text(foreign, encoding="utf-8", newline="\n")
-    code, out, err = run_tool("write_command.py", "--vault", vault,
+    code, out, err = run_tool("vaultkit.py", "command", "--vault", vault,
                               "--shell", "posix", home=home)
     return (code != 0 and target.name in (out + err)
             and target.read_text(encoding="utf-8") == foreign)
@@ -206,14 +206,14 @@ def fixture_10_project_disagrees_with_folder(vault, project):
     """
     write_note(project / "00_Notes" / "falsches-projekt.md", title="Falsch einsortiert",
                project="Homelab")
-    code, _, err = run_tool("build_index.py", "--vault", project)
+    code, _, err = run_tool("vaultkit.py", "index", "--vault", project)
     if code == 0 or "falsches-projekt.md" not in err or "Homelab" not in err:
         return False
     (project / "00_Notes" / "falsches-projekt.md").unlink()
     write_note(project / "00_Notes" / "richtiges-projekt.md", title="Richtig einsortiert",
                project=PROJECT)
     write_note(project / "00_Notes" / "ohne-projekt.md", title="Feld weggelassen")
-    code, _, err = run_tool("build_index.py", "--vault", project)
+    code, _, err = run_tool("vaultkit.py", "index", "--vault", project)
     return code == 0 and "project" not in err
 
 
@@ -229,14 +229,14 @@ def control_clean_vault_is_green(vault, project):
          "2026-07-02", "Wie das Teilsystem aufgebaut ist, Schnittstellen und Grenzen.")
     build_both(vault, project)
 
-    for script in ("check_links.py", "check_duplicates.py"):
-        code, out, err = run_tool(script, "--vault", vault)
+    for sub in ("links", "duplicates"):
+        code, out, err = run_tool("vaultkit.py", sub, "--vault", vault)
         if code != 0 or not any(ch.isdigit() for ch in out + err):
             return False
 
     log = vault / "runs.log"
     log.write_text("", encoding="utf-8")
-    code, out, err = run_tool("check_freshness.py", "--vault", vault, "--log", log)
+    code, out, err = run_tool("vaultkit.py", "freshness", "--vault", vault, "--log", log)
     if code == 0:  # an empty log is not a healthy run, and must not read as one
         return False
 

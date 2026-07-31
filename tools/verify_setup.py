@@ -36,7 +36,7 @@ for _stream in (sys.stdout, sys.stderr):
         pass
 
 # Imported, never respelled: a second copy verifies a tree the tools no longer build.
-from vault_paths import CATEGORY_FOLDERS, TEMPLATES_DIR, template_name  # noqa: E402
+from vaultkit import CATEGORY_FOLDERS, TEMPLATES_DIR, template_name  # noqa: E402
 
 PROJECTS = ["ProjektEins", "ProjektZwei"]
 
@@ -187,7 +187,7 @@ def step(name):
 @step("1 tree, tools and starting pages exist")
 def _s1(root):
     build_vault(root)
-    missing = [p for p in (root / "00_Global" / "06_tools" / "build_index.py",
+    missing = [p for p in (root / "00_Global" / "06_tools" / "vaultkit.py",
                            root / "ProjektEins" / "00_Notes",
                            root / ".gitignore") if not p.exists()]
     if missing:
@@ -392,7 +392,7 @@ def _s13(root):
     Undo recipe, to watch it go red: copy tools/ somewhere, delete the two `if args.stamp:` lines
     from upgrade.py's main(), and run both drivers there. Re-measured on this machine 2026-07-31
     -- verify_setup 14/15, failing in step 1 with `upgrade.py --stamp exited 2`, and test_upgrade
-    26/34. Both, which is the point of covering it in two places: the driver proves the setup
+    27/35. Both, which is the point of covering it in two places: the driver proves the setup
     does it, the suite proves the tool can.
 
     That number was 12/13 for one commit, because it was measured before a step existed and then
@@ -432,7 +432,7 @@ def _s13(root):
     #
     # Undo recipe, re-measured on this machine 2026-07-31: force `stale_stamp = False` in
     # upgrade.py's main(), which is what the early return amounted to.
-    # verify_setup 14/15 here, and test_upgrade 31/34.
+    # verify_setup 14/15 here, and test_upgrade 32/35.
     # ON THE SENTENCE, NOT ON THE HEX (2026-07-31). This read `if "ffffffffffff" not in out`, and
     # the header line `installed: … · kit file: ffffffffffff` always contains it -- so the
     # assertion passed whether or not the tool ever compared the two. Caught by running the undo
@@ -473,10 +473,10 @@ def _s14(root):
 
     Undo recipes, measured on this machine 2026-07-30 against a copy of tools/:
 
-      - Make the `if target.exists():` block in write_command.py's main() unreachable: the hand
+      - Make the `if target.exists():` block in vaultkit.py's command_main() unreachable: the hand
         edit is eaten and the second run reports work. verify_setup 14/15, acceptance 11/12,
         test_write_command 8/12.
-      - Remove `.claude` from SKIP_DIRS in vault_paths.py: the link checker counts a `.claude/`
+      - Remove `.claude` from SKIP_DIRS in vaultkit.py: the link checker counts a `.claude/`
         file in the vault as a note. verify_setup 14/15, test_write_command 11/12 -- and
         acceptance stays 12/12, because fixture 11 checks the file and the message, not the
         denominators. That gap is the reason this step carries the denominator half at all.

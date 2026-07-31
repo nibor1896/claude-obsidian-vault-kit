@@ -1,4 +1,4 @@
-"""Suite for build_index.py.
+﻿"""Suite for build_index.py.
 
 Every case here is a failure-mode fixture except test_healthy_control, which is the
 control: a suite that only ever sees good input cannot tell you the check still works.
@@ -12,9 +12,9 @@ from pathlib import Path
 
 sys.path.insert(0, str(Path(__file__).resolve().parent))
 
-import build_index
+import vaultkit as build_index
 from _testkit import make_vault, run_tool, write_note
-from vault_paths import (
+from vaultkit import (
     CATEGORY_FOLDERS,
     RUN_LOG_RELPATH,
     TEMPLATES_DIR,
@@ -42,7 +42,7 @@ class BuildIndexTest(unittest.TestCase):
     def test_healthy_control(self):
         write_note(self.project / "00_Notes" / "eine-erkenntnis.md",
                    title="Eine Erkenntnis", summary="Genau ein Satz.", created="2026-07-01")
-        code, out, err = run_tool("build_index.py", "--vault", self.project)
+        code, out, err = run_tool("vaultkit.py", "index", "--vault", self.project)
         self.assertEqual(code, 0, err)
         self.assertIn("1 entries in 6 categories", out)
         text = self.index_text()
@@ -50,7 +50,7 @@ class BuildIndexTest(unittest.TestCase):
         self.assertIn("Genau ein Satz.", text)
 
     def test_empty_category_still_gets_an_index(self):
-        code, _, err = run_tool("build_index.py", "--vault", self.project)
+        code, _, err = run_tool("vaultkit.py", "index", "--vault", self.project)
         self.assertEqual(code, 0, err)
         for folder in ("00_Notes", "02_docs", "06_tools"):
             path = self.project / folder / category_index_name("ProjektEins", folder)
@@ -60,14 +60,14 @@ class BuildIndexTest(unittest.TestCase):
 
     def test_missing_title_is_a_defect(self):
         write_note(self.project / "00_Notes" / "ohne-titel.md", title=None)
-        code, _, err = run_tool("build_index.py", "--vault", self.project)
+        code, _, err = run_tool("vaultkit.py", "index", "--vault", self.project)
         self.assertEqual(code, 1)
         self.assertIn("ohne-titel.md", err)
         self.assertIn("title", err)
 
     def test_markdown_debris_in_summary_is_stripped_and_red(self):
         write_note(self.project / "00_Notes" / "debris.md", summary="> Ein Zitatrest")
-        code, _, err = run_tool("build_index.py", "--vault", self.project)
+        code, _, err = run_tool("vaultkit.py", "index", "--vault", self.project)
         self.assertEqual(code, 1)
         self.assertIn("debris.md", err)
         self.assertNotIn("— > Ein Zitatrest", self.index_text())
@@ -75,7 +75,7 @@ class BuildIndexTest(unittest.TestCase):
 
     def test_forbidden_filename_falls_back_to_markdown_link(self):
         write_note(self.project / "00_Notes" / "kaputt#name.md", title="Kaputter Name")
-        code, _, err = run_tool("build_index.py", "--vault", self.project)
+        code, _, err = run_tool("vaultkit.py", "index", "--vault", self.project)
         self.assertEqual(code, 1)
         self.assertIn("kaputt#name.md", err)
         text = self.index_text()
@@ -84,14 +84,14 @@ class BuildIndexTest(unittest.TestCase):
 
     def test_non_ascii_filename_stays_in_the_denominator(self):
         write_note(self.project / "00_Notes" / "Übergröße-für-Ärger.md", title="Umlaut-Notiz")
-        code, out, err = run_tool("build_index.py", "--vault", self.project)
+        code, out, err = run_tool("vaultkit.py", "index", "--vault", self.project)
         self.assertEqual(code, 0, err)
         self.assertIn("1 entries", out)
         self.assertIn("Übergröße-für-Ärger", self.index_text())
 
     def test_non_ascii_defect_survives_the_subprocess_round_trip(self):
         write_note(self.project / "00_Notes" / "Ärgernis-ohne-Titel.md", title=None)
-        code, _, err = run_tool("build_index.py", "--vault", self.project)
+        code, _, err = run_tool("vaultkit.py", "index", "--vault", self.project)
         self.assertEqual(code, 1)
         self.assertIn("Ärgernis-ohne-Titel.md", err)
 
@@ -100,7 +100,7 @@ class BuildIndexTest(unittest.TestCase):
         try:
             write_note(vault / "ProjektEins" / "00_Notes" / "gleich.md")
             write_note(vault / "ProjektZwei" / "00_Notes" / "gleich.md")
-            code, _, err = run_tool("build_index.py", "--root", vault)
+            code, _, err = run_tool("vaultkit.py", "index", "--root", vault)
             self.assertEqual(code, 1)
             self.assertIn("gleich.md", err)
             self.assertIn("name used 2 times", err)
@@ -118,7 +118,7 @@ class BuildIndexTest(unittest.TestCase):
         """
         write_note(self.project / "00_Notes" / "mit-bom.md", title="Mit BOM",
                    summary="Aus Notepad gespeichert.", bom=True)
-        code, out, err = run_tool("build_index.py", "--vault", self.project)
+        code, out, err = run_tool("vaultkit.py", "index", "--vault", self.project)
         self.assertEqual(code, 0, err)
         self.assertIn("1 entries", out)
         text = self.index_text()
@@ -128,7 +128,7 @@ class BuildIndexTest(unittest.TestCase):
     def test_a_bom_does_not_hide_a_real_defect(self):
         """The other half: the fix must not turn the guard off for BOM'd files."""
         write_note(self.project / "00_Notes" / "bom-ohne-titel.md", title=None, bom=True)
-        code, _, err = run_tool("build_index.py", "--vault", self.project)
+        code, _, err = run_tool("vaultkit.py", "index", "--vault", self.project)
         self.assertEqual(code, 1)
         self.assertIn("bom-ohne-titel.md", err)
         self.assertIn("title", err)
@@ -137,7 +137,7 @@ class BuildIndexTest(unittest.TestCase):
 
     def test_project_disagreeing_with_the_folder_is_a_defect(self):
         """#15. Recipe for the failure without the fix: delete the `declared = ...` assignment
-        AND the `if declared and ...` block under it from collect_entries in build_index.py --
+        AND the `if declared and ...` block under it from collect_entries in vaultkit.py --
         cutting only the assignment leaves an orphaned defects.add() and measures something
         else. Re-measured that way on this machine 2026-07-31 -- 32 of 33 tests pass and this
         one fails with `AssertionError: 0 != 1`: the run exits 0, says nothing, and indexes the
@@ -147,7 +147,7 @@ class BuildIndexTest(unittest.TestCase):
         """
         write_note(self.project / "00_Notes" / "falsches-projekt.md",
                    title="Gehoert woandershin", project="Homelab")
-        code, _, err = run_tool("build_index.py", "--vault", self.project)
+        code, _, err = run_tool("vaultkit.py", "index", "--vault", self.project)
         self.assertEqual(code, 1)
         self.assertIn("falsches-projekt.md", err)
         self.assertIn("Homelab", err)
@@ -157,7 +157,7 @@ class BuildIndexTest(unittest.TestCase):
         """A guard that fires on the agreeing case would make the field unusable."""
         write_note(self.project / "00_Notes" / "richtiges-projekt.md",
                    title="Gehoert hierher", project="ProjektEins")
-        code, out, err = run_tool("build_index.py", "--vault", self.project)
+        code, out, err = run_tool("vaultkit.py", "index", "--vault", self.project)
         self.assertEqual(code, 0, err)
         self.assertNotIn("project", err)
         self.assertIn("1 entries", out)
@@ -169,7 +169,7 @@ class BuildIndexTest(unittest.TestCase):
         and 135 of the 339 notes in the vault this kit came from carry no `project:` at all.
         """
         write_note(self.project / "00_Notes" / "ohne-projekt.md", title="Kein Projektfeld")
-        code, out, err = run_tool("build_index.py", "--vault", self.project)
+        code, out, err = run_tool("vaultkit.py", "index", "--vault", self.project)
         self.assertEqual(code, 0, err)
         self.assertNotIn("project", err)
         self.assertIn("1 entries", out)
@@ -183,7 +183,7 @@ class BuildIndexTest(unittest.TestCase):
         path = self.project / "00_Notes" / "zitiert.md"
         path.write_text('---\ntitle: "Zitiert"\nsummary: "Wert in Anfuehrungszeichen."\n'
                         'project: "ProjektEins"\n---\n\nRumpf.\n', encoding="utf-8", newline="\n")
-        code, out, err = run_tool("build_index.py", "--vault", self.project)
+        code, out, err = run_tool("vaultkit.py", "index", "--vault", self.project)
         self.assertEqual(code, 0, err)
         self.assertIn("1 entries", out)
 
@@ -193,7 +193,7 @@ class BuildIndexTest(unittest.TestCase):
         """Requirement 1 of #6: a project folder a user creates is empty and must not stay so."""
         fresh = self.vault / "ProjektNeu"
         fresh.mkdir()
-        code, out, err = run_tool("build_index.py", "--vault", fresh)
+        code, out, err = run_tool("vaultkit.py", "index", "--vault", fresh)
         self.assertEqual(code, 0, err)
         for folder in CATEGORY_FOLDERS:
             self.assertTrue((fresh / folder).is_dir(), f"{folder} not created")
@@ -205,7 +205,7 @@ class BuildIndexTest(unittest.TestCase):
         """Requirement 2 of #6: it stays where it is and gets an index of its own."""
         (self.project / "Rechnungen").mkdir()
         write_note(self.project / "Rechnungen" / "eine-rechnung.md", title="Eine Rechnung")
-        code, out, err = run_tool("build_index.py", "--vault", self.project)
+        code, out, err = run_tool("vaultkit.py", "index", "--vault", self.project)
         self.assertEqual(code, 0, err)
         self.assertTrue((self.project / "Rechnungen").is_dir(), "the folder was moved or removed")
         text = self.index_text("Rechnungen")
@@ -221,7 +221,7 @@ class BuildIndexTest(unittest.TestCase):
         """
         (self.project / "06_werkzeuge").mkdir()
         write_note(self.project / "06_werkzeuge" / "verlorene-notiz.md", title="Verloren")
-        code, out, err = run_tool("build_index.py", "--vault", self.project)
+        code, out, err = run_tool("vaultkit.py", "index", "--vault", self.project)
         self.assertEqual(code, 0, err)
         self.assertIn("adopted", out)
         self.assertIn("ProjektEins/06_werkzeuge", out)
@@ -232,7 +232,7 @@ class BuildIndexTest(unittest.TestCase):
         """__pycache__ under 06_tools is normal. As a category it would be indexed forever."""
         (self.project / "__pycache__").mkdir()
         (self.project / ".obsidian").mkdir()
-        code, out, err = run_tool("build_index.py", "--vault", self.project)
+        code, out, err = run_tool("vaultkit.py", "index", "--vault", self.project)
         self.assertEqual(code, 0, err)
         self.assertNotIn("__pycache__", out)
         self.assertNotIn(".obsidian", out)
@@ -240,9 +240,9 @@ class BuildIndexTest(unittest.TestCase):
 
     def test_second_run_after_adoption_creates_nothing_new(self):
         (self.project / "Rechnungen").mkdir()
-        run_tool("build_index.py", "--vault", self.project)
+        run_tool("vaultkit.py", "index", "--vault", self.project)
         before = {p: p.read_bytes() for p in self.project.rglob("INDEX - *.md")}
-        code, out, err = run_tool("build_index.py", "--vault", self.project)
+        code, out, err = run_tool("vaultkit.py", "index", "--vault", self.project)
         after = {p: p.read_bytes() for p in self.project.rglob("INDEX - *.md")}
         self.assertEqual(code, 0, err)
         self.assertEqual(before, after)
@@ -258,7 +258,7 @@ class BuildIndexTest(unittest.TestCase):
         {{date}} and {{time}}, and no folder variable at all. So the project name has to be in
         the file, and that means one file per project.
         """
-        code, out, err = run_tool("build_index.py", "--root", self.vault)
+        code, out, err = run_tool("vaultkit.py", "index", "--root", self.vault)
         self.assertEqual(code, 0, err)
         template = self.vault / TEMPLATES_DIR / template_name("ProjektEins")
         self.assertTrue(template.exists(), f"{template} missing")
@@ -274,7 +274,7 @@ class BuildIndexTest(unittest.TestCase):
         # someone tidies up.
         #
         # Recipe, so the number below stays reproducible: copy tools/ somewhere, add the five
-        # lines back to template_text() in vault_paths.py, run `python -m unittest
+        # lines back to template_text() in vaultkit.py, run `python -m unittest
         # test_build_index` there. Measured on this machine 2026-07-31 -- 32/33, failing here
         # and nowhere else.
         for field in ("updated:", "issues:", "generator:", "retired:", "stale:"):
@@ -284,12 +284,12 @@ class BuildIndexTest(unittest.TestCase):
 
     def test_a_hand_edited_template_survives_the_next_run(self):
         """A template is there to be edited. A tool that resets it every run eats the edit."""
-        run_tool("build_index.py", "--root", self.vault)
+        run_tool("vaultkit.py", "index", "--root", self.vault)
         template = self.vault / TEMPLATES_DIR / template_name("ProjektEins")
         mine = template.read_text(encoding="utf-8").replace(
             "created: {{date}}\n", "created: {{date}}\nowner:\n")
         template.write_text(mine, encoding="utf-8", newline="\n")
-        code, out, err = run_tool("build_index.py", "--root", self.vault)
+        code, out, err = run_tool("vaultkit.py", "index", "--root", self.vault)
         self.assertEqual(code, 0, err)
         self.assertEqual(template.read_text(encoding="utf-8"), mine)
         self.assertNotIn("template", out)   # nothing was missing the second time
@@ -298,13 +298,13 @@ class BuildIndexTest(unittest.TestCase):
         """_templates sits at the vault root, and a directory at the vault root is a project.
 
         Recipe for the failure without the exemption: drop TEMPLATES_DIR from SKIP_DIRS in
-        vault_paths.py and rerun. Re-measured on this machine 2026-07-31 -- 31/33 here, 11/12 in
+        vaultkit.py and rerun. Re-measured on this machine 2026-07-31 -- 31/33 here, 11/12 in
         acceptance.py and 14/15 in verify_setup.py. The run then reports six `created
         _templates/<category>` lines and writes a `TEMPLATE - _templates.md` for the folder it
         just mistook for a project.
         """
-        run_tool("build_index.py", "--root", self.vault)
-        code, out, err = run_tool("build_index.py", "--root", self.vault)
+        run_tool("vaultkit.py", "index", "--root", self.vault)
+        code, out, err = run_tool("vaultkit.py", "index", "--root", self.vault)
         self.assertEqual(code, 0, err)
         folder = self.vault / TEMPLATES_DIR
         self.assertTrue(folder.is_dir())
@@ -326,14 +326,14 @@ class BuildIndexTest(unittest.TestCase):
         Same promise as before, made over the absent key instead of the empty one -- and this is
         the only place that notices if a reader ever tests presence instead of value.
         """
-        run_tool("build_index.py", "--root", self.vault)
+        run_tool("vaultkit.py", "index", "--root", self.vault)
         text = (self.vault / TEMPLATES_DIR / template_name("ProjektEins")).read_text(
             encoding="utf-8")
         text = text.replace("{{title}}", "Eine Erkenntnis").replace("{{date}}", "2026-07-29")
         text = text.replace("summary:\n", 'summary: "Genau ein Satz."\n')
         note = self.project / "00_Notes" / "eine-erkenntnis.md"
         note.write_text(text + "\nRumpf.\n", encoding="utf-8", newline="\n")
-        code, out, err = run_tool("build_index.py", "--vault", self.project)
+        code, out, err = run_tool("vaultkit.py", "index", "--vault", self.project)
         self.assertEqual(code, 0, err)
         text = self.index_text()
         self.assertIn("[[ProjektEins/00_Notes/eine-erkenntnis|Eine Erkenntnis]]", text)
@@ -343,9 +343,9 @@ class BuildIndexTest(unittest.TestCase):
 
     def test_a_new_project_gets_its_template_on_the_next_root_run(self):
         """Projects arrive later. A template set that only matches the first run is a trap."""
-        run_tool("build_index.py", "--root", self.vault)
+        run_tool("vaultkit.py", "index", "--root", self.vault)
         (self.vault / "ProjektSpaeter").mkdir()
-        code, out, err = run_tool("build_index.py", "--root", self.vault)
+        code, out, err = run_tool("vaultkit.py", "index", "--root", self.vault)
         self.assertEqual(code, 0, err)
         later = self.vault / TEMPLATES_DIR / template_name("ProjektSpaeter")
         self.assertTrue(later.exists(), f"{later} missing")
@@ -371,7 +371,7 @@ class BuildIndexTest(unittest.TestCase):
         at all; after it exit 1, the filename on stderr, 61 of 61 written and one
         `build_index … defects` line. `attrib -R` on the same file puts the copy back.
 
-        Undo recipe: move `path.write_text(...)` in build_index.py's write_if_changed() back out
+        Undo recipe: move `path.write_text(...)` in vaultkit.py's write_if_changed() back out
         of its try block. This case then fails with a PermissionError traceback instead of the
         listing, and the two log assertions below go with it.
         """
@@ -379,7 +379,7 @@ class BuildIndexTest(unittest.TestCase):
         blocked = self.project / "00_Notes" / category_index_name("ProjektEins", "00_Notes")
         blocked.mkdir(parents=True, exist_ok=True)
 
-        code, _, err = run_tool("build_index.py", "--vault", self.project)
+        code, _, err = run_tool("vaultkit.py", "index", "--vault", self.project)
         self.assertEqual(code, 1)
         self.assertIn(blocked.name, err)
         self.assertIn("not written", err)
@@ -408,11 +408,11 @@ class BuildIndexTest(unittest.TestCase):
         for every user on every platform. The real-world causes are the same ones as for the
         index: a read-only folder, a sync client holding it, a name already taken.
 
-        Undo recipe: remove the try/except from write_templates() in build_index.py. This case
+        Undo recipe: remove the try/except from write_templates() in vaultkit.py. This case
         then fails with a FileExistsError traceback, and the log assertion goes with it.
         """
         (self.vault / TEMPLATES_DIR).write_text("not a folder\n", encoding="utf-8", newline="\n")
-        code, out, err = run_tool("build_index.py", "--root", self.vault)
+        code, out, err = run_tool("vaultkit.py", "index", "--root", self.vault)
         self.assertEqual(code, 1)
         self.assertIn(template_name("ProjektEins"), err)
         self.assertIn("template not written", err)
@@ -433,7 +433,7 @@ class BuildIndexTest(unittest.TestCase):
         administrator rights or Developer Mode, so a fixture would skip itself on the default
         installation and prove nothing there.
 
-        Undo recipe: drop the try/except around the `rel = ...` line in build_index.py's
+        Undo recipe: drop the try/except around the `rel = ...` line in vaultkit.py's
         link_to(). This case then fails with ValueError instead of returning the label.
         """
         defects = build_index.Defects()
@@ -449,33 +449,33 @@ class BuildIndexTest(unittest.TestCase):
 
     def test_second_run_changes_nothing(self):
         write_note(self.project / "00_Notes" / "stabil.md")
-        run_tool("build_index.py", "--vault", self.project)
+        run_tool("vaultkit.py", "index", "--vault", self.project)
         before = {p: p.read_bytes() for p in self.project.rglob("INDEX - *.md")}
-        run_tool("build_index.py", "--vault", self.project)
+        run_tool("vaultkit.py", "index", "--vault", self.project)
         after = {p: p.read_bytes() for p in self.project.rglob("INDEX - *.md")}
         self.assertEqual(before, after)
 
     def test_category_index_backlinks_to_the_project_hub(self):
         """The rename that broke 23 of 441 links was a missing assertion, not a missing check."""
-        run_tool("build_index.py", "--vault", self.project)
+        run_tool("vaultkit.py", "index", "--vault", self.project)
         hub_stem = project_index_name(self.project)[:-3]
         self.assertIn(f"[[ProjektEins/{hub_stem}|ProjektEins]]", self.index_text())
 
     def test_project_hub_backlinks_to_the_root_index(self):
-        run_tool("build_index.py", "--root", self.vault)
+        run_tool("vaultkit.py", "index", "--root", self.vault)
         hub = self.project / project_index_name(self.project)
         root_stem = root_index_name(self.vault)[:-3]
         self.assertIn(f"[[{root_stem}|{self.vault.name}]]", hub.read_text(encoding="utf-8"))
 
     def test_root_index_is_named_after_the_resolved_vault(self):
-        run_tool("build_index.py", "--root", self.vault)
+        run_tool("vaultkit.py", "index", "--root", self.vault)
         self.assertTrue((self.vault / root_index_name(self.vault)).exists())
         self.assertIn(f"# {self.vault.name} — Index",
                       (self.vault / root_index_name(self.vault)).read_text(encoding="utf-8"))
 
     def test_index_never_reads_the_note_body(self):
         write_note(self.project / "00_Notes" / "geheim.md", title="Titel", summary="Kurz.")
-        run_tool("build_index.py", "--vault", self.project)
+        run_tool("vaultkit.py", "index", "--vault", self.project)
         self.assertNotIn("Body text that the index generator must never read",
                          self.index_text())
 
@@ -484,7 +484,7 @@ class BuildIndexTest(unittest.TestCase):
                    summary="War mal wahr.", retired="2026-06-01")
         write_note(self.project / "00_Notes" / "veraltet.md", title="Halbalt",
                    summary="Quelle ist neuer.", stale="2026-07-01")
-        run_tool("build_index.py", "--vault", self.project)
+        run_tool("vaultkit.py", "index", "--vault", self.project)
         text = self.index_text()
         self.assertIn("[retired: 2026-06-01]", text)
         self.assertIn("[stale since 2026-07-01]", text)

@@ -94,7 +94,7 @@ document in order. It is a contract, not a suggestion.
 7. **The scripts do the mechanical work.** Do not hand-write an index, do not hand-count entries, do
    not eyeball whether links resolve. If a number can be measured, measure it with code. If it
    cannot, say "not measured".
-8. **State every number's origin.** "12 of 14 links resolve, measured by `check_links.py`" — or
+8. **State every number's origin.** "12 of 14 links resolve, measured by `vaultkit.py links`" — or
    nothing. Never present an estimate as a measurement.
 9. **One task at a time, verified.** Finish and verify a step before starting the next. A half-built
    vault that reports success is worse than no vault.
@@ -335,7 +335,7 @@ Rules for the tree:
   file in every project for no gain, and the prefix carries no meaning to close.
 - **`00_Global/` is always created, and it is not a question.** The tools live in
   `00_Global/06_tools/`, and that path is not a preference — it is written into the scripts. The run
-  log is `00_Global/06_tools/runs.log` (`vault_paths.RUN_LOG_RELPATH`), `check_freshness.py` reads it
+  log is `00_Global/06_tools/runs.log` (`vaultkit.RUN_LOG_RELPATH`), `vaultkit.py freshness` reads it
   there, `upgrade.py --stamp` writes `00_Global/06_tools/kit-version.txt`, and the `.gitignore`
   comment names the same path. Offering "no global folder" as a choice was worse than not asking:
   the first tool run recreated `00_Global/06_tools/` anyway, through `log_run`'s `mkdir(parents=True)`
@@ -405,7 +405,7 @@ Field semantics that matter:
 
 ---
 
-## SECTION 5 — The index generator (`build_index.py`)
+## SECTION 5 — The index generator (`vaultkit.py index`)
 
 Write this script. Contract, not code — implement it in Python 3.10+, standard library only.
 
@@ -592,12 +592,12 @@ cannot tell you the check still works.
 
 | Script | Job | Must refuse |
 |---|---|---|
-| `build_index.py` | the index tree (SECTION 5) | a silent fallback on a degraded entry |
-| `check_links.py` | every `[[wikilink]]` resolves to a file | reporting `0 broken` when it scanned 0 files |
-| `check_duplicates.py` | notes whose content overlaps | being ignored — every hit gets a decision |
-| `check_freshness.py` | age of the last **healthy** run of each scheduled job | treating "no log" as "fine", or a job listed as both watched and on-demand as watched |
-| `count_tokens.py` | size of what was read, for cost | inventing a precision — output `exact` or `estimated` |
-| `write_command.py` | the `/vaultkit` command, with this vault's real paths in it | overwriting a command the user has edited, or writing one without naming the path |
+| `vaultkit.py index` | the index tree (SECTION 5) | a silent fallback on a degraded entry |
+| `vaultkit.py links` | every `[[wikilink]]` resolves to a file | reporting `0 broken` when it scanned 0 files |
+| `vaultkit.py duplicates` | notes whose content overlaps | being ignored — every hit gets a decision |
+| `vaultkit.py freshness` | age of the last **healthy** run of each scheduled job | treating "no log" as "fine", or a job listed as both watched and on-demand as watched |
+| `vaultkit.py tokens` | size of what was read, for cost | inventing a precision — output `exact` or `estimated` |
+| `vaultkit.py command` | the `/vaultkit` command, with this vault's real paths in it | overwriting a command the user has edited, or writing one without naming the path |
 
 ### The one rule all of them share
 
@@ -668,7 +668,7 @@ whole section is about.
   `\0`, and pass bytes. Get this wrong and every note with an umlaut in its name silently leaves the
   denominator — which is exactly the class of file a knowledge vault is full of.
 
-### `check_duplicates.py` in particular — the threshold is a knob nobody has turned yet
+### `vaultkit.py duplicates` in particular — the threshold is a knob nobody has turned yet
 
 **The default is `0.75`, and it is unvalidated. Say so when you report the result.** It was chosen
 as a plausible starting value, not derived from a measurement, and nothing since has tested it
@@ -696,10 +696,10 @@ disclaimer:
 Until that exists, `--threshold` is the honest interface: the number is exposed on the command line
 precisely because it is not settled.
 
-### `check_freshness.py` in particular
+### `vaultkit.py freshness` in particular
 
 Any job on a schedule (task scheduler, cron, launchd) writes a line to an append-only log on **every
-run, including the healthy ones**. `check_freshness.py` reads that log and reports the age of the
+run, including the healthy ones**. `vaultkit.py freshness` reads that log and reports the age of the
 last healthy run per job, against a threshold the user sets. Without this, a scheduler that quietly
 stopped firing looks identical to one that is fine.
 
@@ -847,7 +847,7 @@ time it mattered.
 .claude/
 
 # Append-only run log that every tool writes a line to. Tracked, it makes git status dirty after
-# every check, and acceptance fixture 6 permanently noisy. check_freshness.py reads it off disk,
+# every check, and acceptance fixture 6 permanently noisy. The freshness check reads it off disk,
 # not out of git. Leading **/ on purpose: 06_tools/runs.log anchors to the repo root and would
 # never match 00_Global/06_tools/runs.log -- measured twice, on two different setups.
 **/runs.log
@@ -974,8 +974,8 @@ delivered.** There is nowhere else to put it, so the only ways out are their fil
 A quiet non-write reported as success is the failure this kit has paid for most often.
 
 The command exists because the chain below has three traps in it, and a chain typed from memory
-hits them: `--vault` means one project after `build_index.py` and the vault root after
-`check_links.py`; the tool folder is a full path, not `06_tools/`; and the sweep is `--root`.
+hits them: `--vault` means one project after `index` and the vault root after `links`; the
+tool folder is a full path, not `06_tools/`; and the sweep is `--root`.
 **This is a Claude Code convenience, not a deliverable.** The workflow page in `05_workflows`
 carries the same chain in prose, so a user working in a browser loses nothing.
 
@@ -1011,11 +1011,11 @@ fold its verdict into a line that claims the vault is in order — the two answe
 **On the very first setup it is red, and that is correct.** No tool has ever run in this vault, so
 the log holds no healthy line for `build_index` or `check_links` and the check reports `0/2`. Say
 this out loud before you run it, or the user reads their brand-new vault as broken in its first
-minute. Run the chain, then run `check_freshness.py` once more at the end: it now reads the lines
+minute. Run the chain, then run `vaultkit.py freshness` once more at the end: it now reads the lines
 this chain just wrote and reports `2/2`. Observed on the cold run of 2026-07-30 — `0/2` before,
 `2/2` after, same vault, nothing repaired in between.
 
-**`build_index.py` is not a read-only measurement — it writes.** Say so before running it, and check
+**`vaultkit.py index` is not a read-only measurement — it writes.** Say so before running it, and check
 `git status` first so its output is not mistaken for someone else's uncommitted work.
 
 **Then run the index generator a second time and confirm the tree is still clean:**
@@ -1215,7 +1215,7 @@ the summary with it.
 | 8 | remove or blank a scheduled job's run log | freshness check says **"did not run"**, not "fine" | a scheduler that stopped is indistinguishable from a healthy one |
 | 9 | a folder made by hand — `<Project>/99_extra/` with one note in it | folder survives, gets its own index containing the note, run exits **0** and **names it on stdout** | either half alone is the failure: red on a folder the structure allows, or green while the note reaches no index — measured on a real setup, a renamed `06_tools` took the count from 21 categories to 20 without a word |
 | 10 | note with `project:` naming a different project than its folder, then the agreeing and the absent case | index run exits **non-zero** on the contradiction and names both values; **exit 0 and silent** when the field agrees or is missing | the field reads as if it placed the note, places nothing, and says nothing either way — measured on a real vault before the guard existed: 339 notes, 204 of them carrying `project:`, no run had ever compared one against its folder |
-| 11 | run `write_command.py` twice against a vault, hand-editing the command in between, then once more against a file of the same name it did not write | the file appears, spells `--root` and `--vault` as the two different things they are, the run **names it on stdout**; the second run writes nothing and **says nothing**; the foreign file is **named on stderr with a non-zero exit** and is not touched | a tool that writes into a config folder without naming it — the destination can be outside the vault, which is the one place operating rule 5 forbids anything quiet — or, worse, one that returns 0 over a command it never wrote, so the setup reports `/vaultkit` ready while someone else's file holds the name |
+| 11 | run `vaultkit.py command` twice against a vault, hand-editing the command in between, then once more against a file of the same name it did not write | the file appears, spells `--root` and `--vault` as the two different things they are, the run **names it on stdout**; the second run writes nothing and **says nothing**; the foreign file is **named on stderr with a non-zero exit** and is not touched | a tool that writes into a config folder without naming it — the destination can be outside the vault, which is the one place operating rule 5 forbids anything quiet — or, worse, one that returns 0 over a command it never wrote, so the setup reports `/vaultkit` ready while someone else's file holds the name |
 
 The driver leaves nothing behind — every fixture vault lives under the system temp directory and is
 deleted in a `finally` block. It was run under **every shell**, not just one: on Windows that means

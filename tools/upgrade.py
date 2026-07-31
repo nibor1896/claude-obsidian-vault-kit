@@ -232,9 +232,9 @@ def classify(blocks: dict[str, str],
 
     Undo recipes, both re-measured on this machine 2026-07-31, and they are not symmetric:
 
-      - Set the encoding back to `utf-8` (dropping errors= with it): test_upgrade 32/34. BOTH
+      - Set the encoding back to `utf-8` (dropping errors= with it): test_upgrade 33/35. BOTH
         cases go red, because `utf-8` without a replacement handler raises on the bad byte too.
-      - Keep `utf-8-sig` and drop only `errors="replace"`: test_upgrade 33/34, and only
+      - Keep `utf-8-sig` and drop only `errors="replace"`: test_upgrade 34/35, and only
         `test_an_undecodable_file_is_named_rather_than_crashing_the_run` moves. That asymmetry is
         the measurement worth keeping -- it shows the BOM half and the crash half are two defects
         sharing one line, and fixing either alone leaves the other.
@@ -366,6 +366,39 @@ def prove():
         print(f"  ok   {config.name} parses")
     except (OSError, ValueError) as exc:
         print(f"  FAIL {config.name}: {exc}")
+        ok = False
+
+    # THE CHECK THAT COMPILING CANNOT DO, AND IT LIVES HERE FOR A REASON (2026-07-31). vaultkit.py
+    # is one long block now, and a truncated block is the failure a single-file delivery makes
+    # more likely, not less. Measured on this machine, cutting that file in two places -- once
+    # just before its register, once mid-file after a complete function:
+    #
+    #     compileall exit 0 · import exit 0 · `vaultkit.py index` exit 0, and NOTHING HAPPENS
+    #
+    # Both cuts take the trailing `if __name__ == "__main__":` with them, so the script runs to
+    # the end of what arrived and exits successfully having done no work. That is the quietest
+    # failure this kit can have, and no check inside that file can catch it: whatever you put at
+    # the end goes with the cut.
+    #
+    # So it is checked from HERE, out of a different block, by asking the file for the register
+    # it is supposed to end with.
+    sys.path.insert(0, str(TOOLS))
+    try:
+        import vaultkit
+        register = vaultkit.COMMANDS
+        missing = [sub for sub, spec in register.items() if not callable(spec.get("run"))]
+        if not register or missing:
+            raise ValueError(f"register empty or unroutable: {missing or 'no subcommands'}")
+        text = (TOOLS / "vaultkit.py").read_text(encoding="utf-8-sig")
+        if 'if __name__ == "__main__":' not in text.split("COMMANDS = {")[-1]:
+            raise ValueError("the file does not end with its entry point")
+        print(f"  ok   vaultkit.py is whole: {len(register)} subcommands and an entry point")
+    except Exception as exc:
+        # Deliberately broad: an incomplete file fails in whatever way it was cut -- ImportError,
+        # AttributeError, SyntaxError, NameError. What matters is that the run says so.
+        print(f"  FAIL vaultkit.py: {type(exc).__name__}: {exc}\n"
+              f"       This is what a block that arrived truncated looks like. Compiling it "
+              f"proves nothing -- a cut file compiles and then does nothing at exit 0.")
         ok = False
     return ok
 

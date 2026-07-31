@@ -1,4 +1,4 @@
-<!-- kit-version: f690fe4e80f7 -->
+<!-- kit-version: 83742c4b75be -->
 # Claude × Obsidian — Vault Kit
 
 **What this file is:** a setup contract for Claude. Drop it into a Claude conversation and say
@@ -95,7 +95,7 @@ document in order. It is a contract, not a suggestion.
 7. **The scripts do the mechanical work.** Do not hand-write an index, do not hand-count entries, do
    not eyeball whether links resolve. If a number can be measured, measure it with code. If it
    cannot, say "not measured".
-8. **State every number's origin.** "12 of 14 links resolve, measured by `check_links.py`" — or
+8. **State every number's origin.** "12 of 14 links resolve, measured by `vaultkit.py links`" — or
    nothing. Never present an estimate as a measurement.
 9. **One task at a time, verified.** Finish and verify a step before starting the next. A half-built
    vault that reports success is worse than no vault.
@@ -336,7 +336,7 @@ Rules for the tree:
   file in every project for no gain, and the prefix carries no meaning to close.
 - **`00_Global/` is always created, and it is not a question.** The tools live in
   `00_Global/06_tools/`, and that path is not a preference — it is written into the scripts. The run
-  log is `00_Global/06_tools/runs.log` (`vault_paths.RUN_LOG_RELPATH`), `check_freshness.py` reads it
+  log is `00_Global/06_tools/runs.log` (`vaultkit.RUN_LOG_RELPATH`), `vaultkit.py freshness` reads it
   there, `upgrade.py --stamp` writes `00_Global/06_tools/kit-version.txt`, and the `.gitignore`
   comment names the same path. Offering "no global folder" as a choice was worse than not asking:
   the first tool run recreated `00_Global/06_tools/` anyway, through `log_run`'s `mkdir(parents=True)`
@@ -406,7 +406,7 @@ Field semantics that matter:
 
 ---
 
-## SECTION 5 — The index generator (`build_index.py`)
+## SECTION 5 — The index generator (`vaultkit.py index`)
 
 Write this script. Contract, not code — implement it in Python 3.10+, standard library only.
 
@@ -593,12 +593,12 @@ cannot tell you the check still works.
 
 | Script | Job | Must refuse |
 |---|---|---|
-| `build_index.py` | the index tree (SECTION 5) | a silent fallback on a degraded entry |
-| `check_links.py` | every `[[wikilink]]` resolves to a file | reporting `0 broken` when it scanned 0 files |
-| `check_duplicates.py` | notes whose content overlaps | being ignored — every hit gets a decision |
-| `check_freshness.py` | age of the last **healthy** run of each scheduled job | treating "no log" as "fine", or a job listed as both watched and on-demand as watched |
-| `count_tokens.py` | size of what was read, for cost | inventing a precision — output `exact` or `estimated` |
-| `write_command.py` | the `/vaultkit` command, with this vault's real paths in it | overwriting a command the user has edited, or writing one without naming the path |
+| `vaultkit.py index` | the index tree (SECTION 5) | a silent fallback on a degraded entry |
+| `vaultkit.py links` | every `[[wikilink]]` resolves to a file | reporting `0 broken` when it scanned 0 files |
+| `vaultkit.py duplicates` | notes whose content overlaps | being ignored — every hit gets a decision |
+| `vaultkit.py freshness` | age of the last **healthy** run of each scheduled job | treating "no log" as "fine", or a job listed as both watched and on-demand as watched |
+| `vaultkit.py tokens` | size of what was read, for cost | inventing a precision — output `exact` or `estimated` |
+| `vaultkit.py command` | the `/vaultkit` command, with this vault's real paths in it | overwriting a command the user has edited, or writing one without naming the path |
 
 ### The one rule all of them share
 
@@ -669,7 +669,7 @@ whole section is about.
   `\0`, and pass bytes. Get this wrong and every note with an umlaut in its name silently leaves the
   denominator — which is exactly the class of file a knowledge vault is full of.
 
-### `check_duplicates.py` in particular — the threshold is a knob nobody has turned yet
+### `vaultkit.py duplicates` in particular — the threshold is a knob nobody has turned yet
 
 **The default is `0.75`, and it is unvalidated. Say so when you report the result.** It was chosen
 as a plausible starting value, not derived from a measurement, and nothing since has tested it
@@ -697,10 +697,10 @@ disclaimer:
 Until that exists, `--threshold` is the honest interface: the number is exposed on the command line
 precisely because it is not settled.
 
-### `check_freshness.py` in particular
+### `vaultkit.py freshness` in particular
 
 Any job on a schedule (task scheduler, cron, launchd) writes a line to an append-only log on **every
-run, including the healthy ones**. `check_freshness.py` reads that log and reports the age of the
+run, including the healthy ones**. `vaultkit.py freshness` reads that log and reports the age of the
 last healthy run per job, against a threshold the user sets. Without this, a scheduler that quietly
 stopped firing looks identical to one that is fine.
 
@@ -848,7 +848,7 @@ time it mattered.
 .claude/
 
 # Append-only run log that every tool writes a line to. Tracked, it makes git status dirty after
-# every check, and acceptance fixture 6 permanently noisy. check_freshness.py reads it off disk,
+# every check, and acceptance fixture 6 permanently noisy. The freshness check reads it off disk,
 # not out of git. Leading **/ on purpose: 06_tools/runs.log anchors to the repo root and would
 # never match 00_Global/06_tools/runs.log -- measured twice, on two different setups.
 **/runs.log
@@ -975,8 +975,8 @@ delivered.** There is nowhere else to put it, so the only ways out are their fil
 A quiet non-write reported as success is the failure this kit has paid for most often.
 
 The command exists because the chain below has three traps in it, and a chain typed from memory
-hits them: `--vault` means one project after `build_index.py` and the vault root after
-`check_links.py`; the tool folder is a full path, not `06_tools/`; and the sweep is `--root`.
+hits them: `--vault` means one project after `index` and the vault root after `links`; the
+tool folder is a full path, not `06_tools/`; and the sweep is `--root`.
 **This is a Claude Code convenience, not a deliverable.** The workflow page in `05_workflows`
 carries the same chain in prose, so a user working in a browser loses nothing.
 
@@ -1012,11 +1012,11 @@ fold its verdict into a line that claims the vault is in order — the two answe
 **On the very first setup it is red, and that is correct.** No tool has ever run in this vault, so
 the log holds no healthy line for `build_index` or `check_links` and the check reports `0/2`. Say
 this out loud before you run it, or the user reads their brand-new vault as broken in its first
-minute. Run the chain, then run `check_freshness.py` once more at the end: it now reads the lines
+minute. Run the chain, then run `vaultkit.py freshness` once more at the end: it now reads the lines
 this chain just wrote and reports `2/2`. Observed on the cold run of 2026-07-30 — `0/2` before,
 `2/2` after, same vault, nothing repaired in between.
 
-**`build_index.py` is not a read-only measurement — it writes.** Say so before running it, and check
+**`vaultkit.py index` is not a read-only measurement — it writes.** Say so before running it, and check
 `git status` first so its output is not mistaken for someone else's uncommitted work.
 
 **Then run the index generator a second time and confirm the tree is still clean:**
@@ -1216,7 +1216,7 @@ the summary with it.
 | 8 | remove or blank a scheduled job's run log | freshness check says **"did not run"**, not "fine" | a scheduler that stopped is indistinguishable from a healthy one |
 | 9 | a folder made by hand — `<Project>/99_extra/` with one note in it | folder survives, gets its own index containing the note, run exits **0** and **names it on stdout** | either half alone is the failure: red on a folder the structure allows, or green while the note reaches no index — measured on a real setup, a renamed `06_tools` took the count from 21 categories to 20 without a word |
 | 10 | note with `project:` naming a different project than its folder, then the agreeing and the absent case | index run exits **non-zero** on the contradiction and names both values; **exit 0 and silent** when the field agrees or is missing | the field reads as if it placed the note, places nothing, and says nothing either way — measured on a real vault before the guard existed: 339 notes, 204 of them carrying `project:`, no run had ever compared one against its folder |
-| 11 | run `write_command.py` twice against a vault, hand-editing the command in between, then once more against a file of the same name it did not write | the file appears, spells `--root` and `--vault` as the two different things they are, the run **names it on stdout**; the second run writes nothing and **says nothing**; the foreign file is **named on stderr with a non-zero exit** and is not touched | a tool that writes into a config folder without naming it — the destination can be outside the vault, which is the one place operating rule 5 forbids anything quiet — or, worse, one that returns 0 over a command it never wrote, so the setup reports `/vaultkit` ready while someone else's file holds the name |
+| 11 | run `vaultkit.py command` twice against a vault, hand-editing the command in between, then once more against a file of the same name it did not write | the file appears, spells `--root` and `--vault` as the two different things they are, the run **names it on stdout**; the second run writes nothing and **says nothing**; the foreign file is **named on stderr with a non-zero exit** and is not touched | a tool that writes into a config folder without naming it — the destination can be outside the vault, which is the one place operating rule 5 forbids anything quiet — or, worse, one that returns 0 over a command it never wrote, so the setup reports `/vaultkit` ready while someone else's file holds the name |
 
 The driver leaves nothing behind — every fixture vault lives under the system temp directory and is
 deleted in a `finally` block. It was run under **every shell**, not just one: on Windows that means
@@ -1281,13 +1281,19 @@ re-tokenises the whole of SECTION 10 and puts a paraphrase where a byte-for-byte
 The extractor is scaffolding, not part of the vault: keep it outside the tool folder and delete it
 when it has run.
 
-**Then check three things, before running anything:**
+**Then run this one command, before running anything else:**
 
-- **Every `.py` file compiles** — `python -m compileall -q <VaultRoot>/00_Global/06_tools`. A block
-  that arrived truncated fails here; without this check its first symptom is a suite failing for a
-  reason that has nothing to do with the suite.
-- **`jobs.json` parses** — it is the only non-Python block, so no compile step covers it.
-- **No file carries a byte-order mark** — see below.
+```
+python <VaultRoot>/00_Global/06_tools/upgrade.py --prove
+```
+
+It compiles every block, parses `jobs.json`, and checks that `vaultkit.py` arrived whole. **The
+third of those is the one you cannot do by compiling.** Measured on 2026-07-31: a `vaultkit.py` cut
+short — anywhere — still compiles, still imports, and still exits 0 when you run it, having done
+nothing, because the cut takes its entry point with it. Nothing inside that file can catch that;
+whatever you put at its end goes with the same cut. `upgrade.py` is a separate block, so it can.
+
+**Write them as UTF-8 without a byte-order mark** — see below.
 
 **How this release was verified, in its own repository, before this file existed:** on Windows 11,
 Python 3.13, under PowerShell 5.1 **and** Git Bash — 11/11 suites green, 12/12 acceptance checks
@@ -1302,17 +1308,68 @@ pointed at the wrong line.
 
 #### Shared
 
-### `vault_paths.py`
+### `jobs.json`
+
+```json
+{
+  "_comment": "Three lists, and a name belongs to exactly one of them. \"jobs\" must show a healthy run inside the threshold -- these are the ones a dead scheduler would silently take with it. \"on_demand\" logs like everything else but is never late, because it runs when someone asks. \"not_invoked\" is not called by any chain at all, and the value says why. A name in two of them stops the tool with exit 2. A name in none is reported, never guessed at. Verify with: python vaultkit.py freshness --vault <VaultRoot>",
+  "jobs": ["build_index", "check_links"],
+  "on_demand": {
+    "check_duplicates": "runs in the verification chain and by hand, never on a schedule",
+    "write_command": "runs once during setup, and again only if the command file is gone",
+    "check_freshness": "this job itself -- logged, never watched: an age limit on the watcher is a regress"
+  },
+  "not_invoked": {
+    "_comment": "Empty since 2026-07-31, and the key stays for YOUR tools. Its three entries were vault_paths and _testkit -- modules, and neither is a file any more -- and count_tokens, which the register in vaultkit.py now excuses itself by carrying no job name. Put a tool of your own here when it logs but no chain calls it, with the reason: JSON has no comments, so the value is the reason."
+  }
+}
+```
+
+#### Tools
+
+### `vaultkit.py`
 
 ```python
-"""Single source of truth for every generated filename and every path rule.
+"""Every guard this vault runs, in one file: `vaultkit.py <subcommand> …`.
 
-Spelling a generated filename a second time in another tool is how a guard ends up
-reporting the index hub as "missing" while the hub sits right next to it. Every tool
-imports from here instead.
+    vaultkit.py index      --root <VaultRoot> | --vault <Project>
+    vaultkit.py links      --vault <VaultRoot>
+    vaultkit.py duplicates --vault <VaultRoot>
+    vaultkit.py freshness  --vault <VaultRoot>
+    vaultkit.py tokens     <path> …
+    vaultkit.py command    --vault <VaultRoot>
+
+Each subcommand takes exactly the arguments the tool behind it always took and prints exactly
+what it always printed. **The job names in `runs.log` do not move by a single byte** -- every
+logging call passes a string literal, none of them changed, and `jobs.json` stays valid.
+
+WHY ONE FILE (2026-07-31): a user's tool folder held twenty-two files, of which they were told
+to run six. Every one of those was a separate block in the kit file a stranger drags into a
+Claude conversation, and every block is context that conversation carries before it writes
+anything. The measured cost of the split was never runtime -- it was the cold run.
+
+The size was the open question and it is answered: a probe carrying this file's shape, 1683
+lines and 68.6 KiB, went through a fresh session and came back byte-identical -- same sha256,
+all 34 markers, no BOM, no CRLF. That is three times the largest block the old delivery had.
+
+WHAT THIS FILE IS NOT ALLOWED TO SWALLOW. `upgrade.py` stays outside. If its own write breaks
+off, it is the only tool left that can repeat the attempt, and folding it in here would make the
+repair depend on the thing being repaired.
+
+Read it in sections: the shared floor first -- every generated filename and the run log -- then
+one section per subcommand, each opening with the tool's own documentation, unchanged from when
+it was a file of its own. The register at the very end says which subcommand runs what.
 """
 
+import argparse
+import json
+import re
 import sys
+from collections import defaultdict
+from datetime import date, datetime, timezone
+from itertools import combinations
+from pathlib import Path
+from urllib.parse import quote
 
 for _stream in (sys.stdout, sys.stderr):
     try:
@@ -1320,8 +1377,13 @@ for _stream in (sys.stdout, sys.stderr):
     except (AttributeError, ValueError):
         pass
 
-import re
-from pathlib import Path
+# ---------------- shared: paths, names and the run log   (was vault_paths.py)
+"""Single source of truth for every generated filename and every path rule.
+
+Spelling a generated filename a second time in another tool is how a guard ends up
+reporting the index hub as "missing" while the hub sits right next to it. Every tool
+imports from here instead.
+"""
 
 # The category folders every project gets when it is created. Numeric prefixes exist for sort
 # order only; 01 is deliberately unused, closing the gap would rename every index file.
@@ -1477,157 +1539,8 @@ def log_run(vault_root, job: str, status: str, detail: str = ""):
             fh.write(line)
     except OSError as exc:
         print(f"run log not written: {exc}", file=sys.stderr)
-```
 
-### `jobs.json`
-
-```json
-{
-  "_comment": "Three lists, and a name belongs to exactly one of them. \"jobs\" must show a healthy run inside the threshold -- these are the ones a dead scheduler would silently take with it. \"on_demand\" logs like everything else but is never late, because it runs when someone asks. \"not_invoked\" is not called by any chain at all, and the value says why -- a module, or a tool that answers a question rather than reaching a verdict. A name in two of them stops the tool with exit 2. A name in none is reported, never guessed at. Verify with: python check_freshness.py --vault <VaultRoot>",
-  "jobs": ["build_index", "check_links"],
-  "on_demand": {
-    "check_duplicates": "runs in the verification chain and by hand, never on a schedule",
-    "write_command": "runs once during setup, and again only if the command file is gone",
-    "check_freshness": "this tool itself -- logged, never watched: an age limit on the watcher is a regress"
-  },
-  "not_invoked": {
-    "vault_paths": "a module, not a command -- it has no main(), the other tools import it",
-    "_testkit": "a module, imported by the suites only",
-    "count_tokens": "answers a question on request and reaches no verdict: it reports a size, so it has no pass, no fail and nothing a chain could act on"
-  }
-}
-```
-
-#### Tools
-
-### `vaultkit.py`
-
-```python
-"""One command for every guard this vault runs: `vaultkit.py <subcommand> …`.
-
-    vaultkit.py index      --root <VaultRoot> | --vault <Project>
-    vaultkit.py links      --vault <VaultRoot>
-    vaultkit.py duplicates --vault <VaultRoot>
-    vaultkit.py freshness  --vault <VaultRoot>
-    vaultkit.py tokens     <path> …
-    vaultkit.py command    --vault <VaultRoot>
-
-Each subcommand takes exactly the arguments the tool behind it always took, and prints exactly
-what it always printed. **The job names in `runs.log` do not move by a single byte** -- every
-`log_run()` call passes a string literal, and none of them changed; `jobs.json` stays valid.
-
-WHY ONE FILE (2026-07-31): a user's tool folder held twenty-two files, of which they were told
-to run six. Every one of those is a separate block in the kit file a stranger drags into a
-Claude conversation, and every block is context that conversation has to carry before it writes
-anything. The measured cost of the split was not runtime, it was the cold run.
-
-This is the DISPATCHER STAGE: the bodies still live in their own modules and this file calls
-them. That is deliberate -- it lets the contract, the `/vaultkit` command and the setup driver
-move to the new spelling while the code stays exactly where it is, so the move and the merge are
-two commits and either can be bisected on its own.
-
-`upgrade.py` deliberately stays outside. If its own write breaks off, it is the only tool left
-that can repeat the attempt, and folding it in here would make the repair depend on the thing
-being repaired.
-"""
-
-import argparse
-import sys
-
-for _stream in (sys.stdout, sys.stderr):
-    try:
-        _stream.reconfigure(encoding="utf-8", errors="replace")
-    except (AttributeError, ValueError):
-        pass
-
-# Imported at module level, not inside the dispatch, and that is a decision: `import vaultkit`
-# has to pull in everything this file can run, so a broken or missing module is found by an
-# import rather than by a user who happens to pick that subcommand. It is also how the merged
-# file will behave, so the stage after this one changes nothing about when a defect surfaces.
-import build_index  # noqa: E402
-import check_duplicates  # noqa: E402
-import check_freshness  # noqa: E402
-import check_links  # noqa: E402
-import count_tokens  # noqa: E402
-import write_command  # noqa: E402
-
-MODULES = {
-    "build_index": build_index,
-    "check_duplicates": check_duplicates,
-    "check_freshness": check_freshness,
-    "check_links": check_links,
-    "count_tokens": count_tokens,
-    "write_command": write_command,
-}
-
-
-def main(argv=None):
-    """Hand the remaining arguments to the tool's own main(), untouched.
-
-    NO SHARED ARGUMENT PARSING, ON PURPOSE. `--vault` means one project directory after `index`
-    and the vault root after `links`; `--root` exists only for `index`. That collision is the
-    trap the `/vaultkit` command was written for in the first place, and a parser here that
-    tried to unify the two would either pick a winner or invent a third spelling. Each tool
-    keeps its own parser and its own `--help`, so what a user types is what the tool documents.
-    """
-    argv = list(sys.argv[1:] if argv is None else argv)
-    if not argv or argv[0] in ("-h", "--help"):
-        parser = argparse.ArgumentParser(prog="vaultkit.py", description=__doc__,
-                                         formatter_class=argparse.RawDescriptionHelpFormatter)
-        parser.add_argument("subcommand", choices=sorted(COMMANDS),
-                            help="the guard to run; each has its own --help")
-        parser.parse_args(argv)
-        return 2
-
-    name, rest = argv[0], argv[1:]
-    if name not in COMMANDS:
-        print(f"vaultkit.py: no subcommand {name!r}. Known: {', '.join(sorted(COMMANDS))}",
-              file=sys.stderr)
-        return 2
-    return MODULES[COMMANDS[name]["module"]].main(rest)
-
-
-# --------------------------------------------------------------------------- the register
-#
-# AT THE END OF THE FILE, AND THAT IS LOAD-BEARING TWICE OVER.
-#
-# 1. It is what `check_freshness` will read to know which jobs this file can log, once the
-#    bodies move in here. Today that population is *guessed*: the folder is globbed for `*.py`
-#    and a stem is taken when the text mentions the logging call -- so `vault_paths.py` appeared
-#    because it DEFINES that call and needed a `not_invoked` entry as a patch, and a tool that
-#    forgets to log is invisible by construction. `job` below is the answer instead of a guess,
-#    and `None` says "this one reaches no verdict and never logs" out loud.
-#
-#    That guess is also why this comment spells the call out in words: written literally, the
-#    text scan would pick THIS file up as a job nobody declared and report it as unclassified
-#    to every user, over a comment.
-# 2. It is an all-or-nothing detector for the delivery. A block that arrived truncated has no
-#    register, so the first subcommand fails immediately with a NameError naming COMMANDS.
-#    Without it a file cut after a complete function compiles cleanly and simply loses a tool,
-#    quietly, which is the failure mode the whole kit is built against.
-#
-# The folder scan in check_freshness stays for the user's OWN tools -- this register describes
-# what the kit brought, not what they wrote.
-
-COMMANDS = {
-    "index": {"module": "build_index", "job": "build_index"},
-    "links": {"module": "check_links", "job": "check_links"},
-    "duplicates": {"module": "check_duplicates", "job": "check_duplicates"},
-    "freshness": {"module": "check_freshness", "job": "check_freshness"},
-    "command": {"module": "write_command", "job": "write_command"},
-    # No job: it reports a size and reaches no verdict, so there is nothing a chain could act
-    # on and nothing to be late. Same statement jobs.json makes under `not_invoked`.
-    "tokens": {"module": "count_tokens", "job": None},
-}
-
-
-if __name__ == "__main__":
-    raise SystemExit(main())
-```
-
-### `build_index.py`
-
-```python
+# ----------------------------------- vaultkit.py index   (was build_index.py)
 """Generate the three-level index tree from note frontmatter.
 
     <VaultRoot>/INDEX - <VaultName>.md                   one line per project     --root
@@ -1645,38 +1558,6 @@ file exists to prevent. Neither is a defect.
 Exit code is 0 only when every entry was clean. Otherwise each defect is printed as
 "<filename>: <what is wrong>" on stderr and the exit code is non-zero.
 """
-
-import sys
-
-for _stream in (sys.stdout, sys.stderr):
-    try:
-        _stream.reconfigure(encoding="utf-8", errors="replace")
-    except (AttributeError, ValueError):
-        pass
-
-import argparse
-import re
-from collections import defaultdict
-from datetime import date
-from pathlib import Path
-from urllib.parse import quote
-
-from vault_paths import (
-    CATEGORY_FOLDERS,
-    SKIP_DIRS,
-    TEMPLATES_DIR,
-    category_index_name,
-    category_label,
-    has_forbidden_chars,
-    is_index_file,
-    log_run,
-    project_dirs,
-    project_index_name,
-    root_index_name,
-    template_name,
-    template_text,
-    walk_markdown,
-)
 
 TITLE_MAX = 90
 SUMMARY_MAX = 150
@@ -1802,7 +1683,7 @@ def link_to(vault_root, target_path, label, defects):
     except ValueError:
         # A junction or symlink inside the vault whose target resolves outside the root.
         # relative_to() raises there, and this used to leave the function as a traceback -- so
-        # the run died before log_run() at the end of main(), which is the one outcome this kit
+        # the run died before log_run() at the end of index_main(), which is the one outcome this kit
         # forbids: silence has to mean "did not run". There is no link to write either way (a
         # [[wikilink]] needs a vault-relative path and there is none), so the label goes in as
         # plain text and the defect line carries the reason.
@@ -1910,7 +1791,7 @@ def write_if_changed(path, content, defects):
     THE WRITE IS INSIDE A try, AND THAT IS THE WHOLE POINT (2026-07-31). It used to sit outside
     one, so a read-only or locked INDEX file -- a vault on OneDrive is not a theoretical case --
     raised PermissionError out of here and took the run down BEFORE log_run() at the end of
-    main(). The result was half an index tree AND not one line in runs.log: not `defects`, not
+    index_main(). The result was half an index tree AND not one line in runs.log: not `defects`, not
     `did-not-run`, nothing at all. Silence is the one thing that has to keep meaning "did not
     run", and a crash on the way to the log turns it into a lie.
 
@@ -1977,7 +1858,7 @@ def project_categories(project_dir):
     it made the run red for a user doing something the structure explicitly allows. What must
     not happen is the *silent* version: a renamed 06_tools once took a real run from 21
     categories to 20 with exit 0 and no message, and every note in it was simply gone from
-    every index. Adoption keeps those notes indexed; main() prints the folder either way.
+    every index. Adoption keeps those notes indexed; index_main() prints the folder either way.
     """
     known = set(CATEGORY_FOLDERS)
     adopted = []
@@ -1992,7 +1873,7 @@ def project_categories(project_dir):
 def build_project(vault_root, project_dir, defects):
     """Write every category index plus the project hub.
 
-    Returns (entries, categories, created, adopted) -- the last two are folder names, and main()
+    Returns (entries, categories, created, adopted) -- the last two are folder names, and index_main()
     prints them. A run that creates a folder and does not say so is a run that changed the tree
     behind the user's back.
     """
@@ -2121,7 +2002,7 @@ def check_unique_basenames(vault_root, defects):
 # --------------------------------------------------------------------------- main
 
 
-def main(argv=None):
+def index_main(argv=None):
     parser = argparse.ArgumentParser(description=__doc__)
     group = parser.add_mutually_exclusive_group(required=True)
     group.add_argument("--root", help="vault root: writes the root index and every project below it")
@@ -2178,14 +2059,7 @@ def main(argv=None):
         return 1
     return 0
 
-
-if __name__ == "__main__":
-    raise SystemExit(main())
-```
-
-### `write_command.py`
-
-```python
+# ------------------------------- vaultkit.py command   (was write_command.py)
 """Write a `/vaultkit` slash command for Claude Code, with this vault's real paths already in it.
 
 The verification chain in SECTION 8 is six commands with three traps in them, and every one of
@@ -2233,13 +2107,9 @@ The two are told apart by the marker line the generated file carries, never by m
 a state file beside it: both of those answer "when", and the question is "whose".
 
 Undo recipe for that guard, re-measured on this machine 2026-07-29 after the stranger case was
-added: copy tools/ somewhere, make the `if target.exists():` block in main() unreachable, and run
-the three drivers there -- test_write_command 8/12, acceptance 11/12, verify_setup 14/15.
+added: copy tools/ somewhere, make the `if target.exists():` block in command_main() unreachable,
+and run the three drivers there -- test_write_command 8/12, acceptance 11/12, verify_setup 14/15.
 """
-
-import argparse
-import sys
-from pathlib import Path
 
 TOOLS = Path(__file__).resolve().parent
 sys.path.insert(0, str(TOOLS))
@@ -2250,7 +2120,6 @@ for _stream in (sys.stdout, sys.stderr):
     except (AttributeError, ValueError):
         pass
 
-from vault_paths import log_run, project_dirs  # noqa: E402
 
 COMMAND_NAME = "vaultkit"
 
@@ -2402,7 +2271,7 @@ def target_path():
     return Path.home() / ".claude" / "commands" / f"{COMMAND_NAME}.md"
 
 
-def main(argv=None):
+def command_main(argv=None):
     parser = argparse.ArgumentParser(description=__doc__)
     parser.add_argument("--vault", required=True, help="vault root")
     parser.add_argument("--shell", choices=("powershell", "posix"), default="powershell",
@@ -2448,34 +2317,12 @@ def main(argv=None):
     log_run(vault_root, "write_command", "ok", f"{target} written · {len(projects)} projects")
     return 0
 
-
-if __name__ == "__main__":
-    raise SystemExit(main())
-```
-
-### `check_links.py`
-
-```python
+# ----------------------------------- vaultkit.py links   (was check_links.py)
 """Check that every [[wikilink]] in the vault resolves to a file.
 
 Reports numerator AND denominator, and distinguishes three outcomes: pass, fail, and
 "did not run". A checker that scanned zero files must never report "0 broken".
 """
-
-import sys
-
-for _stream in (sys.stdout, sys.stderr):
-    try:
-        _stream.reconfigure(encoding="utf-8", errors="replace")
-    except (AttributeError, ValueError):
-        pass
-
-import argparse
-import re
-from collections import defaultdict
-from pathlib import Path
-
-from vault_paths import SKIP_DIRS, log_run, walk_markdown
 
 WIKILINK = re.compile(r"\[\[([^\[\]]+)\]\]")
 FENCE = re.compile(r"^\s*(```|~~~)")
@@ -2554,7 +2401,7 @@ def link_targets(text):
     return targets
 
 
-def main(argv=None):
+def links_main(argv=None):
     parser = argparse.ArgumentParser(description=__doc__)
     parser.add_argument("--vault", required=True, help="vault root")
     args = parser.parse_args(argv)
@@ -2614,14 +2461,7 @@ def main(argv=None):
         return 1
     return 0
 
-
-if __name__ == "__main__":
-    raise SystemExit(main())
-```
-
-### `check_duplicates.py`
-
-```python
+# ------------------------- vaultkit.py duplicates   (was check_duplicates.py)
 """Flag notes whose content overlaps, so one insight does not end up living in two files.
 
 Every hit gets a decision: a flagged pair makes the run red. Ignoring it is not an option
@@ -2632,21 +2472,6 @@ prints is arithmetic, not evidence — recalibrate once there is real volume:
 
     python check_duplicates.py --vault <dir> --threshold 0.75
 """
-
-import sys
-
-for _stream in (sys.stdout, sys.stderr):
-    try:
-        _stream.reconfigure(encoding="utf-8", errors="replace")
-    except (AttributeError, ValueError):
-        pass
-
-import argparse
-import re
-from itertools import combinations
-from pathlib import Path
-
-from vault_paths import is_index_file, log_run, walk_markdown
 
 DEFAULT_THRESHOLD = 0.75
 SHINGLE = 5
@@ -2675,7 +2500,7 @@ def jaccard(a, b):
     return len(a & b) / len(a | b)
 
 
-def main(argv=None):
+def duplicates_main(argv=None):
     parser = argparse.ArgumentParser(description=__doc__)
     parser.add_argument("--vault", required=True, help="vault root or a single project directory")
     parser.add_argument("--threshold", type=float, default=DEFAULT_THRESHOLD)
@@ -2728,14 +2553,7 @@ def main(argv=None):
         return 1
     return 0
 
-
-if __name__ == "__main__":
-    raise SystemExit(main())
-```
-
-### `check_freshness.py`
-
-```python
+# --------------------------- vaultkit.py freshness   (was check_freshness.py)
 """Report the age of the last HEALTHY run of each expected job.
 
 Without this, a scheduler that quietly stopped firing looks identical to one that is fine.
@@ -2743,7 +2561,7 @@ Without this, a scheduler that quietly stopped firing looks identical to one tha
 
 Log format, one line per run, appended by every tool (see vault_paths.log_run):
 
-    2026-07-27T09:15:00+00:00\tbuild_index\tok\t0 defects
+    2026-07-27T09:15:00+00:00	build_index	ok	0 defects
 
 LOGGING AND BEING WATCHED ARE TWO DIFFERENT THINGS, AND jobs.json CARRIES THE LISTS. Every tool
 writes a line; only a tool that runs on a schedule can be *late*. Put the on-demand ones under an
@@ -2767,21 +2585,6 @@ measured afterwards sees the side effect of the chain it is part of and reports 
 that died a week ago.
 """
 
-import sys
-
-for _stream in (sys.stdout, sys.stderr):
-    try:
-        _stream.reconfigure(encoding="utf-8", errors="replace")
-    except (AttributeError, ValueError):
-        pass
-
-import argparse
-import json
-from datetime import datetime, timezone
-from pathlib import Path
-
-from vault_paths import RUN_LOG_RELPATH, log_run
-
 DEFAULT_MAX_AGE_HOURS = 24.0
 HEALTHY = {"ok"}
 
@@ -2796,18 +2599,20 @@ DEFAULT_JOBS = ["build_index", "check_links"]
 DEFAULT_ON_DEMAND = {
     "check_duplicates": "runs in the verification chain and by hand, never on a schedule",
     "write_command": "runs once during setup, and again only if the command file is gone",
-    "check_freshness": "this tool itself -- logged, never watched: an age limit on the watcher "
+    "check_freshness": "this job itself -- logged, never watched: an age limit on the watcher "
                        "is a regress",
 }
 
-# The third classification: no chain calls it, and the value says why. Same rule as above -- the
-# reason is the entry, because JSON has no comments.
-DEFAULT_NOT_INVOKED = {
-    "vault_paths": "a module, not a command -- it has no main(), the other tools import it",
-    "_testkit": "a module, imported by the suites only",
-    "count_tokens": "answers a question on request and reaches no verdict: it reports a size, so "
-                    "it has no pass, no fail and nothing a chain could act on",
-}
+# The third classification: it logs, and no chain calls it. EMPTY SINCE 2026-07-31, and the
+# structure stays for the user's own tools. All three entries that were here described FILES
+# rather than jobs: `vault_paths` and `_testkit` were modules and are not files any more, and
+# `count_tokens` is excused by the register at the end of this file instead -- it carries no job
+# name, which is the same statement made where the fact lives rather than in a second place.
+#
+# A user's own logging script still belongs here, with its reason: JSON has no comments, so the
+# value carries it, and an exception without one cannot be told from an oversight. Kept in step
+# with the shipped jobs.json -- build_kit.py refuses a build where the two disagree.
+DEFAULT_NOT_INVOKED = {}
 
 
 def tool_folder(vault_root):
@@ -2820,34 +2625,41 @@ def tool_folder(vault_root):
 
 
 def loggable_tools(vault_root):
-    """(names of tools on disk that can ever appear in the log, files that could not be read).
+    """(names of jobs that can ever appear in the log, files that could not be read).
 
     WHY THE POPULATION IS NOT SIMPLY EVERY `.py` IN THE FOLDER (2026-07-30): a tool that never
-    calls log_run() cannot appear in the log by construction, so asking whether it is watched has
-    no answer that would change anything -- `run_suites.py`, `acceptance.py`, `verify_setup.py`
-    and `upgrade.py` all run, all reach a verdict, and none of them log. Naming those four on
-    every single run would put four permanent lines above the one line that means something,
-    which is the fastest way to get this report skimmed instead of read.
+    logs cannot appear in the log by construction, so asking whether it is watched has no answer
+    that would change anything -- `upgrade.py` runs, reaches a verdict, and never logs. Naming it
+    on every single run would put a permanent line above the one line that means something, which
+    is the fastest way to get this report skimmed instead of read.
 
-    Measured on this machine 2026-07-30, before this function existed: five of the shipped tools
-    call log_run() -- build_index, check_links, check_duplicates, write_command, check_freshness
-    -- and those five are exactly the five in jobs.json. So the honest population is "can it log",
+    Measured on this machine 2026-07-30, when this function was written: five of the shipped
+    tools logged -- build_index, check_links, check_duplicates, write_command, check_freshness --
+    and those five were exactly the five in jobs.json. So the honest population is "can it log",
     and the check that follows is "has anyone said which list it belongs to".
 
-    Suites are excluded structurally, not by taste: `test_X.py` is not a job, it is what
-    run_suites.py collects, and a suite that exercises log_run() would otherwise ask to be
-    classified as a scheduled job.
+    HALF OF IT IS NOW READ, NOT GUESSED (2026-07-31). It used to take every stem in the folder
+    whose file text mentioned the logging call. That was a guess with two known faults, and the
+    merge into one file turned both fatal: `vault_paths.py` showed up because it DEFINED the
+    call and needed a `not_invoked` entry as a patch, a tool that forgot to log was invisible by
+    construction -- and with every guard in `vaultkit.py`, the guess now yields exactly one stem,
+    `vaultkit`, which is no job's name at all. Every job would read as unclassified forever.
 
-    Reading is by text, so a file that only mentions log_run() in a comment asks for a decision it
-    does not need. That is the cheap direction to be wrong in -- the expensive one, a tool that
-    logs and is never asked about, is the defect this whole function exists for.
+    So the kit's own jobs come from COMMANDS at the end of this file, which states them instead
+    of inferring them. The folder scan stays for the user's OWN tools: a script they wrote that
+    logs is still a job that can go stale, and nothing here knows about it in advance. This file
+    is skipped by name in that scan, because the register already answered for it.
+
+    Suites are excluded structurally, not by taste: `test_X.py` is not a job, and one that
+    exercised the logging call would otherwise ask to be classified as a scheduled job.
     """
+    names = {spec["job"] for spec in COMMANDS.values() if spec["job"]}
     folder = tool_folder(vault_root)
     if not folder.is_dir():
-        return set(), 0
-    names, unreadable = set(), 0
+        return names, 0
+    unreadable = 0
     for path in sorted(folder.glob("*.py")):
-        if path.name.startswith("test_"):
+        if path.name.startswith("test_") or path.name == Path(__file__).name:
             continue
         try:
             text = path.read_text(encoding="utf-8-sig", errors="replace")
@@ -2936,7 +2748,7 @@ def parse_log(log_path):
     return healthy, seen, lines, malformed
 
 
-def main(argv=None):
+def freshness_main(argv=None):
     parser = argparse.ArgumentParser(description=__doc__)
     parser.add_argument("--vault", required=True, help="vault root")
     parser.add_argument("--log", help="run log path (defaults to the vault's own)")
@@ -3043,32 +2855,12 @@ def main(argv=None):
         return 1
     return 0
 
-
-if __name__ == "__main__":
-    raise SystemExit(main())
-```
-
-### `count_tokens.py`
-
-```python
+# --------------------------------- vaultkit.py tokens   (was count_tokens.py)
 """Report the size of what was read, for cost.
 
 Never invents a precision: every number is labelled `exact` or `estimated`. Without a real
 tokenizer installed the token count is a chars/4 heuristic and says so on every line.
 """
-
-import sys
-
-for _stream in (sys.stdout, sys.stderr):
-    try:
-        _stream.reconfigure(encoding="utf-8", errors="replace")
-    except (AttributeError, ValueError):
-        pass
-
-import argparse
-from pathlib import Path
-
-from vault_paths import walk_markdown
 
 CHARS_PER_TOKEN = 4.0
 
@@ -3084,7 +2876,7 @@ def tokenizer():
         return None, None
 
 
-def main(argv=None):
+def tokens_main(argv=None):
     parser = argparse.ArgumentParser(description=__doc__)
     parser.add_argument("paths", nargs="+", help="files or directories")
     args = parser.parse_args(argv)
@@ -3127,6 +2919,69 @@ def main(argv=None):
         print(f"{skipped} files skipped — denominator incomplete", file=sys.stderr)
         return 1
     return 0
+
+
+def main(argv=None):
+    """Hand the remaining arguments to the subcommand's own parser, untouched.
+
+    NO SHARED ARGUMENT PARSING, ON PURPOSE. `--vault` means one project directory after `index`
+    and the vault root after `links`; `--root` exists only for `index`. That collision is the
+    trap the `/vaultkit` command was written for, and folding the guards into one file did not
+    remove it -- it only put it inside one file. A parser here that tried to unify the two would
+    either pick a winner or invent a third spelling. Each subcommand keeps its own parser and its
+    own `--help`, so what a user types is what the section above documents.
+    """
+    argv = list(sys.argv[1:] if argv is None else argv)
+    if not argv or argv[0] in ("-h", "--help"):
+        parser = argparse.ArgumentParser(prog="vaultkit.py", description=__doc__,
+                                         formatter_class=argparse.RawDescriptionHelpFormatter)
+        parser.add_argument("subcommand", choices=sorted(COMMANDS),
+                            help="the guard to run; each has its own --help")
+        parser.parse_args(argv)
+        return 2
+
+    name, rest = argv[0], argv[1:]
+    if name not in COMMANDS:
+        print(f"vaultkit.py: no subcommand {name!r}. Known: {', '.join(sorted(COMMANDS))}",
+              file=sys.stderr)
+        return 2
+    return COMMANDS[name]["run"](rest)
+
+
+# --------------------------------------------------------------------------- the register
+#
+# AT THE END OF THE FILE, AND THAT IS LOAD-BEARING THREE TIMES OVER.
+#
+# 1. It is where `freshness` takes its own population from. That population used to be a GUESS:
+#    the folder was globbed for `*.py` and a stem taken when the text mentioned the logging call,
+#    so `vault_paths.py` appeared because it DEFINED that call and needed a `not_invoked` entry
+#    as a patch -- and a tool that forgot to log was invisible by construction. With one file
+#    the guess has no meaning left at all: every job would come out as `vaultkit`. `job` below is
+#    the answer instead, and `None` says "reaches no verdict, never logs" out loud.
+# 2. It is what build_kit.py holds every logging literal to. The rule used to be "the label
+#    equals the filename", and after the merge there is one filename for six jobs.
+# 3. It is what `upgrade.py --prove` asks for to decide this file arrived whole -- and that
+#    check lives THERE, in another block, because nothing here can do it. Measured on this
+#    machine 2026-07-31, cutting this file twice, once just above this register and once
+#    mid-file after a complete function: `compileall` exit 0, `import vaultkit` exit 0, and
+#    `vaultkit.py index` exit 0 having done nothing at all. Both cuts take the entry point below
+#    with them, so the script runs to the end of what arrived and reports success. Anything put
+#    at the end to catch that goes with the same cut. One long block makes truncation quieter,
+#    not louder, and the only reader that can tell is a separate file.
+#
+# The folder scan in `freshness` stays, for the user's OWN tools: this register describes what
+# the kit brought, not what they wrote.
+
+COMMANDS = {
+    "index": {"run": index_main, "job": "build_index"},
+    "links": {"run": links_main, "job": "check_links"},
+    "duplicates": {"run": duplicates_main, "job": "check_duplicates"},
+    "freshness": {"run": freshness_main, "job": "check_freshness"},
+    "command": {"run": command_main, "job": "write_command"},
+    # No job: it reports a size and reaches no verdict, so nothing can be late and no chain has
+    # anything to act on. That is also why no command line has to name it.
+    "tokens": {"run": tokens_main, "job": None},
+}
 
 
 if __name__ == "__main__":
@@ -3372,9 +3227,9 @@ def classify(blocks: dict[str, str],
 
     Undo recipes, both re-measured on this machine 2026-07-31, and they are not symmetric:
 
-      - Set the encoding back to `utf-8` (dropping errors= with it): test_upgrade 32/34. BOTH
+      - Set the encoding back to `utf-8` (dropping errors= with it): test_upgrade 33/35. BOTH
         cases go red, because `utf-8` without a replacement handler raises on the bad byte too.
-      - Keep `utf-8-sig` and drop only `errors="replace"`: test_upgrade 33/34, and only
+      - Keep `utf-8-sig` and drop only `errors="replace"`: test_upgrade 34/35, and only
         `test_an_undecodable_file_is_named_rather_than_crashing_the_run` moves. That asymmetry is
         the measurement worth keeping -- it shows the BOM half and the crash half are two defects
         sharing one line, and fixing either alone leaves the other.
@@ -3506,6 +3361,39 @@ def prove():
         print(f"  ok   {config.name} parses")
     except (OSError, ValueError) as exc:
         print(f"  FAIL {config.name}: {exc}")
+        ok = False
+
+    # THE CHECK THAT COMPILING CANNOT DO, AND IT LIVES HERE FOR A REASON (2026-07-31). vaultkit.py
+    # is one long block now, and a truncated block is the failure a single-file delivery makes
+    # more likely, not less. Measured on this machine, cutting that file in two places -- once
+    # just before its register, once mid-file after a complete function:
+    #
+    #     compileall exit 0 · import exit 0 · `vaultkit.py index` exit 0, and NOTHING HAPPENS
+    #
+    # Both cuts take the trailing `if __name__ == "__main__":` with them, so the script runs to
+    # the end of what arrived and exits successfully having done no work. That is the quietest
+    # failure this kit can have, and no check inside that file can catch it: whatever you put at
+    # the end goes with the cut.
+    #
+    # So it is checked from HERE, out of a different block, by asking the file for the register
+    # it is supposed to end with.
+    sys.path.insert(0, str(TOOLS))
+    try:
+        import vaultkit
+        register = vaultkit.COMMANDS
+        missing = [sub for sub, spec in register.items() if not callable(spec.get("run"))]
+        if not register or missing:
+            raise ValueError(f"register empty or unroutable: {missing or 'no subcommands'}")
+        text = (TOOLS / "vaultkit.py").read_text(encoding="utf-8-sig")
+        if 'if __name__ == "__main__":' not in text.split("COMMANDS = {")[-1]:
+            raise ValueError("the file does not end with its entry point")
+        print(f"  ok   vaultkit.py is whole: {len(register)} subcommands and an entry point")
+    except Exception as exc:
+        # Deliberately broad: an incomplete file fails in whatever way it was cut -- ImportError,
+        # AttributeError, SyntaxError, NameError. What matters is that the run says so.
+        print(f"  FAIL vaultkit.py: {type(exc).__name__}: {exc}\n"
+              f"       This is what a block that arrived truncated looks like. Compiling it "
+              f"proves nothing -- a cut file compiles and then does nothing at exit 0.")
         ok = False
     return ok
 

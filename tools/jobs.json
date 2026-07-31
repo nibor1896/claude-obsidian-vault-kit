@@ -1,14 +1,12 @@
 {
-  "_comment": "Three lists, and a name belongs to exactly one of them. \"jobs\" must show a healthy run inside the threshold -- these are the ones a dead scheduler would silently take with it. \"on_demand\" logs like everything else but is never late, because it runs when someone asks. \"not_invoked\" is not called by any chain at all, and the value says why -- a module, or a tool that answers a question rather than reaching a verdict. A name in two of them stops the tool with exit 2. A name in none is reported, never guessed at. Verify with: python check_freshness.py --vault <VaultRoot>",
+  "_comment": "Three lists, and a name belongs to exactly one of them. \"jobs\" must show a healthy run inside the threshold -- these are the ones a dead scheduler would silently take with it. \"on_demand\" logs like everything else but is never late, because it runs when someone asks. \"not_invoked\" is not called by any chain at all, and the value says why. A name in two of them stops the tool with exit 2. A name in none is reported, never guessed at. Verify with: python vaultkit.py freshness --vault <VaultRoot>",
   "jobs": ["build_index", "check_links"],
   "on_demand": {
     "check_duplicates": "runs in the verification chain and by hand, never on a schedule",
     "write_command": "runs once during setup, and again only if the command file is gone",
-    "check_freshness": "this tool itself -- logged, never watched: an age limit on the watcher is a regress"
+    "check_freshness": "this job itself -- logged, never watched: an age limit on the watcher is a regress"
   },
   "not_invoked": {
-    "vault_paths": "a module, not a command -- it has no main(), the other tools import it",
-    "_testkit": "a module, imported by the suites only",
-    "count_tokens": "answers a question on request and reaches no verdict: it reports a size, so it has no pass, no fail and nothing a chain could act on"
+    "_comment": "Empty since 2026-07-31, and the key stays for YOUR tools. Its three entries were vault_paths and _testkit -- modules, and neither is a file any more -- and count_tokens, which the register in vaultkit.py now excuses itself by carrying no job name. Put a tool of your own here when it logs but no chain calls it, with the reason: JSON has no comments, so the value is the reason."
   }
 }

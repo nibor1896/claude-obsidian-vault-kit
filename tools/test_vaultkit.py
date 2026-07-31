@@ -15,7 +15,7 @@ sys.path.insert(0, str(Path(__file__).resolve().parent))
 
 import vaultkit
 from _testkit import make_vault, run_tool, write_note
-from vault_paths import RUN_LOG_RELPATH, category_index_name
+from vaultkit import RUN_LOG_RELPATH, category_index_name
 
 
 class VaultkitTest(unittest.TestCase):
@@ -93,16 +93,16 @@ class VaultkitTest(unittest.TestCase):
     # ------------------------------------------------------------ the register
 
     def test_every_subcommand_in_the_register_can_actually_be_dispatched(self):
-        """The register is what check_freshness and build_kit read to know what this file runs.
+        """The register is what `freshness` and build_kit.py read to know what this file runs.
 
-        A name in it with no module behind it would be a promise nothing keeps, and it would be
-        made to two other tools before anyone typed the subcommand.
+        A name in it with nothing callable behind it would be a promise nothing keeps, and it
+        would be made to two other readers before anyone typed the subcommand.
         """
         self.assertTrue(vaultkit.COMMANDS, "the register is empty")
         for sub, spec in vaultkit.COMMANDS.items():
-            self.assertIn(spec["module"], vaultkit.MODULES, f"{sub} names an unreachable module")
-            self.assertTrue(hasattr(vaultkit.MODULES[spec["module"]], "main"),
-                            f"{sub} routes to a module with no main()")
+            self.assertTrue(callable(spec.get("run")), f"{sub} routes to nothing callable")
+            self.assertIs(spec["run"], getattr(vaultkit, f"{sub}_main", None),
+                          f"{sub} does not route to {sub}_main")
 
     def test_the_register_sits_after_everything_it_describes(self):
         """It is the last thing in the file, and that makes it an all-or-nothing detector.
@@ -122,8 +122,10 @@ class VaultkitTest(unittest.TestCase):
     def test_a_job_name_is_either_a_string_or_an_explicit_none(self):
         """`None` is a statement -- "reaches no verdict, never logs" -- not a missing value.
 
-        count_tokens is the one, and jobs.json says the same thing about it under
-        `not_invoked`. An absent key would read as an oversight instead.
+        `tokens` is the one, and it is also what excuses that subcommand from having to appear
+        in any chain. Until 2026-07-31 the same statement lived in jobs.json's `not_invoked`
+        under the old filename; it is made here now, where the fact is. An absent key would read
+        as an oversight instead of a decision.
         """
         for sub, spec in vaultkit.COMMANDS.items():
             self.assertIn("job", spec, f"{sub} does not say whether it logs")

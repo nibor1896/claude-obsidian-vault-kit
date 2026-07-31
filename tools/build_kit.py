@@ -34,9 +34,8 @@ for _stream in (sys.stdout, sys.stderr):
         pass
 
 # Order matters for a human reading top to bottom: shared modules, then tools, then suites.
-SHARED = ["vault_paths.py", "jobs.json"]
-TOOLS_ORDER = ["vaultkit.py", "build_index.py", "write_command.py", "check_links.py",
-               "check_duplicates.py", "check_freshness.py", "count_tokens.py"]
+SHARED = ["jobs.json"]
+TOOLS_ORDER = ["vaultkit.py"]
 DRIVERS = ["upgrade.py"]
 
 # Files that live in tools/ and are deliberately not delivered, name -> why.
@@ -143,13 +142,19 @@ re-tokenises the whole of SECTION 10 and puts a paraphrase where a byte-for-byte
 The extractor is scaffolding, not part of the vault: keep it outside the tool folder and delete it
 when it has run.
 
-**Then check three things, before running anything:**
+**Then run this one command, before running anything else:**
 
-- **Every `.py` file compiles** — `python -m compileall -q <VaultRoot>/00_Global/06_tools`. A block
-  that arrived truncated fails here; without this check its first symptom is a suite failing for a
-  reason that has nothing to do with the suite.
-- **`jobs.json` parses** — it is the only non-Python block, so no compile step covers it.
-- **No file carries a byte-order mark** — see below.
+```
+python <VaultRoot>/00_Global/06_tools/upgrade.py --prove
+```
+
+It compiles every block, parses `jobs.json`, and checks that `vaultkit.py` arrived whole. **The
+third of those is the one you cannot do by compiling.** Measured on 2026-07-31: a `vaultkit.py` cut
+short — anywhere — still compiles, still imports, and still exits 0 when you run it, having done
+nothing, because the cut takes its entry point with it. Nothing inside that file can catch that;
+whatever you put at its end goes with the same cut. `upgrade.py` is a separate block, so it can.
+
+**Write them as UTF-8 without a byte-order mark** — see below.
 
 **How this release was verified, in its own repository, before this file existed:** on Windows 11,
 Python 3.13, under PowerShell 5.1 **and** Git Bash — 11/11 suites green, 12/12 acceptance checks
@@ -282,7 +287,7 @@ SUBCOMMAND_RE = re.compile(
 
 
 def dispatch_register():
-    """`COMMANDS` out of vaultkit.py: subcommand -> which module runs it, under which job name.
+    """`COMMANDS` out of vaultkit.py: subcommand -> the function that runs it, and its job name.
 
     Imported rather than respelled. A second copy of this mapping would answer "what can this
     kit run" one way here and another way in the tool, and the guard would go on passing while
@@ -439,21 +444,23 @@ def check_prose_chain():
               + f"\n  Known: {', '.join(sorted(register))}. Either the register lost it or the "
                 f"line has a typo.", file=sys.stderr)
         return 1
+    # THE EXCUSE MOVED FROM jobs.json TO THE REGISTER (2026-07-31), and it is the same statement
+    # in the place the fact lives. A subcommand carrying `job: None` reaches no verdict and never
+    # logs, so there is nothing a chain could act on and nothing that could be late -- which is
+    # exactly the reason `not_invoked` used to carry for `count_tokens`. With one file there are
+    # no module filenames left to key that list by, and a second mechanism spelled by hand is
+    # what this whole check exists to prevent.
     silent_subs = sorted(sub for sub, spec in register.items()
-                         if sub not in named_subs and spec["module"] not in uninvoked)
+                         if sub not in named_subs and spec["job"])
     if silent_subs:
         print(f"{OUT.name}: a subcommand that ships and no chain calls.\n"
-              + "\n".join(f"  vaultkit.py {sub}: runs {register[sub]['module']}.py, and no "
+              + "\n".join(f"  vaultkit.py {sub}: logs as {register[sub]['job']!r}, and no "
                           f"command line names it" for sub in silent_subs)
-              + "\n  A filename no longer tells you this: one file now carries six tools, so an "
+              + "\n  A filename no longer tells you this: one file carries every guard, so an "
                 "uncalled one hides inside a file the chain does run. Add it to a chain in "
-                "src/contract.md, or add its module to `not_invoked` in tools/jobs.json.",
-              file=sys.stderr)
+                "src/contract.md -- or, if it genuinely reaches no verdict, give it `job: None` "
+                "in the register with the reason beside it.", file=sys.stderr)
         return 1
-    # A module the prose reaches through a subcommand is invoked, exactly as if it had been
-    # named directly. This is what keeps the six tools out of the orphan list once the contract
-    # stops spelling their filenames.
-    commanded |= {f"{register[sub]['module']}.py" for sub in named_subs}
 
     both = sorted(name for name in delivered
                   if Path(name).stem in uninvoked and name in commanded)
@@ -574,7 +581,7 @@ def check_jobs_config_matches_code():
     names the key that disagrees. Put the word back.
     """
     sys.path.insert(0, str(TOOLS))
-    import check_freshness
+    import vaultkit
 
     try:
         config = json.loads((TOOLS / "jobs.json").read_text(encoding="utf-8-sig"))
@@ -583,10 +590,18 @@ def check_jobs_config_matches_code():
               f"non-Python block in the kit, so no compile step covers it.", file=sys.stderr)
         return 1
 
-    pairs = (("jobs", config.get("jobs"), check_freshness.DEFAULT_JOBS),
-             ("on_demand", config.get("on_demand"), check_freshness.DEFAULT_ON_DEMAND),
-             ("not_invoked", config.get("not_invoked"), check_freshness.DEFAULT_NOT_INVOKED))
-    wrong = [f"  {key}: jobs.json says {shipped!r}, check_freshness.py says {code!r}"
+    # `_comment` is prose for the reader of the file and has no counterpart in code. It is
+    # dropped rather than compared, in both mappings, so a sentence can be improved without
+    # failing a build over it.
+    def stated(key):
+        raw = config.get(key)
+        return ({k: v for k, v in raw.items() if k != "_comment"}
+                if isinstance(raw, dict) else raw)
+
+    pairs = (("jobs", stated("jobs"), vaultkit.DEFAULT_JOBS),
+             ("on_demand", stated("on_demand"), vaultkit.DEFAULT_ON_DEMAND),
+             ("not_invoked", stated("not_invoked"), vaultkit.DEFAULT_NOT_INVOKED))
+    wrong = [f"  {key}: jobs.json says {shipped!r}, vaultkit.py says {code!r}"
              for key, shipped, code in pairs if shipped != code]
     if wrong:
         print(f"{OUT.name}: the shipped jobs.json and its copy in code disagree.\n"
@@ -602,34 +617,52 @@ LOG_CALL_RE = re.compile(r"log_run\(\s*\w+\s*,\s*\"([^\"]*)\"")
 
 
 def check_log_labels():
-    """Every log_run() label equals the stem of the file it is written in.
+    """Every logging label is a job name the register declares.
 
-    THE WHOLE FAILURE CLASS IS SILENT, WHICH IS WHY IT NEEDS A BUILD-TIME CHECK. check_freshness
-    matches log lines against tool names taken from the file stems. A label that drifts from its
-    filename puts BOTH names into `unclassified` -- the job nobody logged, and the label nobody
-    declared -- and `unclassified` deliberately does not change the exit code. So a typo here
-    costs a watched job its watching and prints two lines nothing acts on.
+    THE RULE CHANGED ITS ANCHOR ON 2026-07-31, NOT ITS PURPOSE. It used to read "the label equals
+    the stem of the file it is written in", and that was checkable while one file meant one job.
+    With every guard inside `vaultkit.py` there is one filename for six jobs, so the old rule
+    would have fired five times over labels that are exactly right. The register at the end of
+    vaultkit.py states which job each subcommand logs under, so the register is the anchor now --
+    and it is the same object `freshness` takes its population from, so the two cannot drift.
 
-    Suites are skipped: they call log_run() with other tools' names on purpose, as fixtures.
-    vault_paths.py is skipped because it DEFINES log_run and names nothing.
+    THE WHOLE FAILURE CLASS IS SILENT, WHICH IS WHY IT NEEDS A BUILD-TIME CHECK. `freshness`
+    matches log lines against the declared job names. A label that drifts puts BOTH names into
+    `unclassified` -- the job nobody logged, and the label nobody declared -- and `unclassified`
+    deliberately does not change the exit code. So a typo here costs a watched job its watching
+    and prints two lines nothing acts on.
 
-    Undo recipe: change the label in build_index.py's log_run() call to `"build_indexx"`.
-    `--check` exits 1 with `build_index.py: logs as "build_indexx"`. Change it back.
+    Suites are skipped: they log under other jobs' names on purpose, as fixtures.
+
+    Undo recipe: change the label in vaultkit.py's index run to `"build_indexx"`. `--check` exits
+    1 with `vaultkit.py: logs as "build_indexx", which no subcommand declares`. Change it back.
     """
+    declared = {spec["job"] for spec in dispatch_register().values() if spec["job"]}
     wrong = []
     for name in delivered_files():
-        if not name.endswith(".py") or name.startswith("test_") or name == "vault_paths.py":
+        if not name.endswith(".py") or name.startswith("test_"):
             continue
-        stem = name[:-3]
         for label in LOG_CALL_RE.findall((TOOLS / name).read_text(encoding="utf-8")):
-            if label != stem:
-                wrong.append(f'  {name}: logs as "{label}", which is not "{stem}"')
+            if label not in declared:
+                wrong.append(f'  {name}: logs as "{label}", which no subcommand declares')
     if wrong:
-        print(f"{OUT.name}: a run log label does not match the file that writes it.\n"
+        print(f"{OUT.name}: a run log label is not a job any subcommand declares.\n"
               + "\n".join(sorted(set(wrong)))
-              + "\n  check_freshness.py takes the population from the filenames, so both names "
-                "land in `unclassified` -- and unclassified does not change an exit code. The "
-                "job stops being watched and no run goes red over it.", file=sys.stderr)
+              + f"\n  Declared: {', '.join(sorted(declared))}. `freshness` takes its population "
+                f"from that register, so an undeclared label lands in `unclassified` -- and "
+                f"unclassified does not change an exit code. The job stops being watched and no "
+                f"run goes red over it.", file=sys.stderr)
+        return 1
+    unused = sorted(job for job in declared
+                    if not any(job in LOG_CALL_RE.findall((TOOLS / n).read_text(encoding="utf-8"))
+                               for n in delivered_files()
+                               if n.endswith(".py") and not n.startswith("test_")))
+    if unused:
+        print(f"{OUT.name}: the register declares a job nothing ever logs.\n"
+              + "\n".join(f"  {job}: declared in COMMANDS, and no code writes that label"
+                          for job in unused)
+              + "\n  `freshness` would then watch for a line that can never appear and report "
+                "the job as stale forever, on a vault where nothing is wrong.", file=sys.stderr)
         return 1
     return 0
 
@@ -687,14 +720,27 @@ def check_generated_command():
     user gets, and a check reading the f-strings instead would pass over any name assembled at
     runtime.
 
+    IT FOLLOWED THE TEXT WHEN THE TEXT MOVED (2026-07-31). `command_text()` used to live in
+    write_command.py and lives in vaultkit.py now. A guard that kept importing the old module
+    would have died with an ImportError -- loud, and therefore fine. The dangerous version is the
+    one that keeps *running* and checks nothing, so what this asks for is the function by name,
+    and it fails saying so if the function is not where it looked.
+
     Undo recipe: put `run_suites.py` back into command_text()'s step list. `--check` exits 1
     with `the /vaultkit chain names run_suites.py, which is not delivered`.
     """
     sys.path.insert(0, str(TOOLS))
-    import write_command
+    import vaultkit
+
+    if not hasattr(vaultkit, "command_text"):
+        print(f"{OUT.name}: vaultkit.py has no command_text(), so the /vaultkit chain this kit "
+              f"generates is not checked by anything. It moved once already; if it moved again, "
+              f"point this guard at it rather than letting the guard pass over nothing.",
+              file=sys.stderr)
+        return 1
 
     # A vault that does not exist and is never touched: command_text() only formats paths.
-    text = write_command.command_text(REPO / "not-a-real-vault", [], "posix")
+    text = vaultkit.command_text(REPO / "not-a-real-vault", [], "posix")
     delivered = {name for name in delivered_files() if name.endswith(".py")}
     register = dispatch_register()
 

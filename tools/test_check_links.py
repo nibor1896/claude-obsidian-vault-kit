@@ -29,14 +29,14 @@ class CheckLinksTest(unittest.TestCase):
         target = write_note(self.notes / "ziel.md")
         source = write_note(self.notes / "quelle.md")
         self.append(source, "Siehe [[ProjektEins/00_Notes/ziel|Ziel]].")
-        code, out, err = run_tool("check_links.py", "--vault", self.vault)
+        code, out, err = run_tool("vaultkit.py", "links", "--vault", self.vault)
         self.assertEqual(code, 0, err)
         self.assertIn("1/1 wikilinks resolve", out)
         self.assertTrue(target.exists())
 
     def test_denominator_is_always_printed(self):
         write_note(self.notes / "allein.md")
-        code, out, _ = run_tool("check_links.py", "--vault", self.vault)
+        code, out, _ = run_tool("vaultkit.py", "links", "--vault", self.vault)
         self.assertEqual(code, 0)
         self.assertIn("0/0 wikilinks resolve", out)
         self.assertIn("files scanned", out)
@@ -46,7 +46,7 @@ class CheckLinksTest(unittest.TestCase):
     def test_broken_link_is_red_with_a_denominator(self):
         source = write_note(self.notes / "quelle.md")
         self.append(source, "Siehe [[gibt-es-nicht]].")
-        code, out, err = run_tool("check_links.py", "--vault", self.vault)
+        code, out, err = run_tool("vaultkit.py", "links", "--vault", self.vault)
         self.assertEqual(code, 1)
         self.assertIn("gibt-es-nicht", err)
         self.assertIn("0/1 wikilinks resolve", out)
@@ -54,7 +54,7 @@ class CheckLinksTest(unittest.TestCase):
     def test_scanning_nothing_is_did_not_run_not_zero_broken(self):
         empty = Path(tempfile.mkdtemp(prefix="vaultkit_empty_"))
         try:
-            code, out, err = run_tool("check_links.py", "--vault", empty)
+            code, out, err = run_tool("vaultkit.py", "links", "--vault", empty)
             self.assertEqual(code, 1)
             self.assertIn("did not run", err)
             self.assertNotIn("0 broken", out)
@@ -65,7 +65,7 @@ class CheckLinksTest(unittest.TestCase):
         source = write_note(self.notes / "syntax-doku.md")
         self.append(source, "Schreibe `[[Projekt/Ordner/datei|Titel]]` in die Notiz.")
         self.append(source, "```\n[[auch-das-nicht]]\n```")
-        code, out, err = run_tool("check_links.py", "--vault", self.vault)
+        code, out, err = run_tool("vaultkit.py", "links", "--vault", self.vault)
         self.assertEqual(code, 0, err)
         self.assertIn("0/0 wikilinks resolve", out)
 
@@ -79,7 +79,7 @@ class CheckLinksTest(unittest.TestCase):
         """
         source = self.notes / "syntax-doku-mit-bom.md"
         source.write_text("```\n[[nur-ein-beispiel]]\n```\n", encoding="utf-8-sig", newline="\n")
-        code, out, err = run_tool("check_links.py", "--vault", self.vault)
+        code, out, err = run_tool("vaultkit.py", "links", "--vault", self.vault)
         self.assertEqual(code, 0, err)
         self.assertIn("0/0 wikilinks resolve", out)
 
@@ -87,14 +87,14 @@ class CheckLinksTest(unittest.TestCase):
         write_note(self.notes / "Übergröße.md")
         source = write_note(self.notes / "quelle.md")
         self.append(source, "Siehe [[Übergröße]].")
-        code, out, err = run_tool("check_links.py", "--vault", self.vault)
+        code, out, err = run_tool("vaultkit.py", "links", "--vault", self.vault)
         self.assertEqual(code, 0, err)
         self.assertIn("1/1 wikilinks resolve", out)
 
     def test_non_ascii_defect_survives_the_subprocess_round_trip(self):
         source = write_note(self.notes / "Ärgernis.md")
         self.append(source, "Siehe [[fehlt-natürlich]].")
-        code, _, err = run_tool("check_links.py", "--vault", self.vault)
+        code, _, err = run_tool("vaultkit.py", "links", "--vault", self.vault)
         self.assertEqual(code, 1)
         self.assertIn("Ärgernis.md", err)
         self.assertIn("fehlt-natürlich", err)
@@ -103,14 +103,14 @@ class CheckLinksTest(unittest.TestCase):
         write_note(self.notes / "ziel.md")
         source = write_note(self.notes / "tabelle.md")
         self.append(source, "| Was | Wo |\n|---|---|\n| Ziel | [[ziel\\|Titel]] |")
-        code, out, err = run_tool("check_links.py", "--vault", self.vault)
+        code, out, err = run_tool("vaultkit.py", "links", "--vault", self.vault)
         self.assertEqual(code, 0, err)
         self.assertIn("1/1 wikilinks resolve", out)
 
     def test_escaped_pipe_does_not_hide_a_broken_target(self):
         source = write_note(self.notes / "tabelle.md")
         self.append(source, "| Was | Wo |\n|---|---|\n| Ziel | [[gibt-es-nicht\\|Titel]] |")
-        code, out, err = run_tool("check_links.py", "--vault", self.vault)
+        code, out, err = run_tool("vaultkit.py", "links", "--vault", self.vault)
         self.assertEqual(code, 1)
         self.assertIn("gibt-es-nicht", err)
         self.assertIn("0/1 wikilinks resolve", out)
@@ -119,7 +119,7 @@ class CheckLinksTest(unittest.TestCase):
         write_note(self.notes / "ziel.md")
         source = write_note(self.notes / "quelle.md")
         self.append(source, "Siehe [[ziel#Abschnitt|anderer Text]].")
-        code, out, err = run_tool("check_links.py", "--vault", self.vault)
+        code, out, err = run_tool("vaultkit.py", "links", "--vault", self.vault)
         self.assertEqual(code, 0, err)
         self.assertIn("1/1", out)
 

@@ -15,7 +15,7 @@ TOOLS = Path(__file__).resolve().parent
 # Imported, never respelled. A second copy of this list makes the fixtures agree with a tree
 # the tools no longer build, and every suite stays green while doing it.
 sys.path.insert(0, str(TOOLS))
-from vault_paths import CATEGORY_FOLDERS  # noqa: E402
+from vaultkit import CATEGORY_FOLDERS  # noqa: E402
 
 
 def make_vault(projects=("ProjektEins",)):

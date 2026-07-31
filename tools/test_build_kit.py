@@ -209,11 +209,9 @@ class BuildKitTest(unittest.TestCase):
         and a tool left on disk in no list is its own defect now. Deleting them is also the more
         faithful fixture -- a tool that leaves the kit leaves the repository.
         """
-        edit(self.tmp, "tools/build_kit.py", lambda t: t.replace('"count_tokens.py"', "", 1))
         edit(self.tmp, "tools/build_kit.py",
              lambda t: t.replace('    "test_count_tokens.py": "suite for count_tokens.py '
                                  '-- release verification",\n', "", 1))
-        (self.tmp / "tools" / "count_tokens.py").unlink()
         (self.tmp / "tools" / "test_count_tokens.py").unlink()
         code, out, err = run_check(self.tmp)
         self.assertNotEqual(code, 0, f"a shrunken delivery passed: {out}\n{err}")
@@ -249,7 +247,7 @@ class BuildKitTest(unittest.TestCase):
         already reported the delivery as fine.
         """
         edit(self.tmp, "tools/build_kit.py",
-             lambda t: t.replace('"count_tokens.py"]', '"count_tokens.py", "nie_geschrieben.py"]', 1))
+             lambda t: t.replace('["vaultkit.py"]', '["vaultkit.py", "nie_geschrieben.py"]', 1))
         code, out, err = run_check(self.tmp)
         self.assertNotEqual(code, 0, f"a list entry with no file passed: {out}")
         self.assertIn("nie_geschrieben.py: listed, and no such file", err)
@@ -266,13 +264,13 @@ class BuildKitTest(unittest.TestCase):
         # and check_delivery_lists() would report that instead, which is a different subject.
         # Its REPO_ONLY line goes too -- since 2026-07-31 that list is checked for existence, so
         # leaving the entry behind would make the run red one guard earlier.
-        (self.tmp / "tools" / "test_count_tokens.py").unlink()
+        (self.tmp / "tools" / "test_vaultkit.py").unlink()
         edit(self.tmp, "tools/build_kit.py",
-             lambda t: t.replace('    "test_count_tokens.py": "suite for count_tokens.py '
+             lambda t: t.replace('    "test_vaultkit.py": "suite for vaultkit.py '
                                  '-- release verification",\n', "", 1))
         code, out, err = run_check(self.tmp)
         self.assertNotEqual(code, 0, f"a tool without its suite passed: {out}\n{err}")
-        self.assertIn("count_tokens.py: delivered, and there is no tools/test_count_tokens.py", err)
+        self.assertIn("vaultkit.py: delivered, and there is no tools/test_vaultkit.py", err)
 
     def test_an_exemption_for_something_not_delivered_is_refused(self):
         """Guard (b), the other half: SUITE_EXEMPT must not outlive what it excuses.
@@ -311,12 +309,12 @@ class BuildKitTest(unittest.TestCase):
         unclassified deliberately does not change the exit code. The job stops being watched and
         no run anywhere goes red about it.
         """
-        edit(self.tmp, "tools/build_index.py",
+        edit(self.tmp, "tools/vaultkit.py",
              lambda t: t.replace('log_run(vault_root, "build_index"',
                                  'log_run(vault_root, "build_indexx"'))
         code, out, err = run_check(self.tmp)
         self.assertNotEqual(code, 0, f"a drifted log label passed: {out}")
-        self.assertIn('build_index.py: logs as "build_indexx"', err)
+        self.assertIn('vaultkit.py: logs as "build_indexx", which no subcommand declares', err)
         self.assertIn("unclassified", err, "the message did not say why it is silent otherwise")
 
     def test_a_runnable_script_without_the_stream_fix_is_refused(self):
@@ -326,12 +324,12 @@ class BuildKitTest(unittest.TestCase):
         ABOVE the import so an ImportError traceback lands on a reconfigured stderr. That is why
         it is not factored out -- and why nothing would notice one copy disappearing.
         """
-        edit(self.tmp, "tools/count_tokens.py",
+        edit(self.tmp, "tools/vaultkit.py",
              lambda t: t.replace('        _stream.reconfigure(encoding="utf-8", errors="replace")',
                                  "        pass"))
         code, out, err = run_check(self.tmp)
         self.assertNotEqual(code, 0, f"a script with no stream fix passed: {out}")
-        self.assertIn("count_tokens.py: runnable, and no stdout/stderr reconfigure", err)
+        self.assertIn("vaultkit.py: runnable, and no stdout/stderr reconfigure", err)
 
     def test_a_docs_page_naming_a_tool_that_does_not_ship_is_refused(self):
         """Guard (f). The docs hand the user six command lines and nothing read them.
@@ -398,8 +396,8 @@ class BuildKitTest(unittest.TestCase):
         # Since the guards are reached through one file, the unit that falls out of the chain is
         # the SUBCOMMAND, not the filename -- check_freshness.py is still delivered and
         # vaultkit.py is still commanded, so a filename-level check would see nothing at all.
-        self.assertIn("vaultkit.py freshness: runs check_freshness.py, and no command line "
-                      "names it", err)
+        self.assertIn("vaultkit.py freshness: logs as 'check_freshness', and no command "
+                      "line names it", err)
 
     def test_a_misspelled_tool_in_a_command_line_is_refused(self):
         """Direction one, and the cheap half: the user types the line and gets an error.
@@ -441,7 +439,7 @@ class BuildKitTest(unittest.TestCase):
              lambda t: t.replace("SUITE_EXEMPT = {}",
                                  'SUITE_EXEMPT = {"neues_werkzeug.py": "a fixture"}', 1))
         edit(self.tmp, "tools/build_kit.py",
-             lambda t: t.replace('"count_tokens.py"]', '"count_tokens.py", "neues_werkzeug.py"]', 1))
+             lambda t: t.replace('["vaultkit.py"]', '["vaultkit.py", "neues_werkzeug.py"]', 1))
         code, out, err = run_check(self.tmp)
         self.assertNotEqual(code, 0, f"an uncalled new tool passed: {out}")
         self.assertIn("neues_werkzeug.py: ships, and no command line runs it", err)
@@ -450,7 +448,7 @@ class BuildKitTest(unittest.TestCase):
     def test_a_tool_both_called_and_declared_uncalled_stops_with_exit_2(self):
         """Exit 2, and deliberately not a winner.
 
-        Copied from check_freshness.py's watched/on-demand rule rather than invented: whichever
+        Copied from the freshness check's watched/on-demand rule rather than invented: whichever
         statement lost would sit in the file doing nothing, and no run could show which of the two
         applies. The exit code is distinct from 1 on purpose -- a contradiction between two
         sources is a different repair from a stale line in one of them.
@@ -458,39 +456,39 @@ class BuildKitTest(unittest.TestCase):
         Undo recipe: return 1 instead of 2 from the `both` block. This case is the only one that
         moves, and a reader then cannot tell the two repairs apart from the exit code.
         """
-        # The same entry goes into jobs.json AND into check_freshness.py's copy of it. That is
+        # The same entry goes into jobs.json AND into vaultkit.py's copy of it. That is
         # one statement written in the two places the kit requires it, not two defects: since
         # 2026-07-31 check_jobs_config_matches_code() runs first, and editing only the file would
         # make this case red about the drift instead of about the contradiction.
         edit(self.tmp, "tools/jobs.json",
              lambda t: t.replace('"not_invoked": {',
-                                 '"not_invoked": {\n    "check_links": "widerspruch",', 1))
-        edit(self.tmp, "tools/check_freshness.py",
-             lambda t: t.replace("DEFAULT_NOT_INVOKED = {",
-                                 'DEFAULT_NOT_INVOKED = {\n    "check_links": "widerspruch",', 1))
+                                 '"not_invoked": {\n    "vaultkit": "widerspruch",', 1))
+        edit(self.tmp, "tools/vaultkit.py",
+             lambda t: t.replace("DEFAULT_NOT_INVOKED = {}",
+                                 'DEFAULT_NOT_INVOKED = {"vaultkit": "widerspruch"}', 1))
         code, out, err = run_check(self.tmp)
         self.assertEqual(code, 2, f"a name classified twice did not stop the run: {out}\n{err}")
-        self.assertIn("check_links.py", err)
+        self.assertIn("vaultkit.py", err)
         self.assertIn("classified twice", err)
 
     def test_the_generated_vaultkit_chain_is_held_to_the_delivery(self):
         """The one delivered text that is not in this repository, and nothing read it.
 
         `/vaultkit` is generated into the user's own commands folder at setup, out of an
-        f-string in write_command.py. Every prose guard reads Markdown sources, so this text was
+        f-string in vaultkit.py. Every prose guard reads Markdown sources, so this text was
         outside all of them -- measured 2026-07-31, it had gone on emitting a step
         `## 6 · Run the suites` with `run_suites.py` for a full release after that tool left the
         delivery. A user following their own maintenance command would have typed a line that
         cannot work, and no run was red about it.
         """
-        edit(self.tmp, "tools/write_command.py",
+        edit(self.tmp, "tools/vaultkit.py",
              lambda t: t.replace('        "## 6 · Prove the second run changes nothing",',
                                  '        "## 6 · Run the suites",\n'
                                  '        "",\n'
                                  '        f"- `python {tool(\'run_suites.py\')}`",\n'
                                  '        "",\n'
                                  '        "## 7 · Prove the second run changes nothing",', 1))
-        edit(self.tmp, "tools/write_command.py",
+        edit(self.tmp, "tools/vaultkit.py",
              lambda t: t.replace("    kit = show(tools / \"vaultkit.py\", shell)",
                                  "    kit = show(tools / \"vaultkit.py\", shell)\n\n"
                                  "    def tool(name):\n"
@@ -499,25 +497,29 @@ class BuildKitTest(unittest.TestCase):
         self.assertNotEqual(code, 0, f"a stale line in the generated chain passed: {out}")
         self.assertIn("the /vaultkit chain names run_suites.py, which is not delivered", err)
 
-    def test_the_section_10_header_no_longer_carries_a_command_line(self):
-        """A pin over an absence, and the absence is what makes another test impossible.
+    def test_a_misspelled_tool_in_the_section_10_header_is_refused(self):
+        """The header is a chain source again, and this is what proves it is read.
 
-        Until 2026-07-31 the header was the ONLY source naming `verify_setup.py` -- it appears
-        in src/contract.md zero times, measured 2026-07-30 -- and that made it provable that
-        check_prose_chain() reads the header and not just the contract. E3 took the suites and
-        the drivers out of the delivery, so the header stopped telling anyone to run anything:
-        it now says write the blocks, compile them, check the encoding. No `python x.py` at all.
+        Its history is worth keeping, because it is a case of a pinned absence doing its job.
+        Until 2026-07-31 the header was the ONLY source naming `verify_setup.py` -- that name
+        appears in src/contract.md zero times, measured 2026-07-30 -- which made "the chain check
+        reads the header" provable. E3 took the drivers out of the delivery and the header
+        stopped telling anyone to run anything, so that case became unwritable and was replaced
+        by an assertion that the header carries no command line at all, with a note saying: on
+        the day it does again, write a real case. E4b added
+        `upgrade.py --prove` to it, the pin went red, and this is that case.
 
-        The header stays in prose_sources() so a line added later is checked like any other. This
-        assertion is what tells you that day has arrived -- and on that day, write a real chain
-        case for it instead of relaxing this one. Until then, the source that proves the chain
-        reads more than the contract is `docs/`, in the misspelling case above.
+        The ghost direction rather than the orphan one, and deliberately: `upgrade.py` is named
+        by the contract too, so removing the header's line orphans nothing. A typo in it is a
+        line the user types and an error they get, and only a source that is actually read can
+        catch that.
         """
-        self.assertEqual(
-            build_kit.COMMAND_RE.findall(build_kit.HEADER), [],
-            "the SECTION 10 header names a script to run again. That is allowed -- but nothing "
-            "proves the chain check reads it any more, so add a case that removes the line and "
-            "requires the tool to be reported as uninvoked.")
+        edit(self.tmp, "tools/build_kit.py",
+             lambda t: t.replace("06_tools/upgrade.py --prove", "06_tools/upgradee.py --prove", 1))
+        code, out, err = run_check(self.tmp)
+        self.assertNotEqual(code, 0, f"the header was not read as part of the chain: {out}")
+        self.assertIn("upgradee.py", err)
+        self.assertIn("SECTION 10 header", err, "the wrong source was named")
 
     def test_a_literal_version_stamp_in_the_prose_is_refused(self):
         """A second kit-version line in the text goes stale on the next build, and a reader
