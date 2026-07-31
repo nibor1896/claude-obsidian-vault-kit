@@ -325,7 +325,7 @@ def _s13(root):
     Undo recipe, to watch it go red: copy tools/ somewhere, delete the two `if args.stamp:` lines
     from upgrade.py's main(), and run both drivers there. Re-measured on this machine 2026-07-31
     -- verify_setup 13/14, failing in step 1 with `upgrade.py --stamp exited 2`, and test_upgrade
-    20/28. Both, which is the point of covering it in two places: the driver proves the setup
+    22/30. Both, which is the point of covering it in two places: the driver proves the setup
     does it, the suite proves the tool can.
 
     That 13/14 was 12/13 for one commit, because it was measured before step 14 existed and then
@@ -365,7 +365,7 @@ def _s13(root):
     #
     # Undo recipe, re-measured on this machine 2026-07-31: force `stale_stamp = False` in
     # upgrade.py's main(), which is what the early return amounted to.
-    # verify_setup 13/14 here, and test_upgrade 25/28.
+    # verify_setup 13/14 here, and test_upgrade 27/30.
     if "ffffffffffff" not in out:
         raise Failed(f"upgrade.py did not say the kit carries a version the folder does not:\n{out}")
     if stamp.read_text(encoding="utf-8-sig").strip() != installed:

@@ -229,9 +229,9 @@ def classify(blocks: dict[str, str],
 
     Undo recipes, both re-measured on this machine 2026-07-31, and they are not symmetric:
 
-      - Set the encoding back to `utf-8` (dropping errors= with it): test_upgrade 26/28. BOTH
+      - Set the encoding back to `utf-8` (dropping errors= with it): test_upgrade 28/30. BOTH
         cases go red, because `utf-8` without a replacement handler raises on the bad byte too.
-      - Keep `utf-8-sig` and drop only `errors="replace"`: test_upgrade 27/28, and only
+      - Keep `utf-8-sig` and drop only `errors="replace"`: test_upgrade 29/30, and only
         `test_an_undecodable_file_is_named_rather_than_crashing_the_run` moves. That asymmetry is
         the measurement worth keeping -- it shows the BOM half and the crash half are two defects
         sharing one line, and fixing either alone leaves the other.

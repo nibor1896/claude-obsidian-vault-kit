@@ -162,7 +162,7 @@ class UpgradeTest(unittest.TestCase):
         told they have a local edit they never made.
 
         Undo recipe, re-measured on this machine 2026-07-31: in upgrade.py's classify(), read the
-        target with `encoding="utf-8"` again. test_upgrade 26/28 -- this case fails with
+        target with `encoding="utf-8"` again. test_upgrade 28/30 -- this case fails with
         `1 would be overwritten` where it expects `1 unchanged`, and the undecodable case goes
         with it, because dropping the replacement handler is part of the same reversal. The run
         stays exit 0 throughout, which is why nothing caught it before.
@@ -209,7 +209,7 @@ class UpgradeTest(unittest.TestCase):
         tool that no longer exists, and nothing in their folder explains why.
 
         Undo recipe, measured on this machine 2026-07-31: force `removed = []` in upgrade.py's
-        classify(), replacing the conditional expression. test_upgrade 24/28 -- this case, the
+        classify(), replacing the conditional expression. test_upgrade 25/30 -- this case, the
         cached-bytecode one, the already-gone one and the dry-run listing. The orphan then sits
         in the folder after --apply, which is the state before this change and the reason for it.
         """
@@ -239,7 +239,7 @@ class UpgradeTest(unittest.TestCase):
         Undo recipe, measured on this machine 2026-07-31: in classify(), take `removed` from the
         folder instead of the manifest --
         `sorted(p.name for p in TOOLS.glob("*.py") if p.name not in blocks and p.name != SELF)`.
-        test_upgrade 25/28. Three cases move, and they are worth reading together: this one
+        test_upgrade 27/30. Three cases move, and they are worth reading together: this one
         (the user's files are deleted), the no-manifest one (a folder that must not be touched
         at all is touched) and the already-gone one (the manifest stops driving anything). The
         folder and the manifest answer different questions, and the recipe makes the run answer
@@ -366,6 +366,59 @@ class UpgradeTest(unittest.TestCase):
                          "the manifest still names a file nothing will ever look for again")
         self.assertEqual((self.tools / "kit-version.txt").read_text(encoding="utf-8").strip(),
                          "abcdef012345")
+
+    def test_nothing_is_removed_when_a_write_in_the_same_run_was_refused(self):
+        """Abort before deleting: the folder still has everything it started with.
+
+        A run that deleted a script to make room for one that never landed is the single state
+        the write-then-read-then-delete order exists to prevent. The refused write is a block
+        whose heading carries a directory that does not exist, so it fails for every user on
+        every platform, no permissions involved.
+
+        The stamp did not move either, which is the other half: nothing tells the next run the
+        work is done, so it recomputes the identical plan.
+        """
+        (self.tools / "test_alt.py").write_text("raise SystemExit(0)\n",
+                                                encoding="utf-8", newline="\n")
+        write_manifest(self.tools, ["build_index.py", "test_alt.py"])
+        kit = kit_file(self.tmp / "kit.md",
+                       {"build_index.py": "print('new')", "aaa_kein_ordner/neu.py": "x = 1"},
+                       version="abcdef012345")
+
+        code, out, err = run_upgrade(self.tools, kit, "--apply")
+        self.assertEqual(code, 2, out + err)
+        self.assertTrue((self.tools / "test_alt.py").is_file(),
+                        "a file was deleted although a write in the same run was refused")
+        self.assertFalse((self.tools / "kit-version.txt").exists(),
+                         "the run stamped a folder it had not finished")
+        self.assertEqual((self.tools / "kit-manifest.txt").read_text(encoding="utf-8"),
+                         "build_index.py\ntest_alt.py\n",
+                         "the manifest moved on a run that did not finish")
+
+    def test_a_file_that_cannot_be_removed_keeps_the_manifest_where_it_is(self):
+        """The manifest must never say a file is gone while it is still there.
+
+        If it did, the name would drop out of the list and nothing would ever try again -- the
+        leftover becomes permanent and invisible in one step. So a refused removal fails the run
+        and leaves the old manifest, which is what makes the next --apply retry it.
+
+        The fixture is a directory where the file belongs: `unlink()` raises for every user on
+        every platform.
+        """
+        (self.tools / "test_alt.py").mkdir()
+        write_manifest(self.tools, ["build_index.py", "test_alt.py"])
+        kit = kit_file(self.tmp / "kit.md", {"build_index.py": "print('new')"},
+                       version="abcdef012345")
+
+        code, out, err = run_upgrade(self.tools, kit, "--apply")
+        self.assertEqual(code, 2, out + err)
+        self.assertNotIn("Traceback", err)
+        self.assertIn("test_alt.py", err)
+        self.assertEqual((self.tools / "kit-manifest.txt").read_text(encoding="utf-8"),
+                         "build_index.py\ntest_alt.py\n",
+                         "the manifest dropped a name whose file is still on disk")
+        self.assertFalse((self.tools / "kit-version.txt").exists(),
+                         "the run stamped a folder it had not finished")
 
     def test_stamp_records_the_file_list_as_well_as_the_version(self):
         """The first install's only writer, and it has to record both or the first update is blind.
@@ -506,7 +559,7 @@ class UpgradeTest(unittest.TestCase):
 
         Undo recipe, re-measured on this machine 2026-07-31: force `stale_stamp = False` in
         upgrade.py's main(), which is what returning early amounted to.
-        test_upgrade 25/28 -- this case, the unstamped one and the --apply one -- and
+        test_upgrade 27/30 -- this case, the unstamped one and the --apply one -- and
         verify_setup 13/14 at step 13. Before the assertions above were moved off the header
         line the same recipe moved exactly ONE test, and the difference between one and three
         is the whole reason this recipe gets run instead of reasoned about. Named rather than
