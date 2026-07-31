@@ -138,7 +138,7 @@ SKIP_DIRS = {".git", ".obsidian", ".claude", "__pycache__", ".trash", ".venv", "
 # Characters Obsidian cannot carry inside a [[wikilink]] target.
 FORBIDDEN_LINK_CHARS = set("#[]|^")
 
-# Append-only log of every tool run, healthy ones included. Read by check_freshness.py.
+# Append-only log of every tool run, healthy ones included. Read by `vaultkit.py freshness`.
 RUN_LOG_RELPATH = Path("00_Global") / "06_tools" / "runs.log"
 
 
@@ -282,7 +282,7 @@ def log_run(vault_root, job: str, status: str, detail: str = ""):
         line = f"{stamp}\t{job}\t{status}\t{detail}\n"
         # newline="\n": the only writer in this kit that lacked it, so runs.log was the one
         # generated file whose line endings depended on the platform that wrote it. The reader
-        # (check_freshness.py) opens in universal-newline mode and copes either way, which is
+        # (the freshness check) opens in universal-newline mode and copes either way, which is
         # exactly why nothing went red over it -- a log half CRLF and half LF from two different
         # machines is a diff nobody can read, not a run that fails.
         with open(log_path, "a", encoding="utf-8", newline="\n") as fh:
@@ -833,8 +833,8 @@ A command file removes all three by spelling out the answers once, per vault, wi
 filled in. It is a convenience for Claude Code and nothing depends on it: the workflow page in
 `05_workflows` carries the same chain in prose for anyone working in a browser.
 
-    python write_command.py --vault <VaultRoot> --shell powershell
-    python write_command.py --vault <VaultRoot> --shell posix
+    python vaultkit.py command --vault <VaultRoot> --shell powershell
+    python vaultkit.py command --vault <VaultRoot> --shell posix
 
 THE DESTINATION IS ALWAYS `~/.claude/commands/vaultkit.md`, AND THERE IS NO OPTION. An in-vault
 copy under `<VaultRoot>/.claude/commands/` was offered once and taken out again: it fires only in
@@ -858,7 +858,10 @@ a state file beside it: both of those answer "when", and the question is "whose"
 
 Undo recipe for that guard, re-measured on this machine 2026-07-29 after the stranger case was
 added: copy tools/ somewhere, make the `if target.exists():` block in command_main() unreachable,
-and run the three drivers there -- test_write_command 8/12, acceptance 11/12, verify_setup 14/15.
+and run the three drivers there. Re-measured on this machine 2026-07-31 --
+test_write_command 10/14, acceptance 11/12, verify_setup 14/15. The four cases that move are the
+hand-edited file, the second silent run, the marker check and the foreign file: the whole of what
+this guard promises, from four directions.
 """
 
 TOOLS = Path(__file__).resolve().parent
@@ -1220,7 +1223,7 @@ the tool offers.
 The threshold is a knob, not a truth. On a vault with a handful of notes the number this
 prints is arithmetic, not evidence — recalibrate once there is real volume:
 
-    python check_duplicates.py --vault <dir> --threshold 0.75
+    python vaultkit.py duplicates --vault <dir> --threshold 0.75
 """
 
 DEFAULT_THRESHOLD = 0.75

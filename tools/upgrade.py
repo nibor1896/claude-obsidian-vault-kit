@@ -300,8 +300,8 @@ def write_file(name: str, body: str) -> bool:
     either the old script or the new one, never half of either.
 
     The temp file is inert if a crash leaves one behind -- it ends in `.upgrade-tmp`, so
-    `run_suites.py`'s `test_*.py` glob and `check_freshness.py`'s `*.py` glob both skip it, and
-    the next successful run writes over it.
+    the `*.py` scan `vaultkit.py freshness` makes over the tool folder skips it, and the next
+    successful run writes over it.
     """
     target = TOOLS / name
     tmp = target.with_name(target.name + ".upgrade-tmp")

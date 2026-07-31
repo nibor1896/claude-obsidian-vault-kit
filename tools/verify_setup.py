@@ -462,24 +462,30 @@ def _s13(root):
 def _s14(root):
     """The convenience the setup offers, held to the same three things as step 12.
 
-    The command exists because `--vault` means a PROJECT after build_index.py and the ROOT after
-    check_links.py, and a chain typed from memory gets that wrong. So the file existing proves
-    nothing on its own -- what is checked is that the two invocations differ, that the second run
-    leaves a hand edit alone, and that the vault gains nothing from the run.
+    The command exists because `--vault` means a PROJECT after `index` and the ROOT after
+    `links`, and a chain typed from memory gets that wrong. So the file existing proves nothing
+    on its own -- what is checked is that the two invocations differ, that the second run leaves
+    a hand edit alone, and that the vault gains nothing from the run.
 
     It goes to `~/.claude/commands/`, the only destination there is, with Path.home() redirected
     into this throwaway tree. An in-vault copy was offered once and removed: it loads only in a
     session started at the vault root, which is not how a sync command gets used.
 
-    Undo recipes, measured on this machine 2026-07-30 against a copy of tools/:
+    Undo recipes:
 
-      - Make the `if target.exists():` block in vaultkit.py's command_main() unreachable: the hand
-        edit is eaten and the second run reports work. verify_setup 14/15, acceptance 11/12,
-        test_write_command 8/12.
-      - Remove `.claude` from SKIP_DIRS in vaultkit.py: the link checker counts a `.claude/`
-        file in the vault as a note. verify_setup 14/15, test_write_command 11/12 -- and
-        acceptance stays 12/12, because fixture 11 checks the file and the message, not the
-        denominators. That gap is the reason this step carries the denominator half at all.
+      - Make the `if target.exists():` block in vaultkit.py's command_main() unreachable: the
+        hand edit is eaten and the second run reports work. Re-measured 2026-07-31 --
+        verify_setup 14/15, acceptance 11/12, test_write_command 10/14.
+      - Remove `.claude` from SKIP_DIRS: **this one no longer moves anything, and that is the
+        finding.** Re-measured 2026-07-31 -- verify_setup 15/15, test_write_command 14/14,
+        acceptance 12/12, all green. It was written on 2026-07-30 against a kit that still
+        offered an in-vault `<VaultRoot>/.claude/commands/` copy: a `.md` inside `.claude/` was
+        what the link checker started counting. That option is gone, the only `.claude` any
+        fixture builds now holds a `settings.json`, and nothing walking `*.md` can see it. The
+        exemption is still right -- a user who keeps notes under `.claude/` would hit it -- but
+        no run in this repository proves it any more, and a recipe that reproduces nothing is a
+        number waiting to be quoted. It is written down instead of deleted so the next person
+        knows it was measured and found empty, rather than never tried.
     """
     home = root.parent / "FakeHome"
     home.mkdir(parents=True, exist_ok=True)

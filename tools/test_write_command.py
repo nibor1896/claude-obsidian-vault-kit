@@ -132,8 +132,8 @@ class WriteCommandTest(unittest.TestCase):
 
         Recipe without the fix, measured on this machine 2026-07-30: move the freshness
         command line in command_text() below the index loop, leaving the headings where
-        they are. test_write_command 13/14 -- this case and nothing else, which is the point of
-        having it: the command still contains every tool, and only the order is wrong.
+        they are. This case moves and nothing else, which is the point of having it: the
+        command still contains every tool, and only the order is wrong.
         """
         self.write("--shell", "powershell")
         lines = self.target.read_text(encoding="utf-8").splitlines()

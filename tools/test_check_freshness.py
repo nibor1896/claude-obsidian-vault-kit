@@ -129,9 +129,9 @@ class CheckFreshnessTest(unittest.TestCase):
         chain. Classified means silent here, and only here.
 
         Recipe without the fix, measured on this machine 2026-07-30: drop the `- set(on_demand)`
-        term from `unclassified` in vaultkit.py. test_check_freshness 13/15 -- this case
-        and the bare-list one, which asserts the same count from the other shape. The healthy
-        control stays green, which is why the control alone could never have caught it.
+        term from `unclassified` in vaultkit.py. Two cases move: this one and the bare-list
+        one, which asserts the same count from the other shape. The healthy control stays
+        green, which is why the control alone could never have caught it.
         """
         self.write_config(f'{{"jobs": [{self.KIT_WATCHED}], '
                           f'"on_demand": {{"mein_werkzeug": "laeuft von Hand", '
@@ -154,9 +154,9 @@ class CheckFreshnessTest(unittest.TestCase):
         that is always red gets switched off rather than answered.
 
         Recipe without the fix, measured on this machine 2026-07-30: return 1 when `unclassified`
-        is non-empty. test_check_freshness 13/15 -- this case and the missing-key one, both on
-        the exit code alone and with their output unchanged, which is the distinction they are
-        here to hold.
+        is non-empty. Two cases move: this one and the missing-key one, both on the exit code
+        alone and with their output unchanged, which is the distinction they are here to
+        hold.
         """
         self.write_log(f"{stamp(1)}\tbuild_index\tok\t0 defects",
                        f"{stamp(2)}\tmein_werkzeug\tok\tetwas getan")
@@ -278,7 +278,7 @@ class CheckFreshnessTest(unittest.TestCase):
         makes the contradiction visible where it lives, which is the config file.
 
         Recipe without the fix, measured on this machine 2026-07-30: delete the `both` block from
-        main(). test_check_freshness 14/15 -- this case and nothing else. The tool then reports
+        main(). This case moves and nothing else. The tool then reports
         the job as watched and never says that its own config says otherwise.
         """
         self.write_config('{"jobs": ["build_index", "mein_werkzeug"], '
@@ -299,8 +299,8 @@ class CheckFreshnessTest(unittest.TestCase):
         names them so the decision is theirs.
 
         Recipe without the fix, measured on this machine 2026-07-30: make the missing key fall
-        back to DEFAULT_ON_DEMAND in job_lists(). test_check_freshness 14/15 -- this case and
-        nothing else. check_duplicates disappears from the output and the count reads
+        back to DEFAULT_ON_DEMAND in job_lists(). This case moves and nothing else.
+        check_duplicates disappears from the output and the count reads
         `3 on demand` against a config that says nothing about any of them.
         """
         self.write_config('{"jobs": ["build_index"]}')
@@ -317,8 +317,8 @@ class CheckFreshnessTest(unittest.TestCase):
         cosmetics.
 
         Recipe without the fix, measured on this machine 2026-07-30: drop the
-        `isinstance(raw, dict)` branch from job_lists(). test_check_freshness 14/15 -- this case
-        and nothing else. `dict(["mein_werkzeug"])` raises ValueError, which the config reader
+        `isinstance(raw, dict)` branch from job_lists(). This case moves and nothing else.
+        `dict(["mein_werkzeug"])` raises ValueError, which the config reader
         already catches, so the whole file is declared unreadable and BOTH lists fall back to
         the built-in ones: the run then demands check_links, which the log never mentions, and
         exits 1 over a config that was merely written in the other shape.
@@ -342,8 +342,8 @@ class CheckFreshnessTest(unittest.TestCase):
         and it is why check_freshness stands in the on-demand list rather than nowhere.
 
         Recipe without the fix, measured on this machine 2026-07-30: remove the log_run call from
-        the success path in main(). test_check_freshness 14/15 -- this case and nothing else,
-        because no other case reads the log back after the run.
+        the success path in main(). This case moves and nothing else, because no other case
+        reads the log back after the run.
         """
         self.write_log(f"{stamp(1)}\tbuild_index\tok\t0 defects")
         code, out, err = run_tool("vaultkit.py", "freshness", "--vault", self.vault,
