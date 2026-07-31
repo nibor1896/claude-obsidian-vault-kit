@@ -166,6 +166,11 @@ You can check the folder at any time without an update:
 python <VaultRoot>/00_Global/06_tools/upgrade.py --prove
 ```
 
+**Your setup ran that line once already**, right after it stamped the folder, and showed you the
+output — so the first time you run it yourself you are comparing against something, not meeting it
+cold. It compiles every script, parses `jobs.json` and imports the entry point. That last one is the
+check compiling cannot do: a script cut short still compiles, still exits 0, and has done nothing.
+
 ### One update rewrites every index file, once
 
 The guards are reached as `vaultkit.py <subcommand>` now — one file with a subcommand each,

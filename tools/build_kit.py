@@ -302,10 +302,20 @@ def chain_commands():
     """Every tool the prose actually tells the user to run, from both sources.
 
     NOT LIMITED TO SECTION 8, AND THAT CAME OUT OF THE MEASUREMENT. Counting by hand said nine
-    lines, all inside SECTION 8; the pattern found ten. The tenth is `acceptance.py` at the top of
-    SECTION 9, and a check scoped to SECTION 8 would have reported a tool the contract plainly
-    invokes as never invoked. `verify_setup.py` runs the other way round -- it appears in the
-    HEADER and literally nowhere in the contract -- so both sources have to be read as one chain.
+    lines, all inside SECTION 8; the pattern found ten -- the tenth sat at the top of SECTION 9,
+    and a check scoped to SECTION 8 would have reported a tool the contract plainly invoked as
+    never invoked. `verify_setup.py` runs the other way round -- it appears in the HEADER and
+    literally nowhere in the contract -- so both sources have to be read as one chain.
+
+    THE NUMBER AND THE EXAMPLE BOTH MOVED (2026-07-31, re-measured here). That tenth line was
+    `acceptance.py` at the top of SECTION 9. It is gone: the driver is REPO_ONLY since E3, and
+    src/contract.md now carries no command line for it at all -- the only pages that name it are
+    docs/, where naming a repo-only tool is how the release verification gets described, and the
+    docs branch below allows exactly that. The scoping argument is unchanged, and the reason to
+    read both sources is now `verify_setup.py` alone.
+
+    Do not read this docstring for a current count -- that is what rotted. Read it off the run:
+    `python -c "import build_kit; print(sorted(build_kit.chain_commands()))"`.
     """
     return {name for _, text in prose_sources() for name in COMMAND_RE.findall(text)}
 

@@ -111,8 +111,14 @@ document in order. It is a contract, not a suggestion.
   If a command of that name was already there, it keeps the name: say so, and do not list
   `/vaultkit` as delivered.
 - A verification run per SECTION 8, with its output shown to the user.
-- **The acceptance test from SECTION 9, passed.** The setup is not finished until every guard has
-  been shown to go red on deliberately bad input on this machine. Clean input proves nothing.
+- **`upgrade.py --prove`, green** (SECTION 8, right after the stamp). It compiles every delivered
+  script, parses `jobs.json` and imports the entry point, so a block that arrived truncated is named
+  here instead of months later — a cut file compiles and then does nothing at exit 0.
+- **What is deliberately NOT a deliverable: the acceptance test.** SECTION 9 is a specification, not
+  a task: `acceptance.py` is not shipped and the user does not run it. That the guards go red on
+  deliberately bad input was measured in the kit's repository before this file was published, and
+  nothing on this machine repeats it. So do not claim it here — and do not hold a setup open for a
+  test that is not in the folder. What *this* machine can show is the two lines above.
 
 ---
 
@@ -180,7 +186,8 @@ than the one that matters here.
   - If the user prefers manual: give them the download page and wait for them to confirm it is
     installed before continuing.
 - If **yes**: ask for the vault path. Whether that vault gets touched is decided in 1.2, not here —
-  an existing vault plus a new production vault elsewhere is a normal answer. If 1.2 comes back as a
+  an existing vault plus a new production vault is a normal answer, and the new one goes wherever
+  1.4 settles, which need not be near the old one or near the folder you were started in. If 1.2 comes back as a
   migration, **read the existing structure before proposing anything**: list what is there, name what
   already matches this kit, and name what conflicts. Their existing structure wins over this document
   unless they say otherwise — a folder they use daily is worth more than a clean scheme they have to
@@ -241,7 +248,15 @@ overrules is worse than no question — it teaches the user that their answers d
 
 Five questions, one call:
 
-- **The vault path.** Propose one and have it confirmed. It must sit inside the folder you were given.
+- **The vault path.** Propose one and have it confirmed. **Its own folder, one level down** —
+  `<workdir>/<VaultName>/`, never the folder you were started in, so the harness's own config
+  directory does not land in the vault's history (SECTION 7 states the rule and what it costs).
+  **And check what that folder is before proposing anything inside it.** If the folder you were
+  given is itself a configuration directory (`.claude`, `.config`, `.cursor`), or the user's home
+  directory, or any tree that already belongs to something else, then a subfolder of it is the wrong
+  answer too: say what you found, propose a location outside it — `~/Documents/<VaultName>` is the
+  usual one — and have *that* confirmed. Applying the rule blind is how a vault ends up in the
+  middle of somebody's settings, with a `git init` of its own.
 - **Backup location.** Recommend a cloud-synced folder (OneDrive, Dropbox, iCloud Drive, Syncthing).
   Ask which one they use — and if a cloud folder exists on the machine but is out of bounds, say so
   rather than proposing it.
@@ -961,6 +976,20 @@ manifest says this kit brought it. Anything **not** in that list is the user's o
 their `runs.log`, a `jobs.json` they extended — and is never a candidate for removal.
 
 `--stamp` writes those two files and touches nothing else; it needs no `--apply`.
+
+**Then prove the folder is whole, once, and show the output:**
+
+```
+python <VaultRoot>/00_Global/06_tools/upgrade.py --prove
+```
+
+It takes no kit file — it checks the folder as it stands: every `.py` compiles, `jobs.json` parses,
+and `vaultkit.py` imports rather than merely compiling. **That third one is the check compiling
+cannot do.** A `vaultkit.py` cut short anywhere still compiles, still exits 0, and has done nothing,
+because the cut takes its entry point with it — and a single-file delivery makes exactly that
+failure more likely, not less. This is the strongest statement available about the scripts on this
+machine; the guards' behaviour on bad input is a release measurement (SECTION 9) and is not
+re-answered here.
 
 **Do not type those twelve characters yourself**, even though you can see them. They already exist
 verbatim in a file on disk, which makes copying them mechanical work — operating rule 7. If the kit
