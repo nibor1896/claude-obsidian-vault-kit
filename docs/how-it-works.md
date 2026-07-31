@@ -58,32 +58,46 @@ community plugin is required either — Templater was considered and deliberatel
 
 ## Reproduce the numbers
 
-The measurement quoted in the README is the one the product makes. Run these against your own vault
-and compare against that line:
+The measurement quoted in the README describes **this repository**, not your vault, and it is
+reproduced by cloning:
 
 ```
-python <vault>/00_Global/06_tools/run_suites.py
-python <vault>/00_Global/06_tools/acceptance.py --repeat 10
-python <vault>/00_Global/06_tools/verify_setup.py --repeat 10
+python tools/run_suites.py
+python tools/acceptance.py --repeat 10
+python tools/verify_setup.py --repeat 10
 ```
 
-If you cloned this repository instead, the same three live under `tools/`, plus `build_kit.py`.
+**Those three are not in your vault, on purpose.** They test the tools; your tools do not change
+after setup, so a vault re-running them daily would re-answer a settled question about code nobody
+touched. What your vault runs is the guard chain over your notes, which do change:
 
-**A clone counts one suite more than the delivered file, and that is not a disagreement.** The extra
-one guards `build_kit.py`, the generator that assembles the single file — a vault has no generator,
-so it gets neither. `build_kit.delivered_suites()` is the rule: a `test_X.py` ships only when `X.py`
-does. The README describes what you receive; a clone describes the workshop.
+```
+python <vault>/00_Global/06_tools/check_freshness.py --vault <vault>
+python <vault>/00_Global/06_tools/build_index.py --root <vault>
+python <vault>/00_Global/06_tools/check_links.py --vault <vault>
+python <vault>/00_Global/06_tools/check_duplicates.py --vault <vault>
+```
+
+What a setup does check on your machine is that the blocks arrived whole:
+`python -m compileall -q <vault>/00_Global/06_tools`, and that `jobs.json` parses. A block truncated
+at a fence fails there; nothing else would notice it until a guard broke for an unrelated-looking
+reason.
 
 The exact counts live in `README.md` on purpose: `build_kit.py --check` reads that file and fails the
-build if a number there disagrees with what the code counts. This page carries no `n/m` of its own,
-because nothing checks this page (see below) and an unwatched number goes stale and gets quoted
-anyway.
+build if a number there disagrees with what the code counts. This page deliberately carries no `n/m`
+of its own — see below.
 
-## What is not covered by a check
+## What is and is not covered by a check
 
-`docs/` sits outside every guard. Neither `check_prose_claims()` nor `check_prose_chain()` reads it,
-so a wrong sentence on this page will not turn any run red — it has to be caught by reading. That is
-a known gap, not an oversight, and it is the reason every measured number stays in the README.
+Since 2026-07-31 `check_prose_chain()` **does** read these pages: every `python …x.py` line here is
+compared against the files in `tools/`, so a misspelled tool name fails the build. What it does not
+do is check the sentences around them.
+
+`check_prose_claims()`, which holds every `n/m` to what the code counts, deliberately does **not**
+read this page. It treats a source with zero matches as a defect — a claim a pattern stopped seeing
+looks exactly like a claim that agrees — so putting these pages on that list would demand a number
+in prose that reads better without one. That is why every measured figure stays in `README.md`, and
+why a wrong *sentence* here still has to be caught by reading.
 
 ## Platforms
 

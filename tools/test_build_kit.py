@@ -177,32 +177,26 @@ class BuildKitTest(unittest.TestCase):
 
     # ------------------------------------------------------- what gets delivered
 
-    def test_a_suite_whose_tool_is_not_delivered_does_not_deliver_itself(self):
-        """Three lists governed one question and none of them knew the others.
+    def test_no_suite_is_delivered_at_all(self):
+        """The invariant E3 exists to establish, pinned so nothing drifts back into it.
 
-        SHARED/TOOLS_ORDER/DRIVERS are maintained by hand; the suites used to be picked up by a
-        bare glob. So writing `test_anything.py` in this folder shipped it to every user, whether
-        or not the tool it tests goes with it -- a permanent prop in their `n/m`, testing
-        something their vault does not have. This file is that case: it tests the generator.
+        Suites used to be collected by a bare glob and shipped alongside their tools, so a vault
+        received 126 unit tests and ran them daily as step 6 of its own maintenance chain --
+        over code that had not changed since setup. They are release verification: they answer
+        "does this kit work", once, here, before publishing.
+
+        Asserted over the artefact rather than over the list, because that is what a user gets.
+        A `test_` block reappearing in SECTION 10 is the one thing this must never allow.
         """
-        (self.tmp / "tools" / "test_dummy.py").write_text(
-            "print('a suite for a tool nobody ships')\n", encoding="utf-8", newline="\n")
-        # Declared repo-only, because since 2026-07-31 check_delivery_lists() refuses a file in
-        # tools/ that no list mentions -- and it runs first, so without this line the run goes
-        # red over the declaration rather than over the delivery, which is a different subject.
-        edit(self.tmp, "tools/build_kit.py",
-             lambda t: t.replace('REPO_ONLY = {\n',
-                                 'REPO_ONLY = {\n    "test_dummy.py": "a fixture",\n', 1))
-        before = (self.tmp / "claude-obsidian-vault-kit.md").read_text(encoding="utf-8")
-
-        code, out, err = run_check(self.tmp)
-        self.assertEqual(code, 0, f"an undelivered suite moved the counted number:\n{out}\n{err}")
-
-        code, out, err = run_build(self.tmp)
-        self.assertEqual(code, 0, err)
-        after = (self.tmp / "claude-obsidian-vault-kit.md").read_text(encoding="utf-8")
-        self.assertNotIn("test_dummy.py", after, "a suite delivered itself")
-        self.assertEqual(before, after, "the delivered file changed over a file nobody ships")
+        text = (self.tmp / "claude-obsidian-vault-kit.md").read_text(encoding="utf-8")
+        embedded = [name for name, _ in build_kit.BLOCK_RE.findall(text)]
+        self.assertTrue(embedded, "no blocks at all -- the fixture is broken, not the delivery")
+        leaked = [name for name in embedded if name.startswith("test_")]
+        self.assertEqual(leaked, [], "a suite is in the delivered file")
+        for name in ("run_suites.py", "acceptance.py", "verify_setup.py", "_testkit.py"):
+            self.assertNotIn(name, embedded, f"{name} is release verification and must stay here")
+        self.assertEqual(embedded, build_kit.delivered_files(),
+                         "the artefact and the delivery lists disagree")
 
     def test_a_tool_leaving_the_delivery_takes_its_suite_and_the_count_with_it(self):
         """The other direction, and the one that has to be loud.
@@ -215,13 +209,16 @@ class BuildKitTest(unittest.TestCase):
         and a tool left on disk in no list is its own defect now. Deleting them is also the more
         faithful fixture -- a tool that leaves the kit leaves the repository.
         """
-        edit(self.tmp, "tools/build_kit.py", lambda t: t.replace('"count_tokens.py", ', "", 1))
+        edit(self.tmp, "tools/build_kit.py", lambda t: t.replace('"count_tokens.py"', "", 1))
+        edit(self.tmp, "tools/build_kit.py",
+             lambda t: t.replace('    "test_count_tokens.py": "suite for count_tokens.py '
+                                 '-- release verification",\n', "", 1))
         (self.tmp / "tools" / "count_tokens.py").unlink()
         (self.tmp / "tools" / "test_count_tokens.py").unlink()
         code, out, err = run_check(self.tmp)
-        self.assertNotEqual(code, 0, f"a shrunken delivery passed: {out}")
-        # Counted from the delivery list, never typed: this number moves whenever a tool does.
-        self.assertIn(f"counted {len(build_kit.delivered_suites()) - 1}", err)
+        self.assertNotEqual(code, 0, f"a shrunken delivery passed: {out}\n{err}")
+        # Counted from the folder, never typed: this number moves whenever a suite does.
+        self.assertIn(f"counted {len(build_kit.repo_suites()) - 1}", err)
         for source in ("src/contract.md", "tools/build_kit.py", "README.md"):
             self.assertIn(source, err, "only some sources noticed the tool leaving")
 
@@ -252,7 +249,7 @@ class BuildKitTest(unittest.TestCase):
         already reported the delivery as fine.
         """
         edit(self.tmp, "tools/build_kit.py",
-             lambda t: t.replace('"run_suites.py"]', '"run_suites.py", "nie_geschrieben.py"]', 1))
+             lambda t: t.replace('"count_tokens.py"]', '"count_tokens.py", "nie_geschrieben.py"]', 1))
         code, out, err = run_check(self.tmp)
         self.assertNotEqual(code, 0, f"a list entry with no file passed: {out}")
         self.assertIn("nie_geschrieben.py: listed, and no such file", err)
@@ -267,10 +264,15 @@ class BuildKitTest(unittest.TestCase):
         """
         # Deleted rather than renamed inside tools/: a rename leaves an unaccounted file behind
         # and check_delivery_lists() would report that instead, which is a different subject.
+        # Its REPO_ONLY line goes too -- since 2026-07-31 that list is checked for existence, so
+        # leaving the entry behind would make the run red one guard earlier.
         (self.tmp / "tools" / "test_count_tokens.py").unlink()
+        edit(self.tmp, "tools/build_kit.py",
+             lambda t: t.replace('    "test_count_tokens.py": "suite for count_tokens.py '
+                                 '-- release verification",\n', "", 1))
         code, out, err = run_check(self.tmp)
-        self.assertNotEqual(code, 0, f"a tool without its suite passed: {out}")
-        self.assertIn("count_tokens.py: delivered, and no test_count_tokens.py ships with it", err)
+        self.assertNotEqual(code, 0, f"a tool without its suite passed: {out}\n{err}")
+        self.assertIn("count_tokens.py: delivered, and there is no tools/test_count_tokens.py", err)
 
     def test_an_exemption_for_something_not_delivered_is_refused(self):
         """Guard (b), the other half: SUITE_EXEMPT must not outlive what it excuses.
@@ -279,8 +281,8 @@ class BuildKitTest(unittest.TestCase):
         there. Three entries today, each with its reason; a fourth has to be defended.
         """
         edit(self.tmp, "tools/build_kit.py",
-             lambda t: t.replace('SUITE_EXEMPT = {\n',
-                                 'SUITE_EXEMPT = {\n    "laengst_weg.py": "no reason left",\n', 1))
+             lambda t: t.replace("SUITE_EXEMPT = {}",
+                                 'SUITE_EXEMPT = {"laengst_weg.py": "no reason left"}', 1))
         code, out, err = run_check(self.tmp)
         self.assertNotEqual(code, 0, f"a stale exemption passed: {out}")
         self.assertIn("laengst_weg.py: exempt from having a suite, and not in the kit", err)
@@ -342,11 +344,11 @@ class BuildKitTest(unittest.TestCase):
         better without one.
         """
         edit(self.tmp, "docs/how-it-works.md",
-             lambda t: t.replace("06_tools/run_suites.py", "06_tools/run_suite.py"))
+             lambda t: t.replace("06_tools/check_links.py", "06_tools/check_link.py"))
         code, out, err = run_check(self.tmp)
         self.assertNotEqual(code, 0, f"a docs page naming a missing tool passed: {out}")
-        self.assertIn("run_suite.py", err)
-        self.assertIn("not delivered", err)
+        self.assertIn("check_link.py", err)
+        self.assertIn("docs/how-it-works.md", err)
 
     def test_the_docs_are_not_read_for_number_claims(self):
         """The other half of guard (f), and the reason it is a half at all.
@@ -382,9 +384,15 @@ class BuildKitTest(unittest.TestCase):
         Undo recipe: delete the `orphans` block from check_prose_chain(). This case and the
         TOOLS_ORDER one below go green with the tool missing from the chain, and --check exits 0
         over a contract that never mentions it.
+
+        Since 2026-07-31 the docs pages are a chain source too, so the line has to go from both
+        or the tool is still commanded. That is one statement -- "nothing tells the user to run
+        it" -- written in the two places that tell the user anything, not two defects.
         """
         edit(self.tmp, "src/contract.md",
              lambda t: re.sub(r"^python 06_tools/check_freshness\.py.*\n", "", t, flags=re.M))
+        edit(self.tmp, "docs/how-it-works.md",
+             lambda t: re.sub(r"^python .*check_freshness\.py.*\n", "", t, flags=re.M))
         code, out, err = run_check(self.tmp)
         self.assertNotEqual(code, 0, f"a tool nothing runs passed: {out}")
         self.assertIn("check_freshness.py: ships, and no command line runs it", err)
@@ -423,13 +431,13 @@ class BuildKitTest(unittest.TestCase):
         # The stream block and the SUITE_EXEMPT line are here so this fixture keeps testing what
         # it says. Since 2026-07-31 a delivered script without either is refused by an earlier
         # guard, and the run would then be red about the fixture rather than about the chain.
-        # Exempt rather than given a suite on purpose: a tenth suite would move the counted
-        # number and make check_prose_claims() fire first instead.
+        # Exempt rather than given a suite on purpose: a suite file would move the counted number
+        # and make check_prose_claims() fire first instead.
         edit(self.tmp, "tools/build_kit.py",
-             lambda t: t.replace('SUITE_EXEMPT = {\n',
-                                 'SUITE_EXEMPT = {\n    "neues_werkzeug.py": "a fixture",\n', 1))
+             lambda t: t.replace("SUITE_EXEMPT = {}",
+                                 'SUITE_EXEMPT = {"neues_werkzeug.py": "a fixture"}', 1))
         edit(self.tmp, "tools/build_kit.py",
-             lambda t: t.replace('"run_suites.py"]', '"run_suites.py", "neues_werkzeug.py"]', 1))
+             lambda t: t.replace('"count_tokens.py"]', '"count_tokens.py", "neues_werkzeug.py"]', 1))
         code, out, err = run_check(self.tmp)
         self.assertNotEqual(code, 0, f"an uncalled new tool passed: {out}")
         self.assertIn("neues_werkzeug.py: ships, and no command line runs it", err)
@@ -461,28 +469,25 @@ class BuildKitTest(unittest.TestCase):
         self.assertIn("check_links.py", err)
         self.assertIn("classified twice", err)
 
-    def test_the_chain_check_reads_the_header_and_the_docs_as_well_as_the_contract(self):
-        """verify_setup.py appears in src/contract.md ZERO times, measured 2026-07-30.
+    def test_the_section_10_header_no_longer_carries_a_command_line(self):
+        """A pin over an absence, and the absence is what makes another test impossible.
 
-        It ships, its 14/14 is guarded in three places by the check above, and no line in the
-        contract ever runs it. A chain check reading the contract alone would report the guarded
-        tool as uninvoked -- and the reflex fix would be to add it to `not_invoked`, writing down
-        that nothing runs it while two other sources plainly do.
+        Until 2026-07-31 the header was the ONLY source naming `verify_setup.py` -- it appears
+        in src/contract.md zero times, measured 2026-07-30 -- and that made it provable that
+        check_prose_chain() reads the header and not just the contract. E3 took the suites and
+        the drivers out of the delivery, so the header stopped telling anyone to run anything:
+        it now says write the blocks, compile them, check the encoding. No `python x.py` at all.
 
-        Since 2026-07-31 there are three sources, not two: `docs/how-it-works.md` also names it.
-        So the test comes in two halves, and the first half is what proves the header is read at
-        all -- with the docs line gone and the header intact, the tool is still commanded.
+        The header stays in prose_sources() so a line added later is checked like any other. This
+        assertion is what tells you that day has arrived -- and on that day, write a real chain
+        case for it instead of relaxing this one. Until then, the source that proves the chain
+        reads more than the contract is `docs/`, in the misspelling case above.
         """
-        edit(self.tmp, "docs/how-it-works.md",
-             lambda t: t.replace("python <vault>/00_Global/06_tools/verify_setup.py", "(removed)"))
-        code, out, err = run_check(self.tmp)
-        self.assertEqual(code, 0, f"the header alone no longer covers the tool:\n{out}\n{err}")
-
-        edit(self.tmp, "tools/build_kit.py",
-             lambda t: t.replace("python <vault>/00_Global/06_tools/verify_setup.py", "(removed)"))
-        code, out, err = run_check(self.tmp)
-        self.assertNotEqual(code, 0, f"the header was not read as part of the chain: {out}")
-        self.assertIn("verify_setup.py: ships, and no command line runs it", err)
+        self.assertEqual(
+            build_kit.COMMAND_RE.findall(build_kit.HEADER), [],
+            "the SECTION 10 header names a script to run again. That is allowed -- but nothing "
+            "proves the chain check reads it any more, so add a case that removes the line and "
+            "requires the tool to be reported as uninvoked.")
 
     def test_a_literal_version_stamp_in_the_prose_is_refused(self):
         """A second kit-version line in the text goes stale on the next build, and a reader

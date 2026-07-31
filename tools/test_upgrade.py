@@ -162,7 +162,7 @@ class UpgradeTest(unittest.TestCase):
         told they have a local edit they never made.
 
         Undo recipe, re-measured on this machine 2026-07-31: in upgrade.py's classify(), read the
-        target with `encoding="utf-8"` again. test_upgrade 28/30 -- this case fails with
+        target with `encoding="utf-8"` again. test_upgrade 32/34 -- this case fails with
         `1 would be overwritten` where it expects `1 unchanged`, and the undecodable case goes
         with it, because dropping the replacement handler is part of the same reversal. The run
         stays exit 0 throughout, which is why nothing caught it before.
@@ -209,7 +209,7 @@ class UpgradeTest(unittest.TestCase):
         tool that no longer exists, and nothing in their folder explains why.
 
         Undo recipe, measured on this machine 2026-07-31: force `removed = []` in upgrade.py's
-        classify(), replacing the conditional expression. test_upgrade 25/30 -- this case, the
+        classify(), replacing the conditional expression. test_upgrade 29/34 -- this case, the
         cached-bytecode one, the already-gone one and the dry-run listing. The orphan then sits
         in the folder after --apply, which is the state before this change and the reason for it.
         """
@@ -239,7 +239,7 @@ class UpgradeTest(unittest.TestCase):
         Undo recipe, measured on this machine 2026-07-31: in classify(), take `removed` from the
         folder instead of the manifest --
         `sorted(p.name for p in TOOLS.glob("*.py") if p.name not in blocks and p.name != SELF)`.
-        test_upgrade 27/30. Three cases move, and they are worth reading together: this one
+        test_upgrade 31/34. Three cases move, and they are worth reading together: this one
         (the user's files are deleted), the no-manifest one (a folder that must not be touched
         at all is touched) and the already-gone one (the manifest stops driving anything). The
         folder and the manifest answer different questions, and the recipe makes the run answer
@@ -453,6 +453,71 @@ class UpgradeTest(unittest.TestCase):
         self.assertFalse((self.tools / "kit-manifest.txt").exists(),
                          "a kit with no blocks recorded an empty delivery")
 
+    # ------------------------------------- checking a folder that has no suites in it
+
+    def test_prove_checks_the_folder_as_it_stands(self):
+        """`--prove` is what replaced running the suites here, and it has to be usable alone.
+
+        The suites moved to the kit's repository, so a folder can no longer show that its guards
+        go red on bad input. What it can still show is that every script is whole -- it compiles
+        -- and that the one non-Python file parses. A truncated write lands there, and so does a
+        block that never arrived.
+        """
+        # A real tool folder always has one -- it is a delivered block -- and --prove is right to
+        # insist. The sandbox is otherwise the two files setUp writes.
+        (self.tools / "jobs.json").write_text('{"jobs": []}\n', encoding="utf-8", newline="\n")
+        code, out, err = run_upgrade(self.tools, "--prove")
+        self.assertEqual(code, 0, out + err)
+        self.assertIn("compiles", out)
+        self.assertIn("jobs.json", out + err)
+
+    def test_prove_goes_red_on_a_script_that_does_not_compile(self):
+        """The healthy control above proves it runs; this proves it can tell working from broken.
+
+        Undo recipe: drop the returncode check from prove()'s compileall branch. This case then
+        exits 0 over a folder holding a file Python cannot read.
+        """
+        (self.tools / "jobs.json").write_text('{"jobs": []}\n', encoding="utf-8", newline="\n")
+        (self.tools / "kaputt.py").write_text("def (\n", encoding="utf-8", newline="\n")
+        code, out, err = run_upgrade(self.tools, "--prove")
+        self.assertNotEqual(code, 0, f"a folder with a broken script passed:\n{out}\n{err}")
+        self.assertIn("FAIL", out + err)
+        self.assertIn("compiles", out + err)
+
+    def test_the_post_write_checks_run_from_the_code_that_was_just_written(self):
+        """upgrade.py rewrites itself, and the running process keeps the code it started with.
+
+        Measured on this machine 2026-07-31, crossing the release that moved the suites out of
+        the delivery: the folder came out exactly right -- nine files, thirteen correctly removed
+        -- and the run ended with `FAIL run_suites.py`, `FAIL acceptance.py` and
+        "restore it from git", because the OLD prove() went looking for the two files the new kit
+        had just correctly deleted. The worst possible advice, on a healthy folder.
+
+        The fixture is a stub upgrade.py that prints a marker for any argument. If the marker is
+        in the output, the checks were run by the code on disk rather than by the code in memory
+        -- which is the whole claim.
+        """
+        stub = 'import sys\nprint("STUB PROVE MARKER")\nsys.exit(0)\n'
+        kit = kit_file(self.tmp / "kit.md", {"upgrade.py": stub}, version="abcdef012345")
+        code, out, err = run_upgrade(self.tools, kit, "--apply")
+        self.assertEqual(code, 0, out + err)
+        self.assertIn("STUB PROVE MARKER", out,
+                      "the checks ran from the code in memory, not from the file just written")
+
+    def test_an_updated_upgrade_without_prove_is_named_rather_than_called_broken(self):
+        """Moving backwards to a kit older than `--prove` must not read as a failed update.
+
+        argparse exits 2 with "unrecognized arguments" there. Treating that as a broken folder
+        would tell a user to restore from git over an update that did exactly what it said.
+        """
+        stub = ('import sys\nprint("unrecognized arguments: --prove", file=sys.stderr)\n'
+                'sys.exit(2)\n')
+        kit = kit_file(self.tmp / "kit.md", {"upgrade.py": stub}, version="abcdef012345")
+        code, out, err = run_upgrade(self.tools, kit, "--apply")
+        self.assertEqual(code, 0, f"an older updater read as a broken folder:\n{out}\n{err}")
+        self.assertIn("without --prove", err)
+        self.assertIn("Nothing is wrong", err)
+
     # ------------------------------------- file operations that the environment refuses
 
     def test_a_kit_path_that_is_not_there_is_named_rather_than_traced(self):
@@ -559,7 +624,7 @@ class UpgradeTest(unittest.TestCase):
 
         Undo recipe, re-measured on this machine 2026-07-31: force `stale_stamp = False` in
         upgrade.py's main(), which is what returning early amounted to.
-        test_upgrade 27/30 -- this case, the unstamped one and the --apply one -- and
+        test_upgrade 31/34 -- this case, the unstamped one and the --apply one -- and
         verify_setup 13/14 at step 13. Before the assertions above were moved off the header
         line the same recipe moved exactly ONE test, and the difference between one and three
         is the whole reason this recipe gets run instead of reasoned about. Named rather than

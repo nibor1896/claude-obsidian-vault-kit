@@ -7,10 +7,12 @@ would change. Nothing is written without `--apply`.
     python upgrade.py <path-to-kit.md>              show what would change
     python upgrade.py <path-to-kit.md> --apply      write the changes, then prove them
     python upgrade.py --stamp <path-to-kit.md>      record which kit installed this folder
+    python upgrade.py --prove                       check this folder as it stands
 
-`--apply` reruns the suites and the acceptance driver afterwards and fails loudly if either
-goes red, because a tool folder that was updated but never re-proven is the state this kit
-exists to prevent.
+`--apply` reads every file it wrote back, compares it against the block it came from, then
+compiles the folder and parses `jobs.json` before reporting success. The suites that used to run
+here live in the kit's repository now and ran against these exact bytes before the release; what
+this checks is that they arrived whole.
 
 `--stamp` is the other end of the same path: it writes `kit-version.txt` and `kit-manifest.txt`, so
 a folder knows its own version and its own file list from the first install onwards instead of from
@@ -26,6 +28,7 @@ by an older kit has exactly one blind update cycle, and the run after it can act
 """
 
 import argparse
+import json
 import re
 import subprocess
 import sys
@@ -229,9 +232,9 @@ def classify(blocks: dict[str, str],
 
     Undo recipes, both re-measured on this machine 2026-07-31, and they are not symmetric:
 
-      - Set the encoding back to `utf-8` (dropping errors= with it): test_upgrade 28/30. BOTH
+      - Set the encoding back to `utf-8` (dropping errors= with it): test_upgrade 32/34. BOTH
         cases go red, because `utf-8` without a replacement handler raises on the bad byte too.
-      - Keep `utf-8-sig` and drop only `errors="replace"`: test_upgrade 29/30, and only
+      - Keep `utf-8-sig` and drop only `errors="replace"`: test_upgrade 33/34, and only
         `test_an_undecodable_file_is_named_rather_than_crashing_the_run` moves. That asymmetry is
         the measurement worth keeping -- it shows the BOM half and the crash half are two defects
         sharing one line, and fixing either alone leaves the other.
@@ -334,20 +337,72 @@ def remove_file(name: str) -> bool:
 
 
 def prove():
-    """Suites and acceptance, from the folder we just wrote."""
+    """What can still be proven about the folder we just wrote, on this machine.
+
+    IT USED TO RUN THE SUITES AND THE ACCEPTANCE DRIVER, AND THEY ARE NOT HERE ANY MORE
+    (2026-07-31). Both moved to the kit's repository, where they run over these exact bytes
+    before a release is published. Pretending otherwise would mean shipping 126 unit tests into
+    every vault so that an update could re-answer a question about code that did not change
+    between two kit files.
+
+    SAY WHAT THAT COSTS, BECAUSE IT IS A REAL LOSS: after an update this folder can no longer
+    show that its guards go RED on bad input. That claim now rests on the release, and on the
+    byte comparison in classify() plus the read-back in --apply, which together say the files
+    here are the files the kit shipped. What is left to check locally is that they are whole:
+    every script compiles, and the one non-Python file parses. A truncated write and a block
+    that never arrived both land here.
+    """
     ok = True
-    # No fixture count in the string: exit 0 already means every one behaved, and a literal
-    # here goes stale the moment a fixture is added.
-    for script, want in (("run_suites.py", "suites green"),
-                         ("acceptance.py", "checks behaved as specified")):
-        result = subprocess.run([sys.executable, str(TOOLS / script)],
-                                capture_output=True, cwd=str(TOOLS))
-        out = result.stdout.decode("utf-8", errors="replace")
-        first = next((l for l in out.splitlines() if want.split()[0] in l), out.strip()[:80])
-        state = "ok  " if result.returncode == 0 and want in out else "FAIL"
-        print(f"  {state} {script}: {first}")
-        ok = ok and state == "ok  "
+    result = subprocess.run([sys.executable, "-m", "compileall", "-q", str(TOOLS)],
+                            capture_output=True, cwd=str(TOOLS))
+    detail = (result.stdout + result.stderr).decode("utf-8", errors="replace").strip()
+    state = "ok  " if result.returncode == 0 else "FAIL"
+    print(f"  {state} every .py compiles{'' if result.returncode == 0 else ': ' + detail[:200]}")
+    ok = ok and result.returncode == 0
+
+    config = TOOLS / "jobs.json"
+    try:
+        json.loads(config.read_text(encoding="utf-8-sig"))
+        print(f"  ok   {config.name} parses")
+    except (OSError, ValueError) as exc:
+        print(f"  FAIL {config.name}: {exc}")
+        ok = False
     return ok
+
+
+def prove_from_disk() -> bool:
+    """Run the checks from the upgrade.py that is now ON DISK, not the one in memory.
+
+    THIS FILE REWRITES ITSELF AND THE RUNNING PROCESS KEEPS THE OLD CODE (2026-07-31). Python
+    read this module before the write; everything called afterwards is the previous version.
+    Measured on this machine while crossing the release that moved the suites out of the
+    delivery: the folder came out exactly right -- 9 files, 13 correctly removed, every check
+    green -- and the run ended with `FAIL run_suites.py`, `FAIL acceptance.py` and
+    "restore it from git", because the old prove() went looking for the two files the new kit
+    had just correctly deleted. The worst possible advice, on a healthy folder.
+
+    So when this file is one of the files written, the checks run in a fresh process, which
+    loads the new code. When it is not, the code in memory IS the code on disk and there is
+    nothing to re-exec for.
+
+    A kit older than this one has no `--prove`, and argparse then exits 2 with "unrecognized
+    arguments". That is named rather than reported as a broken folder -- it means the update
+    moved backwards, not that anything is wrong.
+    """
+    result = subprocess.run([sys.executable, str(TOOLS / SELF), "--prove"],
+                            capture_output=True, cwd=str(TOOLS))
+    out = result.stdout.decode("utf-8", errors="replace").rstrip()
+    err = result.stderr.decode("utf-8", errors="replace").rstrip()
+    if out:
+        print(out)
+    if result.returncode == 2 and "unrecognized arguments" in err:
+        print("  ??   the kit you moved to has an upgrade.py without --prove, so the folder "
+              "could not be checked from the new code. Nothing is wrong with what was written.",
+              file=sys.stderr)
+        return True
+    if err:
+        print(err, file=sys.stderr)
+    return result.returncode == 0
 
 
 def main(argv=None):
@@ -356,8 +411,13 @@ def main(argv=None):
     parser.add_argument("--apply", action="store_true", help="write the changes")
     parser.add_argument("--stamp", metavar="KITFILE",
                         help="write kit-version.txt from KITFILE's stamp line and do nothing else")
+    parser.add_argument("--prove", action="store_true",
+                        help="check this tool folder as it stands -- every script compiles and "
+                             "jobs.json parses -- and do nothing else")
     args = parser.parse_args(argv)
 
+    if args.prove:
+        return 0 if prove() else 1
     if args.stamp:
         return stamp(args.stamp)
     if not args.kit:
@@ -474,11 +534,12 @@ def main(argv=None):
         return 2
     written = len(changed) + len(added)
     print(f"\nwrote {written} files, removed {len(removed)}. Proving them:")
-    if not prove():
+    checked = prove_from_disk() if SELF in changed + added else prove()
+    if not checked:
         print("the updated folder does not pass its own checks -- restore it from git.",
               file=sys.stderr)
         return 1
-    print(f"updated to {new_version}, suites and acceptance green.")
+    print(f"updated to {new_version} · every script compiles and jobs.json parses.")
     return 0
 
 

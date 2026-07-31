@@ -2,8 +2,13 @@
 
 acceptance.py proves each guard reacts correctly to one bad input. This proves the whole
 sequence a setup actually performs still works when the steps run in order on one tree:
-folders, tools, notes, git, indexes, every check, the suites, the acceptance run, and a
-second index run that must leave the tree byte-identical and `git status` empty.
+folders, tools, notes, git, indexes, every check, the compile-and-parse pass a setup runs over
+the blocks it just wrote, and a second index run that must leave the tree byte-identical and
+`git status` empty.
+
+Repo-only since 2026-07-31, like the suites: it builds a throwaway tree from the DELIVERED
+files and checks the chain a user's setup performs. That is a question about this kit, answered
+before publishing, not something a vault re-answers.
 
     python verify_setup.py
     python verify_setup.py --repeat 10
@@ -13,6 +18,7 @@ every step passed in every pass.
 """
 
 import argparse
+import json
 import os
 import shutil
 import subprocess
@@ -215,20 +221,47 @@ def _s6(root):
         raise Failed(f"freshness did not report per-job freshness: {out!r} {err!r}")
 
 
-@step("7 suites green")
+@step("7 every delivered script in the tree compiles and jobs.json parses")
 def _s7(root):
-    _, out, _ = tool(root, "run_suites.py")
-    if "suites green" not in out:
-        raise Failed(f"unexpected suite output: {out!r}")
+    """WHAT THIS REPLACED, AND WHY IT IS NOT A DOWNGRADE (2026-07-31). This step used to run
+    `run_suites.py` from the built vault. That tool is not delivered any more -- the suites are
+    release verification, they run in the repository over the same bytes, and a vault does not
+    re-run unit tests over code that has not changed since setup.
+
+    What a built tree still has to show is that the blocks arrived whole, and these are exactly
+    the two checks SECTION 10 now tells the setup to run: compileall over the folder, and a
+    parse of the one non-Python file. A block truncated at a fence lands here.
+    """
+    tools = root / "00_Global" / "06_tools"
+    run([sys.executable, "-m", "compileall", "-q", str(tools)], cwd=root, label="compileall")
+    config = tools / "jobs.json"
+    try:
+        json.loads(config.read_text(encoding="utf-8-sig"))
+    except (OSError, ValueError) as exc:
+        raise Failed(f"jobs.json in the built tree does not parse: {exc}")
 
 
-@step("8 acceptance run correct")
+@step("8 the tool folder holds exactly what the kit delivers, and nothing else")
 def _s8(root):
-    _, out, _ = tool(root, "acceptance.py")
-    # No count in the string: acceptance.py exits non-zero unless every fixture behaved, and a
-    # literal here goes stale the moment a fixture is added.
-    if "checks behaved as specified" not in out:
-        raise Failed(f"acceptance did not report its verdict: {out!r}")
+    """The other half of the same move, and it has no earlier equivalent.
+
+    While the suites shipped, a file leaking into or out of the delivery was caught by the suites
+    themselves failing in the vault. With the folder down to nine files that check has to be
+    made directly, on the tree a setup actually produces -- otherwise a repo-side file sneaking
+    into SECTION 10 would show up nowhere until a user asked what it was for.
+
+    kit-version.txt and kit-manifest.txt are expected: step 1 runs `upgrade.py --stamp`, which
+    writes them. Anything else is the finding.
+    """
+    tools = root / "00_Global" / "06_tools"
+    written = {p.name for p in tools.iterdir()
+               if p.is_file() and p.suffix in (".py", ".json")}
+    expected = set(delivered_scripts())
+    extra = sorted(written - expected)
+    missing = sorted(expected - written)
+    if extra or missing:
+        raise Failed(f"the built tool folder does not match the delivery.\n"
+                     f"  unexpected: {extra}\n  missing: {missing}")
 
 
 @step("9 second index run is byte-identical")
@@ -325,7 +358,7 @@ def _s13(root):
     Undo recipe, to watch it go red: copy tools/ somewhere, delete the two `if args.stamp:` lines
     from upgrade.py's main(), and run both drivers there. Re-measured on this machine 2026-07-31
     -- verify_setup 13/14, failing in step 1 with `upgrade.py --stamp exited 2`, and test_upgrade
-    22/30. Both, which is the point of covering it in two places: the driver proves the setup
+    26/34. Both, which is the point of covering it in two places: the driver proves the setup
     does it, the suite proves the tool can.
 
     That 13/14 was 12/13 for one commit, because it was measured before step 14 existed and then
@@ -365,9 +398,15 @@ def _s13(root):
     #
     # Undo recipe, re-measured on this machine 2026-07-31: force `stale_stamp = False` in
     # upgrade.py's main(), which is what the early return amounted to.
-    # verify_setup 13/14 here, and test_upgrade 27/30.
-    if "ffffffffffff" not in out:
-        raise Failed(f"upgrade.py did not say the kit carries a version the folder does not:\n{out}")
+    # verify_setup 13/14 here, and test_upgrade 31/34.
+    # ON THE SENTENCE, NOT ON THE HEX (2026-07-31). This read `if "ffffffffffff" not in out`, and
+    # the header line `installed: … · kit file: ffffffffffff` always contains it -- so the
+    # assertion passed whether or not the tool ever compared the two. Caught by running the undo
+    # recipe below rather than by reading: it came back 14/14 where it had been 13/14, which is
+    # the step announcing it had stopped looking. test_upgrade.py carries the same warning about
+    # the same fixture, one level down.
+    if "stamp still reads" not in out or "record ffffffffffff" not in out:
+        raise Failed(f"upgrade.py did not name the stale stamp and the repair for it:\n{out}")
     if stamp.read_text(encoding="utf-8-sig").strip() != installed:
         raise Failed("upgrade.py rewrote kit-version.txt without --apply")
 

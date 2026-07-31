@@ -34,73 +34,89 @@ for _stream in (sys.stdout, sys.stderr):
         pass
 
 # Order matters for a human reading top to bottom: shared modules, then tools, then suites.
-SHARED = ["vault_paths.py", "_testkit.py", "jobs.json"]
+SHARED = ["vault_paths.py", "jobs.json"]
 TOOLS_ORDER = ["build_index.py", "write_command.py", "check_links.py", "check_duplicates.py",
-               "check_freshness.py", "count_tokens.py", "run_suites.py"]
-DRIVERS = ["acceptance.py", "verify_setup.py", "upgrade.py"]
+               "check_freshness.py", "count_tokens.py"]
+DRIVERS = ["upgrade.py"]
 
-# Files that live in tools/ and are deliberately not delivered, name -> why. The reason is the
-# entry: an exception without one cannot be told apart from a file somebody forgot to add.
+# Files that live in tools/ and are deliberately not delivered, name -> why.
+#
+# THIRTEEN OF THESE ARRIVED AT ONCE ON 2026-07-31, AND THE LIST IS THE POINT. The suites and the
+# three drivers used to ship: a vault ran 126 unit tests over tools that had not changed since
+# setup, every day, as step 6 of its own maintenance chain. They are release verification --
+# they answer "does this code work", which is a question about the kit, asked once, in the
+# repository, before anything is published. They are not maintenance, which is what the user's
+# chain is for. Nothing here is deleted; it moved to the side of the line it belongs on.
+#
+# The reason per entry is not decoration: an exception without one cannot be told apart from a
+# file somebody forgot to add, and check_delivery_lists() is what forces the move to be visible.
 REPO_ONLY = {
     "build_kit.py": "the generator itself -- it builds the kit, a vault does not have one",
-    "test_build_kit.py": "the generator's suite; delivered_suites() ships a suite only with its "
-                         "tool, and the tool it tests is not delivered either",
+    "test_build_kit.py": "the generator's suite, and the tool it tests is not delivered either",
+    "_testkit.py": "fixtures for the suites; with the suites in the repository it has no reader "
+                   "in a vault",
+    "run_suites.py": "the suite runner. With no suites delivered it would collect zero and say "
+                     "so, forever",
+    "acceptance.py": "release verification: it proves each guard goes RED on bad input. That is "
+                     "a question about this kit, answered once before publishing, not something "
+                     "a vault re-answers daily over code that has not changed",
+    "verify_setup.py": "release verification over the whole setup chain, on a throwaway tree. "
+                       "The user's own setup already ran that chain, on their tree, for real",
+    "test_build_index.py": "suite for build_index.py -- release verification",
+    "test_write_command.py": "suite for write_command.py -- release verification",
+    "test_check_links.py": "suite for check_links.py -- release verification",
+    "test_check_duplicates.py": "suite for check_duplicates.py -- release verification",
+    "test_check_freshness.py": "suite for check_freshness.py -- release verification",
+    "test_count_tokens.py": "suite for count_tokens.py -- release verification",
+    "test_vault_paths.py": "suite for vault_paths.py -- release verification",
+    "test_run_suites.py": "suite for run_suites.py, which is itself repo-only",
+    "test_upgrade.py": "suite for upgrade.py -- release verification",
 }
 
-# Delivered scripts that ship without a `test_X.py`, name -> why. Exactly these three, and every
-# new entry is a decision somebody has to defend in writing.
-SUITE_EXEMPT = {
-    "_testkit.py": "fixtures, not behaviour -- it has no assertions of its own, and every suite "
-                   "that imports it fails the moment it stops working",
-    "acceptance.py": "it IS a suite: twelve fixtures that each hand a guard bad input. A suite "
-                     "for the suite would assert the same twelve facts one level up",
-    "verify_setup.py": "the same, over the whole setup chain rather than one guard. Its fourteen "
-                       "steps are its assertions",
-}
+# Delivered scripts that have no `test_X.py` in the repository, name -> why. Empty since
+# 2026-07-31: the two entries that were here, acceptance.py and verify_setup.py, are not
+# delivered any more, so they need no exemption. An entry here is a decision to defend in
+# writing, and there is currently nothing to defend.
+SUITE_EXEMPT = {}
 
 
-def delivered_suites():
-    """The suites that ship: `test_X.py` where `X.py` is one of the scripts above.
+def repo_suites():
+    """Every `test_*.py` in tools/. Not one of them is delivered any more.
 
-    THE REPOSITORY HAS MORE SUITES THAN THE USER DOES, AND THAT IS NOT A DISAGREEMENT. The three
-    lists above are maintained by hand; the suites used to be picked up by a bare
-    `glob("test_*.py")`. So a suite written for a repo-side tool delivered *itself* into the
-    user's folder, without anyone deciding to, and then sat there testing a tool that is not
-    there. `test_build_kit.py` is the case that made this visible: build_kit.py is the generator,
-    it is not in any list above, and it is not something a vault needs.
+    THE NUMBER IN THE PROSE CHANGED FRAME ON 2026-07-31, NOT MEANING. It used to count the
+    suites the USER received, because the contract told them to run those suites as step 6 of
+    their own maintenance chain. With the suites in the repository, `n/m suites green` is a
+    statement about how this release was verified before it was published -- and the honest
+    value for that is what `python tools/run_suites.py` prints in a clone, which is this folder,
+    every suite in it, including the generator's own.
 
-    So: a suite ships only with its tool. In this repository `run_suites.py` reports one more
-    than the delivered file carries -- workshop, not product. **The `n/m suites` in the contract,
-    in HEADER and in README.md describe the PRODUCT**, which is why check_prose_claims() counts
-    this list and not the folder. Do not raise those numbers because the repo grew a suite.
+    Any narrower set would be a number no single command produces. That is the trap the whole
+    prose guard exists to prevent: a figure nobody can reproduce is an assertion.
 
     Undo recipes, both re-measured on this machine 2026-07-31:
 
-      1. Write an empty `tools/test_dummy.py` with no `dummy.py` beside it AND declare it in
-         REPO_ONLY. It must not appear in claude-obsidian-vault-kit.md and `--check` must stay
-         green -- the counted number does not move. Delete both afterwards. (Without the
-         REPO_ONLY line `--check` now goes red first, in check_delivery_lists(): since
-         2026-07-31 a file in tools/ that no list mentions is itself the defect.)
-      2. Drop `count_tokens.py` from TOOLS_ORDER and delete `tools/count_tokens.py` and
-         `tools/test_count_tokens.py`. The counted number falls by one and `--check` exits 1
-         against prose that still states the old one -- in all three sources at once, which is
-         what tells you a tool left rather than one sentence rotting.
+      1. Write an empty `tools/test_dummy.py` and declare it in REPO_ONLY. The counted number
+         rises by one and `--check` exits 1 against prose stating the old one, in all three
+         sources at once. Without the REPO_ONLY line it goes red one guard earlier, in
+         check_delivery_lists(). Delete both afterwards.
+      2. Delete `tools/count_tokens.py` and `tools/test_count_tokens.py` and drop
+         `"count_tokens.py"` from TOOLS_ORDER. The counted number falls by one and `--check`
+         exits 1 -- again in all three sources, which is what tells you a tool left rather than
+         one sentence rotting.
 
     Both recipes are also `test_build_kit.py`, which is where they run on every acceptance pass.
     """
-    shipped = set(SHARED + TOOLS_ORDER + DRIVERS)
-    return [path.name for path in sorted(TOOLS.glob("test_*.py"))
-            if path.name[len("test_"):] in shipped]
+    return [path.name for path in sorted(TOOLS.glob("test_*.py"))]
 
 
 def delivered_files():
     """Every file SECTION 10 writes into the user's tool folder, in reading order.
 
-    One list, asked by everything: the renderer, the round-trip verifier, the number the prose is
-    held to, and the tree verify_setup.py builds. Before this existed there were three counters
-    for one question and no run ever compared them.
+    One list, asked by everything: the renderer, the round-trip verifier and the tree
+    verify_setup.py builds. Before this existed there were three counters for one question and
+    no run ever compared them.
     """
-    return SHARED + TOOLS_ORDER + DRIVERS + delivered_suites()
+    return SHARED + TOOLS_ORDER + DRIVERS
 
 HEADER = """
 ---
@@ -109,9 +125,14 @@ HEADER = """
 
 Everything below is the finished implementation. **Write each block to disk exactly as it stands —
 byte for byte, same filename — into the vault's tool folder** (`<VaultRoot>/00_Global/06_tools/`,
-created in SECTION 3). Do not retype them from the contracts above, do not "improve" them while
-copying, and do not skip the suites: they are the only reason the numbers in SECTION 0 mean
-anything.
+created in SECTION 3). Do not retype them from the contracts above and do not "improve" them while
+copying.
+
+**The suites are not here, and that is deliberate.** They live in the kit's repository and were run
+there before this file was published — over exactly these bytes. A vault does not re-run unit tests
+over code that has not changed since setup; it runs the guards in SECTION 8 over notes that change
+every day. What you have to prove on this machine is that the blocks arrived intact, which is the
+three checks below.
 
 **Extract them; do not transcribe them.** The intended path is a short throwaway script that reads
 this file, cuts each fenced block out by the filename in its heading, and writes it to the tool
@@ -129,23 +150,16 @@ when it has run.
 - **`jobs.json` parses** — it is the only non-Python block, so no compile step covers it.
 - **No file carries a byte-order mark** — see below.
 
-Measured on Windows 11, Python 3.13, under PowerShell 5.1 **and** Git Bash: 9/9 suites green,
-12/12 acceptance checks correct, 14/14 end-to-end setup steps -- ten consecutive runs under each
-shell. Copy them and that measurement still applies to what you handed the user. Rewrite them and
-it does not.
+**How this release was verified, in its own repository, before this file existed:** on Windows 11,
+Python 3.13, under PowerShell 5.1 **and** Git Bash — 10/10 suites green, 12/12 acceptance checks
+correct, 14/14 end-to-end setup steps, ten consecutive runs under each shell, against these exact
+bytes. Copy them and that measurement still applies to what you handed the user. Rewrite them and it
+does not, and nothing in their folder can tell them.
 
 **Write them as UTF-8 without a byte-order mark.** `Set-Content -Encoding utf8` under PowerShell 5.1
 prepends a BOM, and a BOM in front of `import sys` is an invisible first character that some readers
 choke on. Use your file-writing tool, or Python. This cost a full round on one setup, and the error
 pointed at the wrong line.
-
-After writing them, prove it on this machine before you report anything:
-
-```
-python <vault>/00_Global/06_tools/run_suites.py       expect 9/9 suites green
-python <vault>/00_Global/06_tools/acceptance.py       expect 12/12 checks
-python <vault>/00_Global/06_tools/verify_setup.py     expect 14/14 steps
-```
 """
 
 
@@ -197,9 +211,10 @@ def check_prose_claims():
     sys.path.insert(0, str(TOOLS))
     import acceptance
     import verify_setup
-    # delivered_suites(), not the folder: the prose describes what the user receives, and this
-    # repository carries suites for its own tools that no vault ever gets.
-    counted = {"suites": len(delivered_suites()),
+    # repo_suites(), i.e. the folder: since 2026-07-31 no suite is delivered, so `n/m suites` is
+    # a statement about how this release was verified rather than about the user's folder -- and
+    # the only honest value for that is what `python tools/run_suites.py` prints in a clone.
+    counted = {"suites": len(repo_suites()),
                "acceptance checks": len(acceptance.FIXTURES),
                "end-to-end setup steps": len(verify_setup.STEPS)}
     # Prose only. The embedded suites contain strings like "0/2 suites" as test data, and counting
@@ -339,10 +354,6 @@ def check_prose_chain():
         than a new mechanism -- check_freshness.py already established the shape, down to the
         reason being mandatory text because JSON has no comments.
 
-    Suites are covered by run_suites.py rather than listed one by one. That is a list comparison,
-    not a semantic guess: run_suites.py collects exactly delivered_suites(), so if it ever leaves
-    the chain, all nine go with it and this check says so on the same run.
-
     WHAT IT DOES NOT CHECK: the ORDER of the chain. That check_freshness.py must run first is a
     promise about meaning, not a list comparison -- guarding it here would build a second truth
     about the order, next to the contract's own.
@@ -363,18 +374,37 @@ def check_prose_chain():
     commanded = chain_commands()
     uninvoked = declared_uninvoked()
 
-    # Direction 1, and it has no exceptions.
-    ghosts = sorted(commanded - delivered)
+    # Direction 1, and it is strict where the reader is Claude and looser where the reader is a
+    # human (2026-07-31). src/contract.md and the SECTION 10 header are instructions carried out
+    # on the user's machine: a name there that is not in their folder is a command they type and
+    # an error they get, no exceptions. docs/ describes the PROJECT, and since the suites moved
+    # to the repository the honest thing for those pages to say is how the release was verified
+    # -- which means naming tools that exist in tools/ and are deliberately not delivered.
+    # Forbidding that would push the text into README.md to satisfy a check, which is the guard
+    # shaping the prose instead of reading it.
+    #
+    # What both directions still refuse is a name that is nowhere: a typo, or a tool that left.
+    ghosts, docs_ghosts = [], []
+    for label, text in prose_sources():
+        unknown = set(COMMAND_RE.findall(text)) - delivered
+        if label.startswith("docs/"):
+            docs_ghosts += [(label, name) for name in sorted(unknown - set(REPO_ONLY))]
+        else:
+            ghosts += [(label, name) for name in sorted(unknown)]
     if ghosts:
         print(f"{OUT.name}: the prose tells the user to run something that is not delivered.\n"
-              + "\n".join(f"  a command line names {name}, which is not delivered" for name in ghosts)
+              + "\n".join(f"  {label} names {name}, which is not delivered"
+                          for label, name in ghosts)
               + "\n  The user types it and gets an error. Either the tool left the delivery lists "
                 "or the line has a typo.", file=sys.stderr)
         return 1
-
-    # `run_suites.py` collecting them is the chain, so they are covered exactly as long as it is.
-    if "run_suites.py" in commanded:
-        delivered -= set(delivered_suites())
+    if docs_ghosts:
+        print(f"{OUT.name}: a docs page names a file that exists nowhere in tools/.\n"
+              + "\n".join(f"  {label} names {name}, which is neither delivered nor repo-only"
+                          for label, name in docs_ghosts)
+              + "\n  A page may name a repo-only tool -- that is how the release verification is "
+                "described. It may not name a file that does not exist.", file=sys.stderr)
+        return 1
 
     both = sorted(name for name in delivered
                   if Path(name).stem in uninvoked and name in commanded)
@@ -437,35 +467,35 @@ def check_delivery_lists():
     return 0
 
 
-def check_suites_ship_with_their_tools():
-    """The contract's rule, checked in the direction the contract states it.
+def check_every_delivered_tool_has_a_suite():
+    """Every delivered tool has a `test_X.py` IN THE REPOSITORY.
 
-    delivered_suites() already holds the converse -- a `test_X.py` ships only when `X.py` does --
-    and that is what stops a repo-side suite installing itself into a vault. It says nothing
-    about a tool arriving WITHOUT a suite, which is the direction SECTION 0 actually promises,
-    and that direction was unguarded: measured 2026-07-31, acceptance.py and verify_setup.py had
-    no suite and nothing had ever mentioned it.
+    THE RULE CHANGED SHAPE ON 2026-07-31, NOT STRENGTH. It used to read "every delivered tool
+    ships with its suite", and that sentence stopped being checkable the moment no suite is
+    delivered -- left as it was it would have fired eight times over a delivery that is exactly
+    right. What still matters, and matters more now, is that nothing goes out untested: the user
+    can no longer run a suite over their copy, so the only place that question is ever answered
+    is here, before publishing.
 
-    They are exempt now, in writing, with the reason each -- they are suites themselves. An
-    exemption list is the honest form of "we thought about it"; silence is not.
+    So the lookup moved from delivered_files() to the folder. SUITE_EXEMPT shrank to nothing in
+    the same move: acceptance.py and verify_setup.py needed an exemption while they were
+    delivered, and they are not delivered any more.
 
     Undo recipe: move `tools/test_count_tokens.py` OUT of tools/. `--check` exits 1 with
-    `count_tokens.py: delivered, and no test_count_tokens.py ships with it`. Move it back. A
+    `count_tokens.py: delivered, and there is no tools/test_count_tokens.py`. Move it back. A
     rename inside the folder measures something else -- check_delivery_lists() runs first and
     reports the renamed file as unaccounted for.
     """
     delivered = [name for name in delivered_files() if name.endswith(".py")]
-    suites = set(delivered_suites())
     naked = sorted(name for name in delivered
-                   if not name.startswith("test_")
-                   and name not in SUITE_EXEMPT
-                   and f"test_{name}" not in suites)
+                   if name not in SUITE_EXEMPT and not (TOOLS / f"test_{name}").is_file())
     if naked:
-        print(f"{OUT.name}: a delivered tool ships without its suite.\n"
-              + "\n".join(f"  {name}: delivered, and no test_{name} ships with it"
+        print(f"{OUT.name}: a delivered tool has no suite in this repository.\n"
+              + "\n".join(f"  {name}: delivered, and there is no tools/test_{name}"
                           for name in naked)
-              + "\n  SECTION 0 states this as a doctrine rule. Write the suite, or add the tool "
-                "to SUITE_EXEMPT in build_kit.py with the reason it does not need one.",
+              + "\n  The user cannot run a suite over their copy any more, so this is the only "
+                "place the question is ever asked. Write the suite, or add the tool to "
+                "SUITE_EXEMPT in build_kit.py with the reason it does not need one.",
               file=sys.stderr)
         return 1
     unused = sorted(name for name in SUITE_EXEMPT if name not in delivered)
@@ -599,7 +629,7 @@ def all_guards():
     Delivery first: check_prose_claims() imports acceptance and verify_setup, so a list naming a
     file that is not there has to be caught before anything tries to import from that folder.
     """
-    return (check_delivery_lists() or check_suites_ship_with_their_tools()
+    return (check_delivery_lists() or check_every_delivered_tool_has_a_suite()
             or check_jobs_config_matches_code() or check_log_labels()
             or check_stream_reconfigure() or check_prose_claims() or check_prose_chain())
 
@@ -629,8 +659,6 @@ def render():
         parts.append(f"#### {title}\n")
         for name in group:
             parts.append(block(name))
-    for name in delivered_suites():
-        parts.append(block(name))
     parts.append("---\n\n*Generated by `tools/build_kit.py`. Edit the sources, never this file.*\n"
                  "*Source and newest published copy: "
                  "https://github.com/nibor1896/claude-obsidian-vault-kit*\n"
@@ -644,11 +672,25 @@ BLOCK_RE = re.compile(r"^### `([^`]+)`\n\n```(?:python|json)\n(.*?)\n```", re.S 
 
 
 def verify():
-    """Extract the scripts back out of the deliverable and run them.
+    """Extract the scripts back out of the deliverable and check what came out.
 
     Everything else in this repo tests the sources. This tests the artefact the user actually
     receives -- a fence that swallowed a line, a block that never made it in, an embedded copy
     that drifted from tools/. None of those are visible from the source side.
+
+    IT USED TO RUN THE SUITES FROM THE EXTRACTED FOLDER, AND SINCE 2026-07-31 IT CANNOT: they
+    are not in the deliverable any more. What replaces them is not a weaker version of the same
+    check, it is the same claim reached differently:
+
+      - Every extracted block is compared byte for byte against tools/, and that already happens
+        above. So "the delivered bytes are the repository's bytes" is established here.
+      - `python tools/run_suites.py` runs those same repository bytes, in the repository.
+
+    Those two together say exactly what running the suites from the extracted folder said. What
+    this function still has to add is the part byte-equality does NOT cover: that the extracted
+    file is a whole Python file rather than a truncated one that happens to match a truncated
+    source, and that the one non-Python block parses. So: compileall over the folder, and
+    json.loads over jobs.json -- the same two checks SECTION 10 now tells the setup to run.
     """
     if not OUT.exists():
         print(f"{OUT.name}: missing -- run build_kit.py", file=sys.stderr)
@@ -675,31 +717,32 @@ def verify():
             print(f"{OUT.name}: embedded copy differs from tools/: {drifted}", file=sys.stderr)
             return 1
 
-        # Substrings without counts on purpose. Exit 0 already means every check passed, and a
-        # literal "10/10" here is a number in a second place that goes stale the moment a
-        # fixture or a step is added -- which is the defect this file checks the prose for.
-        for script, want in (("run_suites.py", "suites green"),
-                             ("acceptance.py", "checks behaved as specified"),
-                             ("verify_setup.py", "steps every time")):
-            result = subprocess.run([sys.executable, str(work / script)],
-                                    capture_output=True, cwd=str(work))
-            out = result.stdout.decode("utf-8", errors="replace")
-            if result.returncode != 0 or want not in out:
-                print(f"{script} from the deliverable: exit {result.returncode}\n{out}\n"
-                      f"{result.stderr.decode('utf-8', errors='replace')}", file=sys.stderr)
-                return 1
-            print(f"  ok   {script} runs from the deliverable")
+        result = subprocess.run([sys.executable, "-m", "compileall", "-q", str(work)],
+                                capture_output=True)
+        if result.returncode != 0:
+            print(f"{OUT.name}: an extracted block does not compile\n"
+                  f"{result.stdout.decode('utf-8', errors='replace')}\n"
+                  f"{result.stderr.decode('utf-8', errors='replace')}", file=sys.stderr)
+            return 1
+        print(f"  ok   every extracted .py compiles")
+        try:
+            json.loads((work / "jobs.json").read_text(encoding="utf-8-sig"))
+        except (OSError, ValueError) as exc:
+            print(f"{OUT.name}: the extracted jobs.json does not parse ({exc}). It is the only "
+                  f"non-Python block, so compileall does not cover it.", file=sys.stderr)
+            return 1
+        print(f"  ok   the extracted jobs.json parses")
     finally:
         shutil.rmtree(work.parent, ignore_errors=True)
     failed = all_guards()
     if failed:
         return failed
-    print(f"{OUT.name}: {len(blocks)} blocks extract, match tools/, and run green · "
-          f"tools/ and the delivery lists agree · every delivered tool has its suite or its "
-          f"reason · jobs.json matches its copy in code · every log label matches its file · "
+    print(f"{OUT.name}: {len(blocks)} blocks extract, match tools/, compile and parse · "
+          f"tools/ and the delivery lists agree · every delivered tool has a suite in this "
+          f"repository · jobs.json matches its copy in code · every log label matches its file · "
           f"every runnable script fixes its streams · every count in the text matches the code · "
-          f"no stale stamp quoted in the prose · every command in the contract, the header and "
-          f"docs/ names a delivered tool, and every delivered tool is called or excused")
+          f"no stale stamp quoted in the prose · every command names a file that exists, and "
+          f"every delivered tool is called or excused")
     return 0
 
 

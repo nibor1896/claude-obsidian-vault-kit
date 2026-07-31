@@ -72,19 +72,22 @@ document in order. It is a contract, not a suggestion.
    with a "no" in it produces a vault whose own maintenance command does not exist. The tool never
    overwrites, so the only thing a yes could protect is a file it already refuses to touch.
 6. **The scripts are inside this file. Write them out; do not rewrite them.** SECTION 10 carries
-   every tool, every suite and the three runners verbatim — measured on Windows 11 with Python 3.13
-   under PowerShell 5.1 and Git Bash: **9/9 suites green, 12/12 acceptance checks and 14/14
-   end-to-end setup steps, in ten consecutive runs under each shell.** Write each block to disk
-   byte for byte. Retyping them from the contracts in SECTION 5 and SECTION 6 throws that
-   measurement away and reintroduces the defects those sections describe — every one was found the
-   expensive way. Change a shipped script only when the user's structure genuinely needs it, and
-   then rerun the suites and `acceptance.py` before reporting anything.
+   every tool the vault runs, verbatim. **The suites and the verification drivers are not in it**
+   — they live in the kit's repository, and they ran there over these exact bytes before this file
+   was published: on Windows 11 with Python 3.13, under PowerShell 5.1 and Git Bash, **10/10 suites
+   green, 12/12 acceptance checks and 14/14 end-to-end setup steps, in ten consecutive runs under
+   each shell.** That is a statement about the release, not a chore for this machine: a vault does
+   not re-run unit tests over code that has not changed since setup. Write each block to disk byte
+   for byte. Retyping them from the contracts in SECTION 5 and SECTION 6 throws that measurement
+   away and reintroduces the defects those sections describe — every one was found the expensive
+   way. **Change a shipped script and the measurement no longer describes what the user has, and
+   nothing in their folder can tell them so.** Say that out loud if you ever do it.
    **Tell the user how to update later.** The header of this file carries a line like
    `<!-- kit-version: … -->` (twelve hex characters). It is a hash of the contract and every shipped script, so
    two copies with the same line are the same kit and a different line means something changed.
    Point them at `upgrade.py`, which is shipped alongside the other tools: given a newer kit file it
-   lists what would be overwritten, writes nothing without `--apply`, and reruns the suites and the
-   acceptance driver afterwards. **Name where a newer file comes from** — the repository is in the
+   lists what would be overwritten, added and removed, writes nothing without `--apply`, and reads
+   every file back before it compiles the folder. **Name where a newer file comes from** — the repository is in the
    last lines of this file; a user holding only the `.md` has no other way to find out that a newer
    one exists. Say this once during setup -- a user who does not know an update path exists will not
    go looking for one. The stamp `upgrade.py` compares against is written in SECTION 8.
@@ -100,7 +103,8 @@ document in order. It is a contract, not a suggestion.
 
 - The folder tree from SECTION 3, with real folders on disk.
 - A generated index tree (SECTION 5) — root, project, category.
-- The shipped `tools/` folder copied into the vault, suites and all.
+- Every block from SECTION 10 written into the vault's tool folder — the guards, `upgrade.py` and
+  `jobs.json`. No suites: they are release verification and stay in the kit's repository.
 - The four starting pages named in SECTION 8 — and **no other notes**. Nothing invented.
 - Backup and git set up per SECTION 7.
 - **A `/vaultkit` command in `~/.claude/commands/`**, with the path it went to shown to the user.
@@ -581,9 +585,10 @@ denominator.
 
 ## SECTION 6 — The guards
 
-Each of these is a small script with one job, and each ships with a `test_*.py` in the same commit.
-Every suite needs at least one **failure-mode fixture** *and* one **healthy control** — a test that
-only ever sees good input cannot tell you the check still works.
+Each of these is a small script with one job, and each has a `test_*.py` beside it **in the kit's
+repository** — written in the same commit as the tool, and not delivered. Every suite needs at least
+one **failure-mode fixture** *and* one **healthy control**; a test that only ever sees good input
+cannot tell you the check still works.
 
 | Script | Job | Must refuse |
 |---|---|---|
@@ -591,7 +596,6 @@ only ever sees good input cannot tell you the check still works.
 | `check_links.py` | every `[[wikilink]]` resolves to a file | reporting `0 broken` when it scanned 0 files |
 | `check_duplicates.py` | notes whose content overlaps | being ignored — every hit gets a decision |
 | `check_freshness.py` | age of the last **healthy** run of each scheduled job | treating "no log" as "fine", or a job listed as both watched and on-demand as watched |
-| `run_suites.py` | discovers and runs every `test_*.py` | reporting green when it collected zero suites |
 | `count_tokens.py` | size of what was read, for cost | inventing a precision — output `exact` or `estimated` |
 | `write_command.py` | the `/vaultkit` command, with this vault's real paths in it | overwriting a command the user has edited, or writing one without naming the path |
 
@@ -983,8 +987,11 @@ python 06_tools/build_index.py --vault <Project>     # once per project
 python 06_tools/build_index.py --root  <VaultRoot>
 python 06_tools/check_links.py --vault <VaultRoot>
 python 06_tools/check_duplicates.py --vault <VaultRoot>
-python 06_tools/run_suites.py
 ```
+
+**There is no suite run in this chain, and that is deliberate.** The suites test the tools; the
+tools have not changed since setup, and they were tested in the kit's repository before the release
+that put them here. What changes every day is the notes, which is what every line above reads.
 
 **The freshness check goes first because every line below it writes to the run log.** Measured
 after them, it sees the side effect of this very chain and reports the jobs as fresh — including a
@@ -1037,7 +1044,6 @@ Index:     <n> entries in <m> categories        (exit 0 | defects: …)
 Links:     <n>/<m> resolve
 Duplicates: <n> flagged
 Freshness: <n>/<m> jobs fresh · <k> on demand · <u> unclassified
-Tests:     <n>/<m> suites green
 Commit:    <hash>
 Open:      <what is not done, AND what you did not measure>
 ```
@@ -1148,26 +1154,29 @@ resolves it (SECTION 5). Write it escaped, do not dodge the table.
 
 ---
 
-## SECTION 9 — Acceptance test: prove the guards react as specified
+## SECTION 9 — What each guard is specified to do, and how that was proven
 
-**Do not skip this, and do not report the setup as working before it passes.** Everything up to here
-proves the scripts run on clean input. That is the half that cannot fail. A guard is only worth
-having if it goes red on bad input, and the only way to know is to hand it bad input on *this*
-machine — not to reason about the code you just wrote.
+**This section is not a task. It is the specification the shipped guards were held to before this
+file was published, and it is here so a changed script can be measured against something.**
 
-**Run the shipped driver. Do not write your own.**
+Everything a setup does proves the scripts run on clean input. That is the half that cannot fail. A
+guard is only worth having if it goes **red on bad input**, and reasoning about the code is not
+evidence — so the kit's repository carries `acceptance.py`, which hands each guard one deliberately
+broken input and requires it to refuse. It ran before this release: **12/12 checks behaved as
+specified**, on Windows 11 with Python 3.13, under PowerShell 5.1 and Git Bash, ten passes each.
 
-```
-python <vault>/00_Global/06_tools/acceptance.py
-```
+**It is not in SECTION 10 and the user does not run it.** It builds and deletes throwaway vaults per
+fixture; nothing about a user's notes changes what it measures, so re-running it on their machine
+would re-answer a question about this kit's code with the same answer, daily. **If you change a
+shipped script, the table below is what your change has to keep true — and you cannot check that
+here.** Say so plainly rather than reporting a setup as verified.
 
-It builds a throwaway vault per fixture under the system temp directory, so it never touches the
-user's notes, and it takes its verdict from process exit codes and files on disk. Console text
-wraps at the terminal width and differs per shell, so **it never stands alone as evidence** — a
-fixture that only greps stdout passes a tool which prints the right sentence and does the wrong
-thing. **Where the message itself is the specified behaviour, the message is what gets checked** —
-in addition to the exit code, never instead of it. Three kinds of row below are that case, and the
-third is easy to forget:
+The driver takes its verdict from process exit codes and files on disk. Console text wraps at the
+terminal width and differs per shell, so **it never stands alone as evidence** — a fixture that only
+greps stdout passes a tool which prints the right sentence and does the wrong thing. **Where the
+message itself is the specified behaviour, the message is what gets checked** — in addition to the
+exit code, never instead of it. Three kinds of row below are that case, and the third is easy to
+forget:
 
 - the ones that require the run to **name the file**,
 - the ones that require it to **show a denominator**,
@@ -1176,10 +1185,9 @@ third is easy to forget:
   nothing but the output can settle.
 
 "It is reported" is the requirement, and a guard that goes red without saying which file has not
-met it. The shipped driver reads output only where a row below asks it to; fixture 9 carries the
-reasoning in its docstring. Expect
-`12/12 checks behaved as specified`. Anything less is a defect in a script, not in the expectation.
-`--repeat 10` runs ten full passes; use it after any change to a guard.
+met it. The driver reads output only where a row below asks it to; fixture 9 carries the reasoning
+in its docstring. Anything short of `12/12 checks behaved as specified` is a defect in a script,
+not in the expectation.
 
 The table below is what the driver checks, and it is the specification a changed script must still
 meet. **Fixtures 0, 9 and 11 require green; every other row requires red** — the healthy control, a
@@ -1204,34 +1212,23 @@ the summary with it.
 | 11 | run `write_command.py` twice against a vault, hand-editing the command in between, then once more against a file of the same name it did not write | the file appears, spells `--root` and `--vault` as the two different things they are, the run **names it on stdout**; the second run writes nothing and **says nothing**; the foreign file is **named on stderr with a non-zero exit** and is not touched | a tool that writes into a config folder without naming it — the destination can be outside the vault, which is the one place operating rule 5 forbids anything quiet — or, worse, one that returns 0 over a command it never wrote, so the setup reports `/vaultkit` ready while someone else's file holds the name |
 
 The driver leaves nothing behind — every fixture vault lives under the system temp directory and is
-deleted in a `finally` block. After the run, `git status --porcelain` in the real vault must still be
-empty; if it is not, something wrote outside the throwaway tree and that is the finding.
+deleted in a `finally` block. It was run under **every shell**, not just one: on Windows that means
+PowerShell *and* Git Bash, which is where the encoding defect in SECTION 6 shows up and is invisible
+from inside a single shell.
 
-**Run the suites under every shell the user has**, not just the one you happen to be in. On Windows
-that means PowerShell *and* Git Bash. This is where the encoding defect in SECTION 6 shows up, and it
-is invisible from inside a single shell.
+### What this means for the vault you are setting up
 
-Report it like this, one line per check, and **name any check you did not run**:
-
-```
-Acceptance: 12/12 checks behaved as specified (<n> red on bad input, <n> green on allowed input)
-            (or) 10/12 — #5 non-ASCII filename NOT caught, #9 not run
-```
-
-If a check does not behave as specified, the generated script is wrong — fix the script, not the
-expectation. A guard that passes bad input is worse than no guard, because it will be cited as
-evidence.
-
-### Write the acceptance run into the vault, and repeat it after every script change
-
-Two rules that make this a check rather than a ceremony:
-
-- **The run belongs in the vault as `03_technical_docs/acceptance-test.md`**, with each fixture, the
-  command, and the required behaviour — not only in the chat where it was performed. A one-off that
-  lives in a conversation cannot be repeated by whoever inherits the vault.
-- **Any change to a guard invalidates the last acceptance result.** Fixed a script after the run?
-  Then the run is over and the number is no longer true — repeat all of it, not the affected check.
-  Saying "10/10" after editing two tools is quoting a measurement of code that no longer exists.
+- **Write the specification into the vault as `03_technical_docs/acceptance-test.md`** — the table
+  above, each fixture and the behaviour it requires, plus the sentence that it was measured in the
+  kit's repository rather than here. Whoever inherits the vault then knows what the guards promise
+  and where that promise was tested. A specification that lives only in a conversation cannot be
+  used by anyone.
+- **If a guard is ever changed on this machine, the release measurement stops describing it.** There
+  is no driver in the tool folder to re-run, so the honest report is "changed, and no longer covered
+  by the measurement quoted in SECTION 0" — never a repeated number. Quoting a figure measured
+  against code that no longer exists is the failure this whole section is written to prevent.
+- **A guard that passes bad input is worse than no guard**, because it will be cited as evidence.
+  Fix the script against the table; do not adjust the expectation.
 
 ---
 

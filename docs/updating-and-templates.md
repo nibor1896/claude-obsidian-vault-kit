@@ -148,9 +148,35 @@ stamp **last**. The stamp is what a later run reads to decide it has nothing to 
 died anywhere before it leaves a folder whose next `--apply` recomputes the same plan and finishes
 it. Nothing you can interrupt leaves a state the next run cannot get out of.
 
-Then it **reruns the suites and the acceptance driver**. If either goes red it says so and fails: a
-tool folder that was updated but never re-proven is the state this kit exists to prevent. Restore
-from git if that happens — which is one of the reasons the vault is a git repository.
+Then it **compiles every script it just wrote and parses `jobs.json`**. If either fails it says so
+and exits non-zero: a tool folder that was updated but never re-checked is the state this kit exists
+to prevent. Restore from git if that happens — which is one of the reasons the vault is a git
+repository.
+
+It used to run the suites here instead, and it cannot: they are not in your folder. They live in the
+kit's repository and ran there, over the exact bytes the new kit file carries, before it was
+published. **Name what that costs:** after an update your folder can no longer demonstrate that its
+guards go red on bad input. That claim rests on the release plus the byte-for-byte comparison the
+updater does — it reads every file back before it removes anything — not on something you can re-run
+here.
+
+You can check the folder at any time without an update:
+
+```
+python <VaultRoot>/00_Global/06_tools/upgrade.py --prove
+```
+
+### If your update ended in `FAIL run_suites.py`
+
+`upgrade.py` rewrites itself, and the process doing that keeps the code it started with. So an
+update **from a kit older than the one that removed the suites** finishes by running the *old*
+checks, which go looking for `run_suites.py` and `acceptance.py` — the two files the new kit just
+correctly deleted. The run then prints `restore it from git`, which is exactly the wrong advice on
+a folder that is in perfect shape.
+
+This happens once, on that one crossing, and never again: the updater now runs its post-write
+checks in a fresh process so the new code does the checking. If you saw it, run the `--prove` line
+above — that is the same check, from the code you now have.
 
 ### If your folder was installed before manifests existed
 
