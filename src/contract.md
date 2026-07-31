@@ -888,13 +888,23 @@ It writes
 
 ```
 <VaultRoot>/00_Global/06_tools/kit-version.txt
+<VaultRoot>/00_Global/06_tools/kit-manifest.txt
 ```
 
-whose whole content is the twelve hex characters from the `<!-- kit-version: … -->` comment on
-line 1 of this file, plus a newline. UTF-8, no BOM, nothing else in the file — no date, no label,
-no sentence around it; `upgrade.py` reads the file and strips it, and anything else in there
-becomes part of the version. `--stamp` writes that one file and touches nothing else; it needs no
-`--apply`.
+The first one's whole content is the twelve hex characters from the `<!-- kit-version: … -->`
+comment on line 1 of this file, plus a newline. UTF-8, no BOM, nothing else in the file — no date,
+no label, no sentence around it; `upgrade.py` reads the file and strips it, and anything else in
+there becomes part of the version. **It stays one line forever**: every `upgrade.py` already
+installed anywhere reads the whole file and compares it against twelve characters, so a second line
+in it would break the update path at exactly the folders an update exists to rescue. That is why
+the file list went into a second file beside it instead.
+
+`kit-manifest.txt` is that list — one filename per line, sorted, every file this kit delivers. It is
+what makes removal safe: a later kit that no longer carries a script can delete it, because the
+manifest says this kit brought it. Anything **not** in that list is the user's own — their tools,
+their `runs.log`, a `jobs.json` they extended — and is never a candidate for removal.
+
+`--stamp` writes those two files and touches nothing else; it needs no `--apply`.
 
 **Do not type those twelve characters yourself**, even though you can see them. They already exist
 verbatim in a file on disk, which makes copying them mechanical work — operating rule 7. If the kit
@@ -906,6 +916,14 @@ This is the value the entire update path compares against. `upgrade.py` prints
 `installed: unknown` — so a user cannot tell an outdated tool folder from a current one, which is
 the one question the update path exists to answer. Nothing else writes it at setup time:
 `upgrade.py` writes it again when it applies an update, i.e. from the *second* version onwards.
+
+**A folder installed before manifests existed has exactly one blind update cycle**, and that is a
+promise rather than a bug. Such a folder has no `kit-manifest.txt`, so nothing on the machine knows
+what the older kit delivered — and guessing, by treating every script in the folder as the kit's,
+would delete the user's own work on the first update. So the first `upgrade.py … --apply` there
+removes nothing, says why in as many words, and records a manifest on its way out. The update after
+it can remove what a newer kit drops. Say this to the user if their folder is in that state; a run
+that removed nothing without explaining itself looks exactly like a run with nothing to remove.
 
 ### Write the `/vaultkit` command
 

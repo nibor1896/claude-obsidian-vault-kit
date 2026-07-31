@@ -139,7 +139,7 @@ class BuildIndexTest(unittest.TestCase):
         """#15. Recipe for the failure without the fix: delete the `declared = ...` assignment
         AND the `if declared and ...` block under it from collect_entries in build_index.py --
         cutting only the assignment leaves an orphaned defects.add() and measures something
-        else. Re-measured that way on this machine 2026-07-31 -- 31 of 32 tests pass and this
+        else. Re-measured that way on this machine 2026-07-31 -- 32 of 33 tests pass and this
         one fails with `AssertionError: 0 != 1`: the run exits 0, says nothing, and indexes the
         note under ProjektEins while its frontmatter goes on claiming Homelab. acceptance.py
         drops to 11/12 in the same state. The asymmetry is what made it hard to see: agreement
@@ -275,7 +275,7 @@ class BuildIndexTest(unittest.TestCase):
         #
         # Recipe, so the number below stays reproducible: copy tools/ somewhere, add the five
         # lines back to template_text() in vault_paths.py, run `python -m unittest
-        # test_build_index` there. Measured on this machine 2026-07-31 -- 31/32, failing here
+        # test_build_index` there. Measured on this machine 2026-07-31 -- 32/33, failing here
         # and nowhere else.
         for field in ("updated:", "issues:", "generator:", "retired:", "stale:"):
             self.assertNotIn(field, text)
@@ -298,7 +298,7 @@ class BuildIndexTest(unittest.TestCase):
         """_templates sits at the vault root, and a directory at the vault root is a project.
 
         Recipe for the failure without the exemption: drop TEMPLATES_DIR from SKIP_DIRS in
-        vault_paths.py and rerun. Re-measured on this machine 2026-07-31 -- 30/32 here, 11/12 in
+        vault_paths.py and rerun. Re-measured on this machine 2026-07-31 -- 31/33 here, 11/12 in
         acceptance.py and 13/14 in verify_setup.py. The run then reports six `created
         _templates/<category>` lines and writes a `TEMPLATE - _templates.md` for the folder it
         just mistook for a project.
@@ -392,6 +392,34 @@ class BuildIndexTest(unittest.TestCase):
                 f"{folder} was abandoned after an unrelated file could not be written")
         self.assertTrue((self.project / project_index_name(self.project)).exists())
         # And the run said so where silence would have read as "did not run".
+        log = (self.vault / RUN_LOG_RELPATH).read_text(encoding="utf-8")
+        self.assertIn("build_index", log)
+        self.assertIn("defects", log)
+
+    def test_a_template_that_cannot_be_written_is_a_defect_and_the_run_still_logs(self):
+        """The twin of the unwritable index, and it sat one function further along.
+
+        write_templates() runs at the very end of build_root(), so an OSError here took the run
+        down after a complete index tree had been written -- and still left no line in runs.log.
+        A note template that could not be created is worth a defect; it is not worth losing the
+        record that the run happened at all.
+
+        The fixture is a FILE where `_templates` belongs, so `mkdir()` raises FileExistsError
+        for every user on every platform. The real-world causes are the same ones as for the
+        index: a read-only folder, a sync client holding it, a name already taken.
+
+        Undo recipe: remove the try/except from write_templates() in build_index.py. This case
+        then fails with a FileExistsError traceback, and the log assertion goes with it.
+        """
+        (self.vault / TEMPLATES_DIR).write_text("not a folder\n", encoding="utf-8", newline="\n")
+        code, out, err = run_tool("build_index.py", "--root", self.vault)
+        self.assertEqual(code, 1)
+        self.assertIn(template_name("ProjektEins"), err)
+        self.assertIn("template not written", err)
+        self.assertNotIn("Traceback", err)
+        # The index tree it was writing on the way there is still complete.
+        self.assertTrue((self.vault / root_index_name(self.vault)).exists())
+        self.assertTrue((self.project / project_index_name(self.project)).exists())
         log = (self.vault / RUN_LOG_RELPATH).read_text(encoding="utf-8")
         self.assertIn("build_index", log)
         self.assertIn("defects", log)

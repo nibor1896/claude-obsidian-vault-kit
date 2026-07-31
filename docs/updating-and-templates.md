@@ -94,19 +94,27 @@ folder as a starting point, expect a flagged pair. That is the check working, no
 
 ## Part 2 — Updating the tools from a newer kit
 
-### The version stamp
+### The version stamp and the file list
 
 Your tool folder holds `kit-version.txt`, twelve hex characters naming the kit file the folder came
-from. It is written at install time by:
+from, and `kit-manifest.txt`, one line per file that kit delivered. Both are written at install time
+by:
 
 ```
 python <VaultRoot>/00_Global/06_tools/upgrade.py --stamp <path to the kit file>
 ```
 
-The value is read out of the kit file's own first line, never typed by hand. A kit file with no
+The version is read out of the kit file's own first line, never typed by hand. A kit file with no
 version line is **refused** rather than recorded as `unversioned` — that string would then be
 compared against every future kit and never match, which is a wrong answer wearing a right answer's
 clothes.
+
+The manifest is the shorter story and it does one job: it says which files in that folder are the
+kit's. Everything else in there — a tool you wrote, `runs.log`, a `jobs.json` you extended — is
+yours, and an update never touches it. Two files rather than one, because `kit-version.txt` has to
+stay a single line: every copy of `upgrade.py` already installed anywhere reads that whole file and
+compares it against twelve characters, so growing it would break the update path in exactly the
+folders an update is for.
 
 ### Seeing what a newer kit would change
 
@@ -117,20 +125,42 @@ python <VaultRoot>/00_Global/06_tools/upgrade.py <path to the newer kit file>
 ```
 
 It prints the version you have against the version in the file, then lists every script that would
-be overwritten and every one that would be added. **Nothing is written without `--apply`.** Local
-edits to the tools are overwritten by an update, which is why they are listed first, by name: that
-makes it a decision rather than a surprise.
+be overwritten, every one that would be added, and every one that would be **removed**. **Nothing is
+written and nothing is deleted without `--apply`.** Local edits to the tools are overwritten by an
+update, which is why they are listed first, by name: that makes it a decision rather than a
+surprise.
+
+Removal exists because a kit that stops shipping a script would otherwise leave it in your folder
+forever — and an orphaned `test_something.py` is not inert. The suite runner collects `test_*.py`
+by name, so it picks the orphan up, the import fails, and your vault reports red permanently over a
+tool that is no longer there. Only files named in `kit-manifest.txt` are ever removed, and
+`upgrade.py` never removes itself.
 
 ```
 python <VaultRoot>/00_Global/06_tools/upgrade.py <newer kit file> --apply
 ```
 
-`--apply` writes the files, updates the stamp, and then **reruns the suites and the acceptance
-driver**. If either goes red it says so and fails: a tool folder that was updated but never
-re-proven is the state this kit exists to prevent. Restore from git if that happens — which is one
-of the reasons the vault is a git repository.
+`--apply` works in a fixed order, and the order is the reason a failed update is always
+recoverable: it writes each file through a temporary name and one atomic replace, reads every
+written file back and compares it against the block it came from, **stops there if anything
+disagrees — before deleting anything**, then removes, then records the manifest, and writes the
+stamp **last**. The stamp is what a later run reads to decide it has nothing to do, so a run that
+died anywhere before it leaves a folder whose next `--apply` recomputes the same plan and finishes
+it. Nothing you can interrupt leaves a state the next run cannot get out of.
 
-### Three things it now tells you that it used to swallow
+Then it **reruns the suites and the acceptance driver**. If either goes red it says so and fails: a
+tool folder that was updated but never re-proven is the state this kit exists to prevent. Restore
+from git if that happens — which is one of the reasons the vault is a git repository.
+
+### If your folder was installed before manifests existed
+
+It has no `kit-manifest.txt`, so nothing on your machine knows which files that older kit brought.
+The updater will not guess — guessing means treating every script in the folder as the kit's, and
+that deletes tools you wrote. So the **first** `--apply` on such a folder removes nothing, says so
+in as many words, and writes a manifest on its way out. The update after it can remove normally.
+Exactly one cycle is blind, and it tells you it is.
+
+### Four things it now tells you that it used to swallow
 
 **A release that changed no script still moves the version.** If a new kit only edits the contract
 or the setup instructions, every script on your disk is already current — and the updater used to
@@ -155,6 +185,12 @@ the ones behind it are still written, and **the stamp is deliberately left alone
 part old and part new must not carry a version claiming the update finished. Fix the cause and rerun
 `--apply`. These runs exit with code `2`, which means the environment refused a file operation;
 code `1` still means what it did, "written, but it does not pass its own checks".
+
+**A file that left the kit is gone from your folder, not left behind.** A script the new kit no
+longer carries used to stay on disk with nothing to say it was obsolete. If it was a `test_*.py`,
+the suite runner went on collecting it and your vault reported red over a tool that no longer
+existed. It is now listed as `remove` and deleted, along with any cached bytecode — but only if
+`kit-manifest.txt` says this kit brought it.
 
 ---
 

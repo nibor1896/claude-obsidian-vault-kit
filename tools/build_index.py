@@ -411,7 +411,7 @@ def build_project(vault_root, project_dir, defects):
     return total_entries, len(category_rows), created, adopted
 
 
-def write_templates(vault_root, projects):
+def write_templates(vault_root, projects, defects):
     """One note template per project under <VaultRoot>/_templates/. Returns what it created.
 
     CREATED WHEN MISSING, NEVER OVERWRITTEN. A template exists to be edited -- a user adds the
@@ -419,6 +419,12 @@ def write_templates(vault_root, projects):
     without saying so. The doctrine rule that generated files are not hand-edited covers the
     index tree; _templates is deliberately not part of it, which is why it is written once and
     then left alone.
+
+    THE SAME FAILURE MODE write_if_changed() HAD, AND THE SAME REPAIR. This runs at the very end
+    of build_root(), so a read-only `_templates` folder raised OSError here and took the run down
+    on the last step before log_run() -- a complete index tree, and still not one line in
+    runs.log saying the run happened. A missing template is a defect, not a reason to lose the
+    record of everything that did work.
     """
     folder = Path(vault_root).resolve() / TEMPLATES_DIR
     written = []
@@ -426,8 +432,12 @@ def write_templates(vault_root, projects):
         target = folder / template_name(project.name)
         if target.exists():
             continue
-        folder.mkdir(parents=True, exist_ok=True)
-        target.write_text(template_text(project.name), encoding="utf-8", newline="\n")
+        try:
+            folder.mkdir(parents=True, exist_ok=True)
+            target.write_text(template_text(project.name), encoding="utf-8", newline="\n")
+        except OSError as exc:
+            defects.add(target.name, f"note template not written ({exc})")
+            continue
         written.append(target.name)
     return written
 
@@ -456,7 +466,7 @@ def build_root(vault_root, defects):
     lines.append(f"_{len(projects)} projects · {total_entries} entries in {total_categories} categories._")
     lines.append("")
     write_if_changed(vault_root / root_index_name(vault_root), "\n".join(lines), defects)
-    templates = write_templates(vault_root, projects)
+    templates = write_templates(vault_root, projects, defects)
     return len(projects), total_entries, total_categories, created_all, adopted_all, templates
 
 

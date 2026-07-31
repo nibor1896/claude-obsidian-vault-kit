@@ -323,15 +323,17 @@ def _s13(root):
     out of a file the tool parsed -- step 12's shape, not step 13's old one.
 
     Undo recipe, to watch it go red: copy tools/ somewhere, delete the two `if args.stamp:` lines
-    from upgrade.py's main(), and run both drivers there. Measured on this machine 2026-07-29 --
-    verify_setup 13/14, failing in step 1 with `upgrade.py --stamp exited 2`, and test_upgrade
-    7/9. Both, which is the point of covering it in two places: the driver proves the setup does
-    it, the suite proves the tool can.
+    from upgrade.py's main(), and run both drivers there. Re-measured on this machine 2026-07-31
+    -- verify_setup 13/14, failing in step 1 with `upgrade.py --stamp exited 2`, and test_upgrade
+    20/28. Both, which is the point of covering it in two places: the driver proves the setup
+    does it, the suite proves the tool can.
 
     That 13/14 was 12/13 for one commit, because it was measured before step 14 existed and then
-    typed rather than re-run. Nothing catches that: check_prose_claims() reads the contract, the
-    SECTION 10 header and README.md, and never the docstrings of the scripts it embeds. A number
-    in here is only as good as the last time somebody actually ran the recipe above.
+    typed rather than re-run. The test_upgrade half then sat at `7/9` through two commits that
+    grew that suite, for the same reason, until it was re-run on 2026-07-31. Nothing catches
+    this: check_prose_claims() reads the contract, the SECTION 10 header and README.md, and never
+    the docstrings of the scripts it embeds. A number in here is only as good as the last time
+    somebody actually ran the recipe above.
     """
     tools = root / "00_Global" / "06_tools"
     stamp = tools / "kit-version.txt"
@@ -361,13 +363,26 @@ def _s13(root):
     # stamp, so a release that changed no script left the folder on the previous version and
     # said nothing. A new step would have moved 14/14 in three sources for no new fixture.
     #
-    # Undo recipe, measured on this machine 2026-07-30: replace the stamp comparison in
-    # upgrade.py's main() with `if False:`, which is what the early return amounted to.
-    # verify_setup 13/14 here, and test_upgrade 12/15.
+    # Undo recipe, re-measured on this machine 2026-07-31: force `stale_stamp = False` in
+    # upgrade.py's main(), which is what the early return amounted to.
+    # verify_setup 13/14 here, and test_upgrade 25/28.
     if "ffffffffffff" not in out:
         raise Failed(f"upgrade.py did not say the kit carries a version the folder does not:\n{out}")
     if stamp.read_text(encoding="utf-8-sig").strip() != installed:
         raise Failed("upgrade.py rewrote kit-version.txt without --apply")
+
+    # SHARPENED AGAIN 2026-07-31, STILL NOT A NEW STEP. The stand-in kit build_vault() stamps
+    # from carries no fenced blocks, so `--stamp` recorded no file list -- which makes this tree
+    # the exact shape of a folder installed before manifests existed. That is the one state
+    # where removal has to refuse to act: nothing here knows what the older kit delivered, and
+    # guessing would delete the user's own tools on their first update. Asserted on the two
+    # things that distinguish "refused and said so" from "had nothing to remove", because
+    # without the sentence those two are the same output.
+    if "0 would be removed" not in out:
+        raise Failed(f"upgrade.py did not report a removal count at all:\n{out}")
+    if "kit-manifest.txt" not in out:
+        raise Failed(f"upgrade.py removed nothing and did not say it has no file list to go on "
+                     f"-- silence there reads as 'nothing to remove':\n{out}")
 
 
 @step("14 a /vaultkit command is written once, carries this vault's own paths, and is left alone")

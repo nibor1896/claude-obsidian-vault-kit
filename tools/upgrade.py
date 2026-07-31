@@ -12,11 +12,17 @@ would change. Nothing is written without `--apply`.
 goes red, because a tool folder that was updated but never re-proven is the state this kit
 exists to prevent.
 
-`--stamp` is the other end of the same path: it writes `kit-version.txt` and nothing else, so a
-folder knows its own version from the first install onwards instead of from the first update.
+`--stamp` is the other end of the same path: it writes `kit-version.txt` and `kit-manifest.txt`, so
+a folder knows its own version and its own file list from the first install onwards instead of from
+the first update.
 
 Local edits are overwritten. They are listed first, by name, so that is a decision and not a
 surprise.
+
+A file the new kit no longer carries is REMOVED, and `kit-manifest.txt` is the only thing that
+makes that safe: it is the list of what this kit delivered, so what the user wrote themselves is
+never a candidate. Without a manifest nothing is removed and the run says why -- a folder installed
+by an older kit has exactly one blind update cycle, and the run after it can act.
 """
 
 import argparse
@@ -26,6 +32,13 @@ import sys
 from pathlib import Path
 
 TOOLS = Path(__file__).resolve().parent
+
+# This file, by name. It is delivered like every other script, so a kit that stopped shipping it
+# would list it for removal -- and the run would delete the only tool that can repeat itself.
+SELF = Path(__file__).name
+
+STAMP_NAME = "kit-version.txt"
+MANIFEST_NAME = "kit-manifest.txt"
 
 for _stream in (sys.stdout, sys.stderr):
     try:
@@ -58,20 +71,73 @@ def read_kit(path):
     return blocks, (version.group(1) if version else "unversioned")
 
 
-def installed_version():
-    """The version of the folder we are updating, if the kit that wrote it left one."""
-    stamp = TOOLS / "kit-version.txt"
-    return stamp.read_text(encoding="utf-8-sig").strip() if stamp.exists() else "unknown"
+def installed_version() -> str:
+    """The version of the folder we are updating, if the kit that wrote it left one.
 
-
-def write_stamp(version):
-    """The one place kit-version.txt is spelled. Both writers go through here.
-
-    Returns the path on success and None when the write failed, having said why on stderr.
-    Both callers act on the None: a stamp is the answer to "which kit is this folder from",
-    and a run that could not write one must not go on to report a version it did not record.
+    ONE LINE, ONE VALUE, AND IT STAYS THAT WAY. Every upgrade.py already installed out there
+    reads this whole file and compares it against twelve hex characters. The moment
+    kit-version.txt gains a second line, every one of those prints a mangled `installed:` and
+    never matches again -- at exactly the users an update path exists to rescue. That is why
+    the file list went into kit-manifest.txt beside it and not in here: a new file is additive
+    and breaks no old installation, a new line in this one breaks all of them.
     """
-    target = TOOLS / "kit-version.txt"
+    stamp = TOOLS / STAMP_NAME
+    if not stamp.exists():
+        return "unknown"
+    try:
+        return stamp.read_text(encoding="utf-8-sig").strip()
+    except OSError as exc:
+        # Not "unknown": that is the answer for a folder nobody ever stamped, and reusing it
+        # here would report a broken file as a normal first install.
+        print(f"{STAMP_NAME}: cannot be read ({exc})", file=sys.stderr)
+        return "unreadable"
+
+
+def installed_files() -> list[str] | None:
+    """The file list the kit that wrote this folder left behind, or None when there is none.
+
+    NONE IS NOT THE EMPTY LIST, AND THE DIFFERENCE IS THE WHOLE SAFETY. Empty means "that kit
+    delivered nothing", which is never true; None means "nothing here knows what it delivered",
+    which is the honest state of every folder installed before this file existed. Removal reads
+    that as: remove nothing, say so, and record a manifest on the way out. Guessing -- treating
+    every .py in the folder as ours -- would delete the user's own tools on the first update.
+    """
+    manifest = TOOLS / MANIFEST_NAME
+    if not manifest.exists():
+        return None
+    try:
+        text = manifest.read_text(encoding="utf-8-sig")
+    except OSError as exc:
+        print(f"{MANIFEST_NAME}: cannot be read ({exc}) — nothing will be removed",
+              file=sys.stderr)
+        return None
+    return [line.strip() for line in text.splitlines() if line.strip()]
+
+
+def write_stamp(version: str, files: list[str] | None = None):
+    """The one place kit-version.txt and kit-manifest.txt are spelled. Every writer comes here.
+
+    THE MANIFEST GOES FIRST AND THE STAMP LAST, INSIDE THIS FUNCTION TOO. The stamp is what a
+    later run compares against to decide it has nothing to do, so it is the last thing written
+    on every path: if anything before it fails, the next run recomputes the same plan and comes
+    through. Written first, it would tell the next run the work is done while the work is not.
+
+    `files=None` leaves the manifest alone -- for the paths that wrote no scripts and have no
+    new delivery to record.
+
+    Returns the kit-version.txt path on success and None when either write failed, having said
+    why on stderr. Callers act on the None: a run that could not record what it did must not
+    report a version it did not write.
+    """
+    if files is not None:
+        manifest = TOOLS / MANIFEST_NAME
+        try:
+            manifest.write_text("".join(f"{name}\n" for name in sorted(files)),
+                                encoding="utf-8", newline="\n")
+        except OSError as exc:
+            print(f"{MANIFEST_NAME}: not written ({exc})", file=sys.stderr)
+            return None
+    target = TOOLS / STAMP_NAME
     try:
         target.write_text(version + "\n", encoding="utf-8", newline="\n")
     except OSError as exc:
@@ -94,6 +160,14 @@ def stamp(kit_path):
     A file with no stamp line is refused rather than recorded as "unversioned". That string
     would then be compared against every future kit forever and never match, which is a wrong
     answer wearing a right answer's clothes.
+
+    IT WRITES THE MANIFEST TOO, AND THAT IS WHAT ENDS THE BLIND CYCLE. The kit file in the
+    user's hand already lists everything it delivers, one fenced block per file. Recording that
+    at install time means the FIRST update can already remove what a newer kit drops -- wait for
+    the first `--apply` to write it and every fresh install spends one update cycle unable to
+    remove anything. A kit file with no blocks (a stand-in, a fragment) leaves the manifest
+    alone rather than recording an empty delivery, which would read as "this kit brought no
+    files" and make every file in the folder look like the user's own.
     """
     try:
         text = Path(kit_path).read_text(encoding="utf-8-sig")
@@ -108,15 +182,35 @@ def stamp(kit_path):
               f"file cannot say which kit this folder came from, and a guessed value is worse "
               f"than none.", file=sys.stderr)
         return 1
-    target = write_stamp(found.group(1))
+    delivered = sorted(name for name, _ in BLOCK_RE.findall(text))
+    target = write_stamp(found.group(1), delivered or None)
     if target is None:
         return 2
     print(f"wrote {target.name}: {found.group(1)}")
+    if delivered:
+        print(f"wrote {MANIFEST_NAME}: {len(delivered)} files this kit delivers")
     return 0
 
 
-def classify(blocks):
-    """Compare each embedded block against the file on disk.
+def classify(blocks: dict[str, str],
+             delivered: list[str] | None) -> tuple[list[str], list[str], list[str], list[str]]:
+    """Compare each embedded block against the file on disk, and the manifest against the blocks.
+
+    ANNOTATED BECAUSE IT RETURNS FOUR LISTS OF THE SAME TYPE. Three of them used to come back
+    unannotated and a caller unpacking them in the wrong order would still run -- silently
+    overwriting the files it meant to leave alone. The annotation is the only thing between a
+    future fourth list and that.
+
+    `removed` is the manifest minus the new kit's blocks. Not the folder minus the blocks: the
+    user's own tools live in that folder too, and the difference between those two subtractions
+    is whether an update deletes work nobody in this kit ever wrote. `delivered is None` means
+    no manifest, and then the answer is the empty list, never a guess.
+
+    A name that is in the manifest, gone from the new kit AND already gone from disk stays in
+    the list on purpose. That is the state an update leaves behind when it dies between the
+    delete and the manifest write, and keeping it there is what makes the next run finish the
+    job -- the unlink is a no-op, the manifest gets rewritten, and the folder stops being
+    half-updated. Filtering it out here would leave that manifest stale forever.
 
     READ AS utf-8-sig AND errors="replace", AND BOTH HALVES ARE LOAD-BEARING (2026-07-30). The
     contract states this rule for every file the user might have touched (SECTION 6, "Read every
@@ -135,9 +229,9 @@ def classify(blocks):
 
     Undo recipes, both re-measured on this machine 2026-07-31, and they are not symmetric:
 
-      - Set the encoding back to `utf-8` (dropping errors= with it): test_upgrade 16/18. BOTH
+      - Set the encoding back to `utf-8` (dropping errors= with it): test_upgrade 26/28. BOTH
         cases go red, because `utf-8` without a replacement handler raises on the bad byte too.
-      - Keep `utf-8-sig` and drop only `errors="replace"`: test_upgrade 17/18, and only
+      - Keep `utf-8-sig` and drop only `errors="replace"`: test_upgrade 27/28, and only
         `test_an_undecodable_file_is_named_rather_than_crashing_the_run` moves. That asymmetry is
         the measurement worth keeping -- it shows the BOM half and the crash half are two defects
         sharing one line, and fixing either alone leaves the other.
@@ -147,12 +241,96 @@ def classify(blocks):
         target = TOOLS / name
         if not target.exists():
             added.append(name)
-        elif target.read_text(encoding="utf-8-sig",
-                              errors="replace").replace("\r\n", "\n") == body:
+            continue
+        try:
+            current = target.read_text(encoding="utf-8-sig", errors="replace")
+        except OSError as exc:
+            # Unreadable is not "same". Overwriting is the repair for anything that cannot be
+            # compared, so it is named under `overwrite` rather than taking the run down.
+            print(f"{name}: cannot be read ({exc}) — listed for overwrite", file=sys.stderr)
+            changed.append(name)
+            continue
+        if current.replace("\r\n", "\n") == body:
             same.append(name)
         else:
             changed.append(name)
-    return same, changed, added
+    removed = [] if delivered is None else sorted(
+        name for name in set(delivered) if name not in blocks and name != SELF)
+    return same, changed, added, removed
+
+
+def write_file(name: str, body: str) -> bool:
+    """Write one script through a temp file and a single replace. True when it landed.
+
+    ATOMIC BECAUSE THIS FILE REWRITES ITSELF. upgrade.py is delivered like every other script,
+    so nearly every update overwrites the tool that is running. A write interrupted halfway
+    through leaves a truncated repair tool, and the one thing a user needs at that moment is
+    the ability to run it again. `replace()` is atomic on the same filesystem: the target is
+    either the old script or the new one, never half of either.
+
+    The temp file is inert if a crash leaves one behind -- it ends in `.upgrade-tmp`, so
+    `run_suites.py`'s `test_*.py` glob and `check_freshness.py`'s `*.py` glob both skip it, and
+    the next successful run writes over it.
+    """
+    target = TOOLS / name
+    tmp = target.with_name(target.name + ".upgrade-tmp")
+    try:
+        tmp.write_text(body, encoding="utf-8", newline="\n")
+        tmp.replace(target)
+    except OSError as exc:
+        print(f"{name}: not written ({exc})", file=sys.stderr)
+        try:
+            tmp.unlink(missing_ok=True)
+        except OSError:
+            pass
+        return False
+    return True
+
+
+def reads_back(name: str, body: str) -> bool:
+    """Read a file we just wrote and compare it against the block it came from.
+
+    This runs over every written file BEFORE anything is deleted. A folder that lost a script
+    to make room for one that did not land is the single state this order exists to prevent,
+    and the check is cheap next to what it guards.
+
+    `newline=""` turns off newline translation, so this compares what landed rather than what a
+    reader would make of it. CRLF is then normalised exactly the way classify() does it, because
+    a sync client that rewrote the line endings has not corrupted anything.
+    """
+    try:
+        written = (TOOLS / name).read_text(encoding="utf-8", newline="")
+    except OSError as exc:
+        print(f"{name}: written, but could not be read back ({exc})", file=sys.stderr)
+        return False
+    return written.replace("\r\n", "\n") == body
+
+
+def remove_file(name: str) -> bool:
+    """Delete one file this kit delivered and no longer does, plus its cached bytecode.
+
+    `missing_ok=True` is not politeness. It is what makes a half-finished update finishable: a
+    run that deleted the file and then died before rewriting the manifest leaves that name in
+    the list, and the next run has to be able to walk over it without failing.
+
+    The `__pycache__` sweep is hygiene, not correctness -- Python 3 will not import a cached
+    entry whose source is gone. A `.pyc` with no `.py` beside it is still something a user
+    finds in a listing and cannot explain, so it goes.
+    """
+    try:
+        (TOOLS / name).unlink(missing_ok=True)
+    except OSError as exc:
+        print(f"{name}: not removed ({exc})", file=sys.stderr)
+        return False
+    cache = TOOLS / "__pycache__"
+    if cache.is_dir():
+        stem = Path(name).stem
+        for stale in list(cache.glob(f"{stem}.pyc")) + list(cache.glob(f"{stem}.*.pyc")):
+            try:
+                stale.unlink()
+            except OSError:
+                pass
+    return True
 
 
 def prove():
@@ -186,15 +364,25 @@ def main(argv=None):
         parser.error("give a kit file to compare against, or --stamp <kitfile> to record one")
 
     blocks, new_version = read_kit(args.kit)
-    same, changed, added = classify(blocks)
+    delivered = installed_files()
+    same, changed, added, removed = classify(blocks, delivered)
     installed = installed_version()
 
     print(f"installed: {installed} · kit file: {new_version}")
-    print(f"{len(same)} unchanged · {len(changed)} would be overwritten · {len(added)} new")
+    print(f"{len(same)} unchanged · {len(changed)} would be overwritten · {len(added)} new · "
+          f"{len(removed)} would be removed")
     for name in changed:
         print(f"  overwrite  {name}")
     for name in added:
         print(f"  add        {name}")
+    for name in removed:
+        note = "" if (TOOLS / name).exists() else "  — already gone; the manifest still lists it"
+        print(f"  remove     {name}{note}")
+    if delivered is None:
+        print(f"  no {MANIFEST_NAME} beside the stamp, so nothing is removed. This folder was "
+              f"installed by a kit that left no file list, and guessing which files are the "
+              f"kit's would put the user's own tools at risk. Applying this kit records one, "
+              f"and the update after it can remove what a newer kit drops.")
 
     # A NEWER KIT WHOSE SCRIPTS DID NOT CHANGE STILL MOVES THE VERSION (2026-07-30). The return
     # below used to sit in front of the --apply branch, so write_stamp() further down was
@@ -207,21 +395,35 @@ def main(argv=None):
     # "nothing is written without --apply" is the promise the rest of the file keeps. An
     # unversioned kit is not stamped from here for the same reason stamp() refuses it -- that
     # string would be compared against every future kit and never match.
-    if not changed and not added:
-        if new_version != "unversioned" and installed != new_version:
+    #
+    # A MISSING MANIFEST IS THE SECOND REASON THIS BRANCH CANNOT JUST SAY "nothing to do"
+    # (2026-07-31). A folder whose scripts are all current and whose stamp already matches can
+    # still be one that no kit ever left a file list beside -- and if this path returned there,
+    # it would never get one, so the blind cycle would never end. `--apply` records it.
+    if not changed and not added and not removed:
+        stale_stamp = new_version != "unversioned" and installed != new_version
+        if stale_stamp or delivered is None:
             if args.apply:
-                if write_stamp(new_version) is None:
+                if write_stamp(new_version, sorted(blocks)) is None:
                     return 2
-                print(f"every script is already current · stamp corrected: "
-                      f"{installed} → {new_version}")
-            else:
+                if stale_stamp:
+                    print(f"every script is already current · stamp corrected: "
+                          f"{installed} → {new_version}")
+                else:
+                    print(f"every script is already current · {MANIFEST_NAME} recorded, so the "
+                          f"next update can remove what a newer kit drops")
+            elif stale_stamp:
                 print(f"every script is already current, but the stamp still reads {installed}. "
                       f"Re-run with --apply to record {new_version}.")
+            else:
+                print(f"every script is already current, but there is no {MANIFEST_NAME} beside "
+                      f"the stamp. Re-run with --apply to record one.")
             return 0
         print("nothing to do.")
         return 0
     if not args.apply:
-        print("\nnothing written. Re-run with --apply to write these files.")
+        what = "write and remove these files" if removed else "write these files"
+        print(f"\nnothing written, nothing removed. Re-run with --apply to {what}.")
         return 0
 
     # PER FILE, AND THE LOOP DOES NOT STOP AT THE FIRST REFUSAL (2026-07-31). One unwritable
@@ -229,26 +431,49 @@ def main(argv=None):
     # every script after it in the list went unwritten with nothing said about them either. Now
     # each failure is named and the rest still land: a folder that got 20 of 22 files and knows
     # which two it is missing can be repaired; one that stopped somewhere unnamed cannot.
+    #
+    # THE ORDER BELOW IS THE IDEMPOTENCE, AND IT IS NOT NEGOTIABLE: write, read back, abort on a
+    # mismatch BEFORE anything is deleted, delete, manifest, stamp, prove. Every step before the
+    # stamp is repeatable, and the stamp is what a later run reads to decide it is done -- so it
+    # goes last on every path. Move it earlier and a run that died in the middle tells the next
+    # one the work is finished while the folder is half old.
     refused = []
     for name in changed + added:
-        try:
-            (TOOLS / name).write_text(blocks[name], encoding="utf-8", newline="\n")
-        except OSError as exc:
-            print(f"{name}: not written ({exc})", file=sys.stderr)
+        if not write_file(name, blocks[name]):
             refused.append(name)
     if refused:
-        # No stamp. kit-version.txt naming a version this folder does not carry is the same
-        # wrong-answer-in-right-answer's-clothes that stamp() refuses "unversioned" for.
+        # No stamp, no manifest. kit-version.txt naming a version this folder does not carry is
+        # the same wrong-answer-in-right-answer's-clothes that stamp() refuses "unversioned" for.
         print(f"\n{len(changed) + len(added) - len(refused)} of {len(changed) + len(added)} files "
               f"written · {len(refused)} refused: {', '.join(refused)}\n"
-              f"kit-version.txt was NOT updated -- the folder is part old, part new, and a stamp "
-              f"would claim otherwise. Fix the cause and re-run --apply.", file=sys.stderr)
+              f"Nothing was removed and {STAMP_NAME} was NOT updated -- the folder is part old, "
+              f"part new, and a stamp would claim otherwise. Fix the cause and re-run --apply.",
+              file=sys.stderr)
         return 2
-    if write_stamp(new_version) is None:
+
+    mismatched = [name for name in changed + added if not reads_back(name, blocks[name])]
+    if mismatched:
+        print(f"\n{len(mismatched)} file(s) do not read back as the kit wrote them: "
+              f"{', '.join(mismatched)}\n"
+              f"Nothing was removed and nothing was stamped, so this folder still has every "
+              f"file it started with. Re-run --apply once the cause is fixed.", file=sys.stderr)
+        return 2
+
+    kept = [name for name in removed if not remove_file(name)]
+    if kept:
+        # Same reasoning as a refused write: the manifest must not claim a file is gone while it
+        # is still there, or nothing will ever try again.
+        print(f"\n{len(kept)} file(s) could not be removed: {', '.join(kept)}\n"
+              f"{MANIFEST_NAME} was NOT updated, so the next --apply tries them again.",
+              file=sys.stderr)
+        return 2
+
+    if write_stamp(new_version, sorted(blocks)) is None:
         print("the scripts are current, the stamp is not -- re-run --apply once it can be written.",
               file=sys.stderr)
         return 2
-    print(f"\nwrote {len(changed) + len(added)} files. Proving them:")
+    written = len(changed) + len(added)
+    print(f"\nwrote {written} files, removed {len(removed)}. Proving them:")
     if not prove():
         print("the updated folder does not pass its own checks -- restore it from git.",
               file=sys.stderr)

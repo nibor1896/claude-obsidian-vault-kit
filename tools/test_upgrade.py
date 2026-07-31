@@ -27,6 +27,12 @@ def kit_file(path, blocks, version="0123456789ab"):
     return path
 
 
+def write_manifest(tools_dir, names):
+    """The file list a kit leaves beside its stamp. Written by `--stamp` and by `--apply`."""
+    (Path(tools_dir) / "kit-manifest.txt").write_text(
+        "".join(f"{n}\n" for n in sorted(names)), encoding="utf-8", newline="\n")
+
+
 def run_upgrade(tools_dir, *args):
     """upgrade.py acts on its own directory, so it is copied into the sandbox and run there."""
     result = subprocess.run([sys.executable, str(tools_dir / "upgrade.py"), *[str(a) for a in args]],
@@ -83,12 +89,15 @@ class UpgradeTest(unittest.TestCase):
         self.assertEqual((self.tools / "kit-version.txt").read_text(encoding="utf-8").strip(),
                          "abcdef012345")
 
-    def test_stamp_records_the_version_without_writing_anything_else(self):
+    def test_stamp_records_the_version_without_touching_a_script(self):
         """The first install's only writer. Nothing else puts a version beside a fresh folder.
 
         `--apply` above covers the second kit onwards. Until --stamp existed, the first one was
         covered by nobody: the contract told the agent to type the twelve characters by hand,
         and verify_setup's step 13 read back a value its own fixture had written.
+
+        It writes kit-manifest.txt as well -- covered on its own further down. What is asserted
+        here is the other half: neither of those two files is a script, and no script moves.
         """
         kit = kit_file(self.tmp / "kit.md", {"build_index.py": "print('new')"},
                        version="0f1e2d3c4b5a")
@@ -108,6 +117,9 @@ class UpgradeTest(unittest.TestCase):
         self.assertNotEqual(code, 0, "a file with no stamp must not produce one")
         self.assertFalse((self.tools / "kit-version.txt").exists(),
                          "a refused stamp still landed on disk")
+        self.assertFalse((self.tools / "kit-manifest.txt").exists(),
+                         "a refused stamp still recorded a file list, which would then be "
+                         "trusted for removal against a version nobody knows")
         self.assertIn("kit-version", out + err)
 
     def test_a_file_only_the_kit_has_is_reported_as_added(self):
@@ -150,7 +162,7 @@ class UpgradeTest(unittest.TestCase):
         told they have a local edit they never made.
 
         Undo recipe, re-measured on this machine 2026-07-31: in upgrade.py's classify(), read the
-        target with `encoding="utf-8"` again. test_upgrade 16/18 -- this case fails with
+        target with `encoding="utf-8"` again. test_upgrade 26/28 -- this case fails with
         `1 would be overwritten` where it expects `1 unchanged`, and the undecodable case goes
         with it, because dropping the replacement handler is part of the same reversal. The run
         stays exit 0 throughout, which is why nothing caught it before.
@@ -182,6 +194,211 @@ class UpgradeTest(unittest.TestCase):
         self.assertEqual(code, 0, f"an unreadable byte stopped the run:\n{err}")
         self.assertIn("overwrite  build_index.py", out)
         self.assertNotIn("UnicodeDecodeError", err)
+
+    # --------------------------------- a file the new kit no longer carries (the manifest)
+
+    def test_a_file_the_new_kit_no_longer_carries_is_removed(self):
+        """Without this the whole delivery can shrink and the user's folder never does.
+
+        `classify()` returned three lists -- same, changed, added -- so a script that left the
+        kit simply stayed on disk forever. That is not cosmetic: `run_suites.py` collects suites
+        with a bare `sorted(tools.glob("test_*.py"))`, so an orphaned `test_x.py` whose tool is
+        gone gets collected too. Measured directly on this machine 2026-07-31 -- one orphaned
+        suite in an otherwise empty tool folder gives `0/1 suites green`, exit 1, with
+        ModuleNotFoundError in the listing. The user's vault then reports red for good over a
+        tool that no longer exists, and nothing in their folder explains why.
+
+        Undo recipe, measured on this machine 2026-07-31: force `removed = []` in upgrade.py's
+        classify(), replacing the conditional expression. test_upgrade 24/28 -- this case, the
+        cached-bytecode one, the already-gone one and the dry-run listing. The orphan then sits
+        in the folder after --apply, which is the state before this change and the reason for it.
+        """
+        (self.tools / "test_alt.py").write_text("raise SystemExit(0)\n",
+                                                encoding="utf-8", newline="\n")
+        write_manifest(self.tools, ["build_index.py", "test_alt.py"])
+        kit = kit_file(self.tmp / "kit.md", {"build_index.py": "print('new')"},
+                       version="abcdef012345")
+
+        code, out, err = run_upgrade(self.tools, kit, "--apply")
+        self.assertIn("remove     test_alt.py", out)
+        self.assertFalse((self.tools / "test_alt.py").exists(),
+                         f"the orphan survived the update:\n{out}\n{err}")
+        self.assertEqual((self.tools / "build_index.py").read_text(encoding="utf-8"),
+                         "print('new')\n")
+        self.assertEqual((self.tools / "kit-manifest.txt").read_text(encoding="utf-8"),
+                         "build_index.py\n", "the manifest still lists the file it just removed")
+
+    def test_a_file_the_kit_never_delivered_is_never_removed(self):
+        """The user's own tools live in the same folder, and this is what keeps them there.
+
+        The subtraction is `manifest - blocks`, never `folder - blocks`. A tool the user wrote,
+        a `runs.log`, a `jobs.json` they extended by hand: none of them are in the manifest, so
+        none of them are candidates. Get this wrong once and an update deletes work this kit
+        never wrote and cannot restore.
+
+        Undo recipe, measured on this machine 2026-07-31: in classify(), take `removed` from the
+        folder instead of the manifest --
+        `sorted(p.name for p in TOOLS.glob("*.py") if p.name not in blocks and p.name != SELF)`.
+        test_upgrade 25/28. Three cases move, and they are worth reading together: this one
+        (the user's files are deleted), the no-manifest one (a folder that must not be touched
+        at all is touched) and the already-gone one (the manifest stops driving anything). The
+        folder and the manifest answer different questions, and the recipe makes the run answer
+        the wrong one everywhere at once.
+        """
+        (self.tools / "test_eigene_suite.py").write_text("# mine, not the kit's\n",
+                                                  encoding="utf-8", newline="\n")
+        (self.tools / "eigenes_werkzeug.py").write_text("# also mine\n",
+                                                        encoding="utf-8", newline="\n")
+        write_manifest(self.tools, ["build_index.py"])
+        kit = kit_file(self.tmp / "kit.md", {"build_index.py": "print('new')"},
+                       version="abcdef012345")
+
+        code, out, err = run_upgrade(self.tools, kit, "--apply")
+        self.assertTrue((self.tools / "test_eigene_suite.py").is_file(),
+                        f"a file the kit never delivered was removed:\n{out}\n{err}")
+        self.assertTrue((self.tools / "eigenes_werkzeug.py").is_file(),
+                        f"a file the kit never delivered was removed:\n{out}\n{err}")
+        self.assertIn("0 would be removed", out)
+        self.assertNotIn("  remove     ", out)
+
+    def test_upgrade_itself_is_never_removed(self):
+        """A kit that stops shipping upgrade.py must not take the repair tool with it.
+
+        It is delivered like every other script, so it is in the manifest, so the plain
+        subtraction would list it -- and the run would delete the only thing that can be run
+        again after a failed update. Named as its own case because the guard is one comparison
+        that reads like a detail.
+        """
+        write_manifest(self.tools, ["build_index.py", "upgrade.py"])
+        kit = kit_file(self.tmp / "kit.md", {"build_index.py": "print('new')"},
+                       version="abcdef012345")
+
+        code, out, err = run_upgrade(self.tools, kit, "--apply")
+        self.assertTrue((self.tools / "upgrade.py").is_file(),
+                        f"the updater deleted itself:\n{out}\n{err}")
+        self.assertNotIn("remove     upgrade.py", out)
+
+    def test_without_a_manifest_nothing_is_removed_and_the_run_says_why(self):
+        """A folder installed by an older kit has no file list, and guessing is not allowed.
+
+        Every folder installed before the manifest existed is in this state. The tool cannot
+        know what that older kit delivered, so it removes nothing, prints the reason, and
+        records a manifest on the way out. Exactly one update cycle is blind; the one after it
+        can act. Silence here would be the worst of the three options -- it looks identical to
+        "there was nothing to remove".
+        """
+        (self.tools / "test_alt.py").write_text("raise SystemExit(0)\n",
+                                                encoding="utf-8", newline="\n")
+        kit = kit_file(self.tmp / "kit.md", {"build_index.py": "print('new')"},
+                       version="abcdef012345")
+
+        code, out, err = run_upgrade(self.tools, kit)
+        self.assertIn("0 would be removed", out)
+        self.assertIn("kit-manifest.txt", out)
+        self.assertTrue((self.tools / "test_alt.py").is_file())
+        self.assertFalse((self.tools / "kit-manifest.txt").exists(),
+                         "a manifest was written without --apply")
+
+        run_upgrade(self.tools, kit, "--apply")
+        self.assertEqual((self.tools / "kit-manifest.txt").read_text(encoding="utf-8"),
+                         "build_index.py\n",
+                         "the blind cycle did not end -- the next update is blind too")
+
+    def test_a_dry_run_names_what_would_be_removed_and_removes_nothing(self):
+        """"Nothing is written without --apply" has to cover deleting, or it is half a promise."""
+        (self.tools / "test_alt.py").write_text("raise SystemExit(0)\n",
+                                                encoding="utf-8", newline="\n")
+        write_manifest(self.tools, ["build_index.py", "test_alt.py"])
+        kit = kit_file(self.tmp / "kit.md", {"build_index.py": "print('old')"},
+                       version="abcdef012345")
+
+        code, out, err = run_upgrade(self.tools, kit)
+        self.assertEqual(code, 0, out + err)
+        self.assertIn("1 would be removed", out)
+        self.assertIn("remove     test_alt.py", out)
+        self.assertIn("nothing removed", out)
+        self.assertTrue((self.tools / "test_alt.py").is_file(),
+                        "a dry run deleted a file")
+
+    def test_the_cached_bytecode_of_a_removed_file_goes_with_it(self):
+        """A .pyc with no .py beside it is something a user finds and cannot explain.
+
+        Hygiene rather than correctness -- Python 3 will not import a __pycache__ entry whose
+        source is gone -- but a folder this kit maintains should not leave debris it created.
+        """
+        (self.tools / "test_alt.py").write_text("raise SystemExit(0)\n",
+                                                encoding="utf-8", newline="\n")
+        cache = self.tools / "__pycache__"
+        cache.mkdir()
+        stale = cache / "test_alt.cpython-313.pyc"
+        stale.write_bytes(b"not really bytecode")
+        (cache / "build_index.cpython-313.pyc").write_bytes(b"stays")
+        write_manifest(self.tools, ["build_index.py", "test_alt.py"])
+        kit = kit_file(self.tmp / "kit.md", {"build_index.py": "print('new')"},
+                       version="abcdef012345")
+
+        run_upgrade(self.tools, kit, "--apply")
+        self.assertFalse(stale.exists(), "the cached bytecode outlived its source")
+        self.assertTrue((cache / "build_index.cpython-313.pyc").is_file(),
+                        "the sweep took a cache entry whose source is still delivered")
+
+    def test_a_manifest_naming_a_file_that_is_already_gone_still_completes(self):
+        """The half-state an update leaves if it dies between the delete and the manifest write.
+
+        Constructed directly rather than by killing a run: a manifest listing a file that is not
+        on disk IS that state, and building it this way is deterministic on every platform.
+
+        The next run has to walk over it -- `unlink(missing_ok=True)` is the no-op that lets it
+        -- rewrite the manifest and finish. Without that, the folder would stay half-updated
+        forever, because the stale manifest is also the only record that says something is
+        missing.
+        """
+        write_manifest(self.tools, ["build_index.py", "test_schon_weg.py"])
+        self.assertFalse((self.tools / "test_schon_weg.py").exists())
+        kit = kit_file(self.tmp / "kit.md", {"build_index.py": "print('new')"},
+                       version="abcdef012345")
+
+        code, out, err = run_upgrade(self.tools, kit, "--apply")
+        self.assertIn("already gone", out)
+        self.assertNotIn("Traceback", err)
+        self.assertEqual((self.tools / "kit-manifest.txt").read_text(encoding="utf-8"),
+                         "build_index.py\n",
+                         "the manifest still names a file nothing will ever look for again")
+        self.assertEqual((self.tools / "kit-version.txt").read_text(encoding="utf-8").strip(),
+                         "abcdef012345")
+
+    def test_stamp_records_the_file_list_as_well_as_the_version(self):
+        """The first install's only writer, and it has to record both or the first update is blind.
+
+        The kit file in the user's hand already lists everything it delivers, one fenced block
+        per file. Waiting for the first `--apply` to write that down would cost every fresh
+        install one update cycle in which nothing can be removed.
+        """
+        kit = kit_file(self.tmp / "kit.md",
+                       {"build_index.py": "print('old')", "check_links.py": "print('tool')"},
+                       version="0f1e2d3c4b5a")
+        code, out, err = run_upgrade(self.tools, "--stamp", kit)
+        self.assertEqual(code, 0, out + err)
+        self.assertEqual((self.tools / "kit-manifest.txt").read_text(encoding="utf-8"),
+                         "build_index.py\ncheck_links.py\n")
+        self.assertIn("kit-manifest.txt", out)
+
+    def test_a_kit_file_with_no_blocks_records_no_file_list(self):
+        """An empty delivery is not the same statement as no delivery.
+
+        A stand-in kit file -- a fragment, a stamp carrier -- has no blocks. Recording an empty
+        manifest from it would say "this kit brought no files", and every file in the folder
+        would then look like the user's own forever. It leaves the manifest alone instead.
+        """
+        kit = self.tmp / "nur-ein-stempel.md"
+        kit.write_text("<!-- kit-version: 0f1e2d3c4b5a -->\n\n# Kit\n",
+                       encoding="utf-8", newline="\n")
+        code, out, err = run_upgrade(self.tools, "--stamp", kit)
+        self.assertEqual(code, 0, out + err)
+        self.assertEqual((self.tools / "kit-version.txt").read_text(encoding="utf-8").strip(),
+                         "0f1e2d3c4b5a")
+        self.assertFalse((self.tools / "kit-manifest.txt").exists(),
+                         "a kit with no blocks recorded an empty delivery")
 
     # ------------------------------------- file operations that the environment refuses
 
@@ -245,6 +462,29 @@ class UpgradeTest(unittest.TestCase):
         self.assertFalse((self.tools / "kit-version.txt").exists(),
                          "a part-old, part-new folder was stamped as if the update had finished")
 
+    def test_the_stamp_is_the_last_thing_written(self):
+        """The stamp is what a later run reads to decide it is done, so it goes last on every
+        path -- inside write_stamp() too, where the manifest is written before it.
+
+        Written earlier, a run that died in between would tell the next one the work is
+        finished while the folder is half old, and nothing would ever recompute the plan.
+
+        The manifest path is a directory here, so the write fails for every user on every
+        platform, no permissions involved. What is asserted is the order: the script landed,
+        and the stamp did not.
+        """
+        (self.tools / "kit-manifest.txt").mkdir()
+        kit = kit_file(self.tmp / "kit.md", {"build_index.py": "print('new')"},
+                       version="abcdef012345")
+
+        code, out, err = run_upgrade(self.tools, kit, "--apply")
+        self.assertEqual(code, 2, out + err)
+        self.assertNotIn("Traceback", err)
+        self.assertEqual((self.tools / "build_index.py").read_text(encoding="utf-8"),
+                         "print('new')\n", "the write did not happen before the stamp attempt")
+        self.assertFalse((self.tools / "kit-version.txt").exists(),
+                         "the stamp was written even though the manifest before it failed")
+
     # ------------------------------------- a newer kit whose scripts happen to be identical
 
     def test_a_newer_kit_with_identical_scripts_still_reports_the_stale_stamp(self):
@@ -264,9 +504,9 @@ class UpgradeTest(unittest.TestCase):
         the --apply case below went red, and a recipe that moves one test when it claims two is
         the same defect this suite exists for, one level up.
 
-        Undo recipe, re-measured on this machine 2026-07-31: replace the stamp comparison in
-        upgrade.py's main() with `if False:`, which is what returning early amounts to.
-        test_upgrade 15/18 -- this case, the unstamped one and the --apply one -- and
+        Undo recipe, re-measured on this machine 2026-07-31: force `stale_stamp = False` in
+        upgrade.py's main(), which is what returning early amounted to.
+        test_upgrade 25/28 -- this case, the unstamped one and the --apply one -- and
         verify_setup 13/14 at step 13. Before the assertions above were moved off the header
         line the same recipe moved exactly ONE test, and the difference between one and three
         is the whole reason this recipe gets run instead of reasoned about. Named rather than
