@@ -34,6 +34,10 @@ under each shell.** The suites stay here rather than going into your vault; your
 guards over your notes, not unit tests over code that has not
 changed. [Reproduce it yourself](docs/how-it-works.md#reproduce-the-numbers) before you trust it.
 
+**Three files land in your vault** — `vaultkit.py`, `upgrade.py`, `jobs.json`. Everything that only
+proves the kit works stays in this repository, so your daily sync does not re-answer a question that
+was settled before the release. See the [changelog](CHANGELOG.md) for what that changed.
+
 ## How the index works
 
 Every note carries a short frontmatter header — title, summary, project, topic, created. The
@@ -69,6 +73,7 @@ added, renamed or broke shows up as a changed index line or as a red run, not as
 
 - **[How it works](docs/how-it-works.md)** — what you end up with, the rules that carry it, requirements, and the numbers
 - **[Updating and templates](docs/updating-and-templates.md)** — the two quiet parts: note templates and the version stamp
+- **[Changelog](CHANGELOG.md)** — what changed between versions, and what each release leaves unmeasured
 - **[Website](https://nibor1896.github.io/claude-obsidian-vault-kit/)**
 
 ## Changing the kit

@@ -45,9 +45,10 @@ script has to keep true — measured in this repository before the release, not 
 - Claude with file access to the folder you want the vault in
 - Obsidian ([obsidian.md](https://obsidian.md)) — the kit offers to install it if you have not
 - **Python 3.10+** for the guard scripts
-- `git` — **recommended, not decorative.** Section 7 of the kit sets it up, `verify_setup.py` needs
-  it, and the second half of every check is "the tree is still clean afterwards", which nothing else
-  can answer. **GitHub is the optional part**, and a remote needs its own yes.
+- `git` — **recommended, not decorative.** Section 7 of the kit sets it up, and the second half of
+  every check is "the tree is still clean afterwards", which nothing else can answer: the last step
+  of `/vaultkit` is a `git status` that has to come back empty. **GitHub is the optional part**, and
+  a remote needs its own yes.
 - Optional: a cloud-synced folder for backup — it knows file versions, git knows states across all
   notes, and neither replaces the other
 
