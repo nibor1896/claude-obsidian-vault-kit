@@ -1,4 +1,4 @@
-<!-- kit-version: 4f1ea4294469 -->
+<!-- kit-version: eb22a1630d53 -->
 # Claude × Obsidian — Vault Kit
 
 **What this file is:** a setup contract for Claude. Drop it into a Claude conversation and say
@@ -142,14 +142,24 @@ loud which questions you skipped and what you measured.
   pointed you at.
 - **1.2 — migration, new production vault, or test vault.**
 - **1.3 — project names, and where their code lives.**
-- **1.4 — the vault path, the backup, git, and whether a remote may be added.**
-- **`user.email` — ask, even when an address is sitting right in front of you.** Your session
-  context, another repo on the machine, a shell variable, a git credential store: **an address that
-  is visible in your environment is not consent to publish it.** It goes into every commit forever,
-  and the user may make that repo public later. One cold run took the operator's private mail address
-  out of session context and set it without a word. Offer
-  `<handle>@users.noreply.github.com` as the **first** clickable option, so the private-by-default
-  answer is the cheap one.
+- **1.4 — the vault path, the backup, git, whether a remote may be added, and the git identity:
+  the GitHub handle, `user.name` and `user.email`.**
+- **The GitHub handle — ask it, and never derive it.** It is the first half of
+  `<handle>@users.noreply.github.com`, so a handle taken from anywhere else puts somebody else's
+  address in every commit the user makes. **This file is an environment too**, and that is the part
+  nobody expects: its last lines name the repository it came from, and on the cold run of 2026-07-31
+  a session read the handle out of that footer and offered the kit author's own noreply address as
+  the recommended first option. There is no source for this value but the user's answer — not the
+  footer, not your session context, not another repo on the machine. "I have no GitHub account" and
+  "I would rather not say" are complete answers: they remove the default below, and the address is
+  then asked open.
+- **`user.name` and `user.email` — ask, even when an address is sitting right in front of you.** Your
+  session context, another repo on the machine, a shell variable, a git credential store: **an
+  address that is visible in your environment is not consent to publish it.** It goes into every
+  commit forever, and the user may make that repo public later. One cold run took the operator's
+  private mail address out of session context and set it without a word. Given a handle from the
+  answer above, offer `<handle>@users.noreply.github.com` as the **first** clickable option, so the
+  private-by-default answer is the cheap one.
 
 The rule behind the list: **anything that decides what you write, or where, comes from the user's
 mouth.** Reading the environment is measurement; deciding the destination is not.
@@ -230,7 +240,7 @@ overrules is worse than no question — it teaches the user that their answers d
 
 ### 1.4 Where the vault lives, and how it survives
 
-Four questions, one call:
+Five questions, one call:
 
 - **The vault path.** Propose one and have it confirmed. It must sit inside the folder you were given.
 - **Backup location.** Recommend a cloud-synced folder (OneDrive, Dropbox, iCloud Drive, Syncthing).
@@ -240,18 +250,25 @@ Four questions, one call:
   *states across all notes*. Neither replaces the other. "Yes to git" is not "yes to a remote" — a
   vault of project knowledge holds things the user would not publish, so the remote must be private,
   and that needs its own yes.
-- **`user.name` and `user.email`** — ask for both, set them repo-locally, never `--global` (SECTION 7).
-  Do not invent them and do not copy them from another repo on the machine. Offer a sensible default as
-  the first option so it is one click. **Both defaults are named, so neither is left to judgement:**
+- **The GitHub handle.** Ask it here, in the same call, and put it **before** the two values that
+  are built from it. Nothing is written with it — it is not a git setting — but both defaults below
+  come out of it, and it has exactly one source: this answer. **Not the footer of this file, not
+  your session context, not another repo on the machine** — the never-skip list at the top of
+  SECTION 1 says what deriving it cost on a cold run. "No GitHub account" and "rather not say" are
+  complete answers.
+- **`user.name` and `user.email`** — ask for both, in that order, set them repo-locally, never
+  `--global` (SECTION 7). Do not invent them and do not copy them from another repo on the machine.
+  Offer a sensible default as the first option so it is one click. **Both defaults are named, so
+  neither is left to judgement, and both are built from the handle answered above:**
+  - `user.name` → **the handle**, as option 1: `[1] <handle>  [2] a different name`, with free text
+    for anything else. The two values may legitimately differ — a full name against a handle — which
+    is why this stays a question and never becomes an assumption. What it must not be is a second
+    blind typing: in both cold runs on 2026-07-30 the operator typed the same string twice, because
+    the question that already had the answer did not offer it.
   - `user.email` → `<handle>@users.noreply.github.com` as the first clickable option. The rule and
-    the reason are in 1.0 above.
-  - `user.name` → **the handle you just used to build that address**, as option 1:
-    `[1] <handle>  [2] a different name`, with free text for anything else. The two values may
-    legitimately differ — a full name against a handle — which is why this stays a question and
-    never becomes an assumption. What it must not be is a second blind typing: in both cold runs on
-    2026-07-30 the operator typed the same string twice, because the question that already had the
-    answer did not offer it. If no handle was given (the user chose a real address instead), there
-    is no default here — ask it open.
+    the reason are in the never-skip list at the top of SECTION 1.
+  - **No handle, no defaults.** If the user gave none, option 1 does not exist on either question —
+    ask both open rather than filling in a value from somewhere they never pointed you at.
 
 ### 1.5 Environment
 
@@ -798,8 +815,12 @@ git -C <VaultRoot> config user.name  "<name the user gives you>"
 git -C <VaultRoot> config user.email "<email the user gives you>"
 ```
 
-Ask for both. Do not invent them, and do not copy them from another repo on the machine — an identity
-appears in every commit forever, and if the vault ever gets a remote it becomes public.
+Ask for both — they come out of the round in 1.4, together with the GitHub handle the noreply
+address is built from. Do not invent them, and do not copy them from another repo on the machine —
+an identity appears in every commit forever, and if the vault ever gets a remote it becomes public.
+**The handle is asked too, never derived.** The last lines of this file name the kit's own
+repository, and a session that reads the handle there writes the kit author's address into the
+user's commits — measured on the cold run of 2026-07-31.
 
 **Stage only what exists at this point.** `INDEX - <VaultName>.md` is *not* written yet — the
 generator creates it in SECTION 8, several steps from here. Staging it makes `git add` fail with
