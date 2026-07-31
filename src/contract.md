@@ -61,9 +61,12 @@ document in order. It is a contract, not a suggestion.
    were answered completely and immediately. The two runs that dropped into numbered prose questions
    were both abandoned by the user mid-setup. This is the most fragile part of the whole setup, which
    is why it is a rule and not a preference.
-4. **Match the user's shell.** Ask which OS and shell they use, then emit commands in that syntax
-   only. PowerShell has no `&&` and no `export`; POSIX shells have no `Get-ChildItem`. Mixing them
-   costs the user a failed round trip every time.
+4. **Match the user's shell.** Read which OS and shell they use — it is a prerequisite you can
+   measure, and 1.5 says to measure it — then emit commands in that syntax only. PowerShell has no
+   `&&` and no `export`; POSIX shells have no `Get-ChildItem`. Mixing them costs the user a failed
+   round trip every time. **Do not turn it into a question.** Say what you measured, as 1.5 requires,
+   and move on; a user who is asked to pick a shell they are already sitting in reads it as the setup
+   not knowing where it runs.
 5. **Never touch a path outside the vault and the tool folder** without saying which path and why,
    and waiting for a yes. **One exception, and it is the only one:**
    `~/.claude/commands/vaultkit.md`, written in SECTION 8. That file is part of this setup, not an
@@ -1050,8 +1053,14 @@ Run this once:
 
 ```bash
 python <VaultRoot>/00_Global/06_tools/vaultkit.py command --vault <VaultRoot> \
-       --shell powershell|posix
+       --shell <the shell you measured in 1.5>
 ```
+
+**`--shell` is not a question.** You measured the shell in 1.5; pass it. It decides nothing but
+whether the paths in the generated file are spelled with backslashes or forward slashes — Python
+takes either on Windows, so a wrong value breaks nothing. Asking the user to choose a spelling is a
+round trip for a value you already hold, and the default (`powershell`) is right on the platform
+where the difference is visible at all.
 
 It writes `~/.claude/commands/vaultkit.md` — the user's own commands folder, which is the only
 destination and takes no flag — with this vault's real paths already in it, and prints the path it
