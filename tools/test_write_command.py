@@ -38,7 +38,7 @@ def step_lines(lines, subcommand):
     let these cases pass on the wrong evidence.
     """
     return [line for line in lines
-            if line.startswith("- `python ") and "vaultkit.py" in line
+            if line.startswith("- `python") and "vaultkit.py" in line
             and f" {subcommand} " in line]
 
 
@@ -158,11 +158,26 @@ class WriteCommandTest(unittest.TestCase):
                             f"{writer} logs before the freshness check reads the log")
 
     def test_the_sweep_uses_root_and_says_why(self):
-        """`--vault` alone leaves the root index on yesterday's count, green and silent."""
+        """`--vault` alone leaves the root index on yesterday's count, green and silent.
+
+        The warning is also held to naming the step by its FLAG, never by its number. Until
+        2026-08-01 it read "running only step 1", and step 1 is the freshness check, which indexes
+        nothing — the step it meant is the per-project loop. A sentence keyed to a number rots the
+        next time one is inserted, and the case below pins 1 = freshness while asserting the
+        numbering runs through, so the two would drift apart with every run staying green.
+
+        Undo recipe: put a step number back into that sentence. This case fails on the assertion
+        below; nothing else in the suite moves.
+        """
         self.write("--shell", "powershell")
         text = self.target.read_text(encoding="utf-8")
         self.assertIn(f"--root {vaultkit.show(self.vault, 'powershell')}", text)
         self.assertIn("`--root`, not `--vault`", text)
+        warning = next(line for line in text.splitlines()
+                       if "yesterday's entry count" in line)
+        self.assertNotRegex(warning, r"\bstep \d",
+                            "the sweep's warning is keyed to a step number, which renumbering "
+                            "rots without a single run noticing")
 
     def test_the_tool_folder_is_written_as_a_full_path(self):
         """`06_tools/` resolves from the vault root and nowhere else."""
@@ -171,8 +186,54 @@ class WriteCommandTest(unittest.TestCase):
         tools = (self.vault / "00_Global" / "06_tools").as_posix()
         self.assertIn(tools, text)
         for line in text.splitlines():
-            if line.startswith("- `python "):
+            if line.startswith("- `python"):
                 self.assertIn(tools, line, f"a bare tool path slipped in: {line}")
+
+    def test_the_interpreter_name_reaches_every_step_of_the_generated_file(self):
+        """The name is written six times and reread never, so a wrong one is permanent.
+
+        `python` was hardcoded into command_text() until 2026-08-01. On Ubuntu under WSL that name
+        is absent unless `python-is-python3` is installed, so every step of the user's own
+        maintenance command answered `command not found` in a vault with nothing wrong with it.
+
+        The flag takes two values and no others, and that is load-bearing rather than tidy:
+        build_kit.py's COMMAND_RE is `python[3]? …\\.py`, so a free-form interpreter renders zero
+        matches there and check_generated_command() reports nothing wrong because it can no longer
+        see anything -- it has no minimum-hit floor.
+
+        Undo recipe: drop the parameter and spell `python` in command_text() again. This case fails
+        on the first step, on every platform. Measured 2026-08-01: `run_suites` reports 9/11, not
+        10/11 -- editing a source without rebuilding also trips test_build_kit.py's freshness
+        control, which is the recipe's own side effect and not a second defect. Rebuild first if
+        you want the clean 10/11.
+        """
+        self.write("--shell", "posix", "--python", "python3")
+        lines = self.target.read_text(encoding="utf-8").splitlines()
+        runnable = [line for line in lines if line.startswith("- `python")]
+        self.assertTrue(runnable, "the generated file carries no runnable step at all")
+        for line in runnable:
+            self.assertTrue(line.startswith("- `python3 "),
+                            f"a step kept the default interpreter: {line}")
+
+    def test_the_default_spelling_is_one_this_platform_can_actually_run(self):
+        """`--shell` omitted has to produce paths this machine's Python and shell accept.
+
+        Asserted by resolution rather than by comparing against default_shell(), which would only
+        restate the implementation: the quoted path out of the written file, handed back to Path(),
+        has to name the same directory. On Windows both spellings do. On POSIX only one does --
+        `"\\home\\you\\Vault"` is a single filename there, not a path -- so this case is red on
+        Linux and green on Windows while the default is wrong, which is exactly the shape of the
+        defect and exactly its measurement cost.
+
+        Undo recipe: replace default_shell() with a literal "powershell". Red under WSL or Linux,
+        unchanged green on Windows -- so on robin's machine this case never goes red, and that is
+        the property being recorded, not a weakness of the test.
+        """
+        self.write()
+        text = self.target.read_text(encoding="utf-8")
+        quoted = text.split("Synchronise the Obsidian vault at ")[1].split('"')[1]
+        self.assertEqual(Path(quoted).resolve(), self.vault.resolve(),
+                         f"the default spelling does not resolve on this platform: {quoted}")
 
     # ------------------------------------------------------------ failure modes
 

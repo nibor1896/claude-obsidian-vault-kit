@@ -455,6 +455,43 @@ class BuildIndexTest(unittest.TestCase):
         after = {p: p.read_bytes() for p in self.project.rglob("INDEX - *.md")}
         self.assertEqual(before, after)
 
+    def test_only_root_updates_the_root_index_after_a_new_note(self):
+        """The trap this kit states five times in prose and no run has ever contradicted.
+
+        `--vault <Project>` writes that project's indexes and never the root hub, so a note added
+        after the last sweep sits in the project index and is missing from the root one -- exit 0,
+        no message, which is the half that makes it expensive. SECTION 8 and the generated
+        /vaultkit both tell the user to rerun with `--root` for exactly this reason; until
+        2026-08-01 that instruction rested on nothing a run could disagree with.
+
+        Both halves are asserted, because either alone passes for the wrong reason: the root index
+        has to be UNCHANGED after the `--vault` run, and changed after the `--root` one. A test
+        holding only the second would go green over a tool that swept the root on every call.
+
+        Undo recipe: add `build_root(vault_root, defects)` to index_main()'s `--vault` branch.
+        Measured 2026-08-01 -- this case fails in the middle on `2 entries in` against the
+        `1 entries in` it was holding, which is the overcorrection this case exists to catch as
+        much as the defect itself. The other direction needs no recipe: a `--root` that stopped
+        writing the hub takes the first assertion with it, because the file it reads would not be
+        there to read.
+        """
+        write_note(self.project / "00_Notes" / "erste.md", title="Erste", summary="Eine.")
+        run_tool("vaultkit.py", "index", "--root", self.vault)
+        root = self.vault / root_index_name(self.vault)
+        before = root.read_text(encoding="utf-8")
+        self.assertIn("· 1 entries in", before, "the sweep did not count the first note")
+
+        write_note(self.project / "00_Notes" / "zweite.md", title="Zweite", summary="Zwei.")
+        code, _, err = run_tool("vaultkit.py", "index", "--vault", self.project)
+        self.assertEqual(code, 0, err)
+        self.assertEqual(root.read_text(encoding="utf-8"), before,
+                         "--vault rewrote the root index, so the warning the kit gives is wrong")
+
+        code, _, err = run_tool("vaultkit.py", "index", "--root", self.vault)
+        self.assertEqual(code, 0, err)
+        self.assertIn("· 2 entries in", root.read_text(encoding="utf-8"),
+                      "--root left the root index on yesterday's count")
+
     def test_category_index_backlinks_to_the_project_hub(self):
         """The rename that broke 23 of 441 links was a missing assertion, not a missing check."""
         run_tool("vaultkit.py", "index", "--vault", self.project)

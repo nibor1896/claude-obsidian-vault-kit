@@ -1,4 +1,4 @@
-<!-- kit-version: c350ee4831db -->
+<!-- kit-version: 0b1f28113a97 -->
 # Claude × Obsidian — Vault Kit
 
 **What this file is:** a setup contract for Claude. Drop it into a Claude conversation and say
@@ -46,6 +46,19 @@ document in order. It is a contract, not a suggestion.
      put a concrete proposal as the first option, add the plausible alternatives, and let the free-text
      field take anything else. A path you propose is answered with one click. A path you request in
      prose costs a round trip and gets a partial answer.
+   - **No option may be "I'll type it".** Every question already has a free-text field; an option
+     that only points at it spends one of the three or four slots the tool gives you and hands the
+     user back the work the slot existed to save. **The test is whether the option carries an
+     answer.** *"I have no GitHub account"* and *"I would rather not say"* are answers — they change
+     what happens next, and the never-skip list in SECTION 1 requires them. *"I'll type the names"*
+     is not: it describes the input field the question already has. Measured on the cold run of
+     2026-08-01: four of twelve questions carried one — *"I'll type the names"*, *"I'll type it"*,
+     *"I'll type path and name"*, *"I'll type the paths"* — and one of them stood in first position,
+     where the best proposal belongs. All four of those questions offered three options in total, so
+     a third of the choice restated the input field. **Fill every slot with a value the user could
+     accept unread**, and where you cannot build a third proposal out of what they have already told
+     you, offer two and let the field do its work. An empty slot costs nothing; a slot saying "type
+     it yourself" costs a proposal.
    - **A proposal may only be built from what the user has already given you**: the paths in their
      instruction, their earlier answers in this interview, and this file. Nothing else. Listing a
      directory to find better options is a read of their machine, and rule 5 below governs it — name
@@ -62,12 +75,18 @@ document in order. It is a contract, not a suggestion.
    were answered completely and immediately. The two runs that dropped into numbered prose questions
    were both abandoned by the user mid-setup. This is the most fragile part of the whole setup, which
    is why it is a rule and not a preference.
-4. **Match the user's shell.** Read which OS and shell they use — it is a prerequisite you can
-   measure, and 1.5 says to measure it — then emit commands in that syntax only. PowerShell has no
-   `&&` and no `export`; POSIX shells have no `Get-ChildItem`. Mixing them costs the user a failed
-   round trip every time. **Do not turn it into a question.** Say what you measured, as 1.5 requires,
-   and move on; a user who is asked to pick a shell they are already sitting in reads it as the setup
-   not knowing where it runs.
+4. **Match the user's shell, and the name their Python answers to.** Both are prerequisites you can
+   measure, and 1.5 says to measure both — then emit commands in that syntax and with that name,
+   only. PowerShell has no `&&` and no `export`; POSIX shells have no `Get-ChildItem`; Ubuntu under
+   WSL has no `python`, only `python3`. The shell costs a failed round trip; the interpreter name
+   costs the very first command of the setup. **Do not turn either into a question.** Say what you
+   measured, as 1.5 requires, and move on; a user who is asked to pick a shell they are already
+   sitting in reads it as the setup not knowing where it runs.
+   **`python` in this file is a name, not a placeholder to leave standing.** Every fenced command
+   below spells `python` because one of the two has to be written down. Substitute what you
+   measured — and pass it to the one command that writes a file nobody corrects later: the
+   `/vaultkit` chain in SECTION 8 takes `--python`, and whatever it is given is what the user types
+   for the life of that vault.
 5. **Never touch a path outside the vault and the tool folder** without saying which path and why,
    and waiting for a yes. **One exception, and it is the only one:**
    `~/.claude/commands/vaultkit.md`, written in SECTION 8. That file is part of this setup, not an
@@ -316,8 +335,13 @@ section opens with; a question in the next dialog is not one.
 ### 1.5 Environment
 
 - **OS and shell**, exactly. Every command you emit later depends on this.
-- **Python 3.10+ available?** Check with `python --version` / `python3 --version`. The guard scripts
-  are Python. If Python is absent, offer the install and wait.
+- **Python 3.10+, and the name it answers to.** Run `python --version` and `python3 --version`, and
+  keep the name that printed 3.10 or higher. **That name is a measurement, not a spelling
+  preference**, and every command line you emit from here on carries it. On most Linux installations,
+  and on Ubuntu under WSL in particular, `python` does not exist at all and only `python3` does — so
+  a document that writes `python` throughout, as this one does, is naming one of two possibilities,
+  not stating a fact about the machine. Report the measured name in the same breath as the OS and
+  the shell. If neither name answers, offer the install and wait.
 
 ## SECTION 2 — The doctrine (why the structure is shaped this way)
 
@@ -1075,18 +1099,44 @@ notice. Measured on a cold run: the command was written first and carried
 The tool never overwrites, so if the order does slip, the fix is to delete the file it wrote and run
 it again — not to edit it by hand.
 
-Run this once:
+Run whichever of these two matches the shell you measured in 1.5 — one of them, once:
 
 ```bash
-python <VaultRoot>/00_Global/06_tools/vaultkit.py command --vault <VaultRoot> \
-       --shell <the shell you measured in 1.5>
+# Windows PowerShell
+python <VaultRoot>/00_Global/06_tools/vaultkit.py command --vault <VaultRoot> --shell powershell --python python
+
+# bash, zsh, fish, Git Bash, WSL, macOS
+python3 <VaultRoot>/00_Global/06_tools/vaultkit.py command --vault <VaultRoot> --shell posix --python python3
 ```
 
-**`--shell` is not a question.** You measured the shell in 1.5; pass it. It decides nothing but
-whether the paths in the generated file are spelled with backslashes or forward slashes — Python
-takes either on Windows, so a wrong value breaks nothing. Asking the user to choose a spelling is a
-round trip for a value you already hold, and the default (`powershell`) is right on the platform
-where the difference is visible at all.
+**`--shell` takes one of exactly two values, and neither of them is the name of a shell.**
+`powershell` and `posix` are the two path *spellings* — backslashes or forward slashes — not a list
+of shells. `--shell bash` is argparse's `invalid choice`, **exit 2**, nothing written, and the setup
+stops on a value it measured correctly. This file invited that until 2026-08-01: the line read
+*`--shell <the shell you measured in 1.5>`*, what 1.5 measures under WSL is `bash`, and the word
+`posix` appeared nowhere in this document. Map the measurement onto one of the two values above; do
+not pass it through.
+
+**It is still not a question.** You measured the shell in 1.5; map it and pass it. Asking the user
+which spelling they would like is a round trip for a value you already hold.
+
+**A wrong `--shell` is not cosmetic in both directions.** Windows Python takes forward slashes, so
+`posix` on Windows costs nothing. POSIX Python does not take backslashes, so `powershell` on Linux
+or macOS writes `"\home\you\Vault"` into every step of the generated file — and bash keeps a
+backslash inside double quotes, so the command file the user runs from then on fails six times and
+repairs nothing. This document claimed the opposite until 2026-08-01, and called the Windows-shaped
+default *right on the platform where the difference is visible at all*, which is the sentence that
+invited leaving the flag off under WSL. The tool now reads its default off the platform it is
+running on, so the flag corrects a measurement instead of supplying one — pass it anyway, and say
+which value you passed.
+
+**`--python` is the 1.5 measurement, written into a file.** The generated `/vaultkit` puts one
+interpreter name in front of each of its six steps and nothing ever rereads that file to correct it:
+get it wrong and the user's own maintenance command answers `python: command not found` six times in
+a vault where nothing is broken. It takes `python` or `python3` and refuses everything else — an
+absolute path or `py -3` works on the machine you are standing on and is exactly what stops working
+when the interpreter moves. Default: `python` on Windows, `python3` everywhere else, read off the
+platform the tool runs on.
 
 It writes `~/.claude/commands/vaultkit.md` — the user's own commands folder, which is the only
 destination and takes no flag — with this vault's real paths already in it, and prints the path it
@@ -1279,15 +1329,18 @@ resolves it (SECTION 5). Write it escaped, do not dodge the table.
   Numbers on that page are either measured or explicitly marked unmeasured.
 - **Point them at the templates, and name the one setting that switches them on.** The generator
   writes `_templates/TEMPLATE - <Project>.md` per project (SECTION 5), but Obsidian does not find
-  that folder by itself. Tell the user, once, in these words: *Settings → Core plugins → Templates →
-  Template folder location* = `_templates`. After that, `Ctrl+P → Insert template` in a new note
-  fills the frontmatter block, with the project name already correct.
-  **That value is relative to the vault root, which makes it the cheapest test of whether the right
-  folder is open.** If Obsidian was pointed at `<workdir>` instead of `<workdir>/<VaultName>`
-  (SECTION 1.2 says to name that path out loud), `_templates` resolves to nothing and the value
-  that would work is `<VaultName>/_templates`. Do not hand them the longer one — it papers over an
-  off-by-one-level vault that will bite again at every path in this file. Send them back to open
-  the vault itself.
+  that folder by itself. **The setting and the folder it is read from are one sentence, and it is
+  said in these words:** *In Obsidian, with `<workdir>/<VaultName>` open as the vault — not
+  `<workdir>` — set Settings → Core plugins → Templates → Template folder location to
+  `_templates`; that path is read from the open vault's root, so it finds the templates from
+  `<workdir>/<VaultName>` and nothing whatsoever from `<workdir>`.* Then `Ctrl+P → Insert template`
+  in a new note fills the frontmatter block with the project name already correct — **and an empty
+  list there is not a missing template, it is the wrong folder open.**
+  **Do not repair that by lengthening the value.** `<VaultName>/_templates` makes the setting work
+  and leaves every other path in this document off by one level, which is the same defect arriving
+  later under a name nobody connects to this one. Send them back to open the vault itself;
+  SECTION 1.2 says to name that path out loud, and this is the point at which a run that skipped it
+  becomes visible for the first time.
   **Do not write `.obsidian/templates.json` for them — and not because it would fail.** It works,
   and it has now been measured three times against Obsidian **1.12.7**, most recently on
   2026-07-30 with a control probe: delete the file with Obsidian closed and the setting comes back
@@ -2403,18 +2456,53 @@ def marked_vault(path):
     return None
 
 
+def default_shell():
+    """The path spelling of the platform this runs on -- measured, not preferred.
+
+    IT WAS `powershell` UNCONDITIONALLY UNTIL 2026-08-01, and the reason written beside it was
+    wrong in the direction that costs something. Windows Python takes forward slashes, so `posix`
+    on Windows is free. POSIX Python does not take backslashes, so `powershell` on Linux renders
+    every line of the generated file as `"\\home\\you\\Vault"`, bash keeps a backslash inside
+    double quotes, and `/vaultkit` becomes a command file whose every step fails. `sys.platform`
+    rather than a new import: this file carries no `os`, and one entry point is one import list.
+    """
+    return "powershell" if sys.platform == "win32" else "posix"
+
+
+def default_python():
+    """The interpreter name the generated command file spells, read off the platform.
+
+    NOT `sys.executable`, AND NOT A FREE STRING -- both refusals are the point. `sys.executable`
+    is an absolute path that may be a venv, a store alias or `python3.13`, and the file it would be
+    written into is read months later, when that path may be gone. A free string takes
+    build_kit.py's COMMAND_RE with it: that pattern is `python[3]? …\\.py`, so a command file
+    spelling `py -3` or `/usr/bin/python3.12` renders zero matches, and check_generated_command()
+    then reports no undelivered tool and no invented subcommand because it can no longer see any --
+    it has no minimum-hit floor, unlike check_prose_claims(). Two values, both of which that
+    pattern matches, is the version of this flag that cannot blind the guard that reads it.
+
+    `python3` off Windows because PEP 394 requires that name to exist and does not require `python`
+    to: Ubuntu under WSL has no `python` at all without `python-is-python3`, which is where the name
+    hardcoded into this file was measured to break.
+    """
+    return "python" if sys.platform == "win32" else "python3"
+
+
 def show(path, shell):
     """A path as the user's own shell writes it.
 
-    Cosmetic, and deliberately so: Python takes forward slashes on Windows too, so nothing here
-    breaks if it is wrong. It is done because a command file that spells paths in a foreign
-    syntax reads as though it were meant for someone else's machine.
+    NOT COSMETIC IN BOTH DIRECTIONS, WHICH THIS SAID UNTIL 2026-08-01. Windows Python takes
+    forward slashes, so `posix` on Windows costs nothing and only reads as though the file were
+    meant for another machine. POSIX Python does not take backslashes: `powershell` off Windows
+    writes `"\\home\\you\\Vault"` into every step, bash keeps a backslash inside double quotes, and
+    the command file the user runs from then on fails six times over a vault with nothing wrong
+    with it. The default comes from default_shell() for exactly that asymmetry.
     """
     text = Path(path).as_posix() if shell == "posix" else str(Path(path)).replace("/", "\\")
     return f'"{text}"'
 
 
-def command_text(vault_root, projects, shell):
+def command_text(vault_root, projects, shell, interpreter="python"):
     vault_root = Path(vault_root).resolve()
     tools = vault_root / "00_Global" / "06_tools"
 
@@ -2455,7 +2543,7 @@ def command_text(vault_root, projects, shell):
         "chain produces the present. Carry its numbers into the report and run the other steps "
         "either way.",
         "",
-        f"- `python {kit} freshness --vault {root}`",
+        f"- `{interpreter} {kit} freshness --vault {root}`",
         "",
         "## 2 · Index each project",
         "",
@@ -2463,17 +2551,24 @@ def command_text(vault_root, projects, shell):
         "",
     ]
     for project in projects:
-        lines.append(f"- `python {kit} index --vault {show(project, shell)}`")
+        lines.append(f"- `{interpreter} {kit} index --vault {show(project, shell)}`")
     lines += [
         "",
         "## 3 · Index the vault root",
         "",
+        # IT SAID "STEP 1" UNTIL 2026-08-01, AND STEP 1 IS THE FRESHNESS CHECK, WHICH INDEXES
+        # NOTHING. The step that leaves the root index behind is the per-project loop above. It is
+        # named by its flag rather than by its number on purpose: test_write_command.py pins
+        # 1 = freshness and asserts the numbering runs through, so a sentence keyed to a number
+        # rots the next time a step is inserted -- silently, because nothing but a reader compares
+        # prose to a heading.
         "`--root`, not `--vault`. This is the one invocation that walks every project *and* "
-        "writes the root hub. Running only step 1 after adding a note leaves the root index "
-        "holding yesterday's entry count, with no message and a green exit — measured on a cold "
-        "run: one added note left it reading `5 entries` against a vault holding 6.",
+        "writes the root hub. Running only the per-project `--vault` lines above after adding a "
+        "note leaves the root index holding yesterday's entry count, with no message and a green "
+        "exit — measured on a cold run: one added note left it reading `5 entries` against a "
+        "vault holding 6.",
         "",
-        f"- `python {kit} index --root {root}`",
+        f"- `{interpreter} {kit} index --root {root}`",
         "",
         "## 4 · Check the links",
         "",
@@ -2481,20 +2576,20 @@ def command_text(vault_root, projects, shell):
         "hubs link back to the root index, so anything narrower reports a broken link that is "
         "not broken:",
         "",
-        f"- `python {kit} links --vault {root}`",
+        f"- `{interpreter} {kit} links --vault {root}`",
         "",
         "## 5 · Check for duplicates",
         "",
         "`--vault` here takes either the root or a single project:",
         "",
-        f"- `python {kit} duplicates --vault {root}`",
+        f"- `{interpreter} {kit} duplicates --vault {root}`",
         "",
         "## 6 · Prove the second run changes nothing",
         "",
         "A generator that drifts on every run is indistinguishable from a clean one after a "
         "single pass, and it turns every later `git status` into noise nobody reads.",
         "",
-        f"- `python {kit} index --root {root}`",
+        f"- `{interpreter} {kit} index --root {root}`",
     ]
     # The git line is written only into a vault that has a repository. SECTION 7 recommends git
     # and step 2 of verify_setup requires it, but a user may still have declined -- and a command
@@ -2538,8 +2633,11 @@ def target_path():
 def command_main(argv: list[str] | None = None) -> int:
     parser = argparse.ArgumentParser(description=__doc__)
     parser.add_argument("--vault", required=True, help="vault root")
-    parser.add_argument("--shell", choices=("powershell", "posix"), default="powershell",
+    parser.add_argument("--shell", choices=("powershell", "posix"), default=default_shell(),
                         help="the syntax the paths are written in")
+    parser.add_argument("--python", choices=("python", "python3"), default=default_python(),
+                        help="the interpreter name written in front of every step of the "
+                             "generated command file")
     args = parser.parse_args(argv)
 
     vault_root = Path(args.vault).resolve()
@@ -2595,7 +2693,7 @@ def command_main(argv: list[str] | None = None) -> int:
         return EXIT_DEFECT
 
     target.parent.mkdir(parents=True, exist_ok=True)
-    target.write_text(command_text(vault_root, projects, args.shell),
+    target.write_text(command_text(vault_root, projects, args.shell, args.python),
                       encoding="utf-8", newline="\n")
     print(f"wrote {target} — /{COMMAND_NAME} covers {len(projects)} projects; "
           f"edit it freely, no run overwrites it")

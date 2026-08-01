@@ -927,18 +927,53 @@ def marked_vault(path):
     return None
 
 
+def default_shell():
+    """The path spelling of the platform this runs on -- measured, not preferred.
+
+    IT WAS `powershell` UNCONDITIONALLY UNTIL 2026-08-01, and the reason written beside it was
+    wrong in the direction that costs something. Windows Python takes forward slashes, so `posix`
+    on Windows is free. POSIX Python does not take backslashes, so `powershell` on Linux renders
+    every line of the generated file as `"\\home\\you\\Vault"`, bash keeps a backslash inside
+    double quotes, and `/vaultkit` becomes a command file whose every step fails. `sys.platform`
+    rather than a new import: this file carries no `os`, and one entry point is one import list.
+    """
+    return "powershell" if sys.platform == "win32" else "posix"
+
+
+def default_python():
+    """The interpreter name the generated command file spells, read off the platform.
+
+    NOT `sys.executable`, AND NOT A FREE STRING -- both refusals are the point. `sys.executable`
+    is an absolute path that may be a venv, a store alias or `python3.13`, and the file it would be
+    written into is read months later, when that path may be gone. A free string takes
+    build_kit.py's COMMAND_RE with it: that pattern is `python[3]? …\\.py`, so a command file
+    spelling `py -3` or `/usr/bin/python3.12` renders zero matches, and check_generated_command()
+    then reports no undelivered tool and no invented subcommand because it can no longer see any --
+    it has no minimum-hit floor, unlike check_prose_claims(). Two values, both of which that
+    pattern matches, is the version of this flag that cannot blind the guard that reads it.
+
+    `python3` off Windows because PEP 394 requires that name to exist and does not require `python`
+    to: Ubuntu under WSL has no `python` at all without `python-is-python3`, which is where the name
+    hardcoded into this file was measured to break.
+    """
+    return "python" if sys.platform == "win32" else "python3"
+
+
 def show(path, shell):
     """A path as the user's own shell writes it.
 
-    Cosmetic, and deliberately so: Python takes forward slashes on Windows too, so nothing here
-    breaks if it is wrong. It is done because a command file that spells paths in a foreign
-    syntax reads as though it were meant for someone else's machine.
+    NOT COSMETIC IN BOTH DIRECTIONS, WHICH THIS SAID UNTIL 2026-08-01. Windows Python takes
+    forward slashes, so `posix` on Windows costs nothing and only reads as though the file were
+    meant for another machine. POSIX Python does not take backslashes: `powershell` off Windows
+    writes `"\\home\\you\\Vault"` into every step, bash keeps a backslash inside double quotes, and
+    the command file the user runs from then on fails six times over a vault with nothing wrong
+    with it. The default comes from default_shell() for exactly that asymmetry.
     """
     text = Path(path).as_posix() if shell == "posix" else str(Path(path)).replace("/", "\\")
     return f'"{text}"'
 
 
-def command_text(vault_root, projects, shell):
+def command_text(vault_root, projects, shell, interpreter="python"):
     vault_root = Path(vault_root).resolve()
     tools = vault_root / "00_Global" / "06_tools"
 
@@ -979,7 +1014,7 @@ def command_text(vault_root, projects, shell):
         "chain produces the present. Carry its numbers into the report and run the other steps "
         "either way.",
         "",
-        f"- `python {kit} freshness --vault {root}`",
+        f"- `{interpreter} {kit} freshness --vault {root}`",
         "",
         "## 2 · Index each project",
         "",
@@ -987,17 +1022,24 @@ def command_text(vault_root, projects, shell):
         "",
     ]
     for project in projects:
-        lines.append(f"- `python {kit} index --vault {show(project, shell)}`")
+        lines.append(f"- `{interpreter} {kit} index --vault {show(project, shell)}`")
     lines += [
         "",
         "## 3 · Index the vault root",
         "",
+        # IT SAID "STEP 1" UNTIL 2026-08-01, AND STEP 1 IS THE FRESHNESS CHECK, WHICH INDEXES
+        # NOTHING. The step that leaves the root index behind is the per-project loop above. It is
+        # named by its flag rather than by its number on purpose: test_write_command.py pins
+        # 1 = freshness and asserts the numbering runs through, so a sentence keyed to a number
+        # rots the next time a step is inserted -- silently, because nothing but a reader compares
+        # prose to a heading.
         "`--root`, not `--vault`. This is the one invocation that walks every project *and* "
-        "writes the root hub. Running only step 1 after adding a note leaves the root index "
-        "holding yesterday's entry count, with no message and a green exit — measured on a cold "
-        "run: one added note left it reading `5 entries` against a vault holding 6.",
+        "writes the root hub. Running only the per-project `--vault` lines above after adding a "
+        "note leaves the root index holding yesterday's entry count, with no message and a green "
+        "exit — measured on a cold run: one added note left it reading `5 entries` against a "
+        "vault holding 6.",
         "",
-        f"- `python {kit} index --root {root}`",
+        f"- `{interpreter} {kit} index --root {root}`",
         "",
         "## 4 · Check the links",
         "",
@@ -1005,20 +1047,20 @@ def command_text(vault_root, projects, shell):
         "hubs link back to the root index, so anything narrower reports a broken link that is "
         "not broken:",
         "",
-        f"- `python {kit} links --vault {root}`",
+        f"- `{interpreter} {kit} links --vault {root}`",
         "",
         "## 5 · Check for duplicates",
         "",
         "`--vault` here takes either the root or a single project:",
         "",
-        f"- `python {kit} duplicates --vault {root}`",
+        f"- `{interpreter} {kit} duplicates --vault {root}`",
         "",
         "## 6 · Prove the second run changes nothing",
         "",
         "A generator that drifts on every run is indistinguishable from a clean one after a "
         "single pass, and it turns every later `git status` into noise nobody reads.",
         "",
-        f"- `python {kit} index --root {root}`",
+        f"- `{interpreter} {kit} index --root {root}`",
     ]
     # The git line is written only into a vault that has a repository. SECTION 7 recommends git
     # and step 2 of verify_setup requires it, but a user may still have declined -- and a command
@@ -1062,8 +1104,11 @@ def target_path():
 def command_main(argv: list[str] | None = None) -> int:
     parser = argparse.ArgumentParser(description=__doc__)
     parser.add_argument("--vault", required=True, help="vault root")
-    parser.add_argument("--shell", choices=("powershell", "posix"), default="powershell",
+    parser.add_argument("--shell", choices=("powershell", "posix"), default=default_shell(),
                         help="the syntax the paths are written in")
+    parser.add_argument("--python", choices=("python", "python3"), default=default_python(),
+                        help="the interpreter name written in front of every step of the "
+                             "generated command file")
     args = parser.parse_args(argv)
 
     vault_root = Path(args.vault).resolve()
@@ -1119,7 +1164,7 @@ def command_main(argv: list[str] | None = None) -> int:
         return EXIT_DEFECT
 
     target.parent.mkdir(parents=True, exist_ok=True)
-    target.write_text(command_text(vault_root, projects, args.shell),
+    target.write_text(command_text(vault_root, projects, args.shell, args.python),
                       encoding="utf-8", newline="\n")
     print(f"wrote {target} — /{COMMAND_NAME} covers {len(projects)} projects; "
           f"edit it freely, no run overwrites it")
