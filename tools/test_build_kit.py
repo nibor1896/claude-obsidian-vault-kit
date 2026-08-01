@@ -497,6 +497,36 @@ class BuildKitTest(unittest.TestCase):
         self.assertNotEqual(code, 0, f"a stale line in the generated chain passed: {out}")
         self.assertIn("the /vaultkit chain names run_suites.py, which is not delivered", err)
 
+    def test_the_git_branch_of_the_generated_chain_is_read_too(self):
+        """The half of the chain that only exists in a vault with a repository (issue #28).
+
+        command_text() ends on one of two lines depending on `(vault_root / ".git").is_dir()`.
+        Until 2026-08-01 the guard rendered once against a path that had no repository, so the
+        branch below was never text anybody checked -- and that is the branch the
+        `must print nothing` defect lived in for a full release, found by a cold run rather than
+        by the seven build-time guards that were green throughout.
+
+        The case above edits a step both renderings share; this one edits a line only the git
+        rendering has. That is what makes it a case and not a restatement of the one above.
+
+        Undo recipe, and read the MESSAGE, not the exit code. Restore build_kit.py to its
+        single-rendering form (`git show HEAD:tools/build_kit.py`, before 2026-08-01) and this
+        case still fails -- but on `claude-obsidian-vault-kit.md: out of date`, measured
+        2026-08-01. That is the guard chain running past the defect to the version stamp: the
+        edit above went unseen, and the only thing left to complain about was the stale delivery.
+        With both renderings the message names the tool and the branch. An exit code alone cannot
+        tell those two runs apart, which is why the assertions below are on the text.
+        """
+        edit(self.tmp, "tools/vaultkit.py",
+             lambda t: t.replace(
+                 '        lines.append(f"- `git -C {root} status --porcelain`',
+                 '        lines.append("- `python run_suites.py`")\n'
+                 '        lines.append(f"- `git -C {root} status --porcelain`', 1))
+        code, out, err = run_check(self.tmp)
+        self.assertNotEqual(code, 0, f"the git branch of the chain was never rendered: {out}")
+        self.assertIn("the /vaultkit chain names run_suites.py, which is not delivered", err)
+        self.assertIn("Seen in the git rendering.", err, "the branch was not named")
+
     def test_a_misspelled_tool_in_the_section_10_header_is_refused(self):
         """The header is a chain source again, and this is what proves it is read.
 

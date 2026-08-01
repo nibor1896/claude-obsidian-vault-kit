@@ -178,7 +178,19 @@ class WriteCommandTest(unittest.TestCase):
 
     def test_the_second_run_writes_nothing_and_says_nothing(self):
         """A command file is there to be edited. Silence on the second run is the whole promise:
-        it means nothing was missing, and runs.log carries the run either way."""
+        it means nothing was missing, and runs.log carries the run either way.
+
+        IT IS ALSO THE DENOMINATOR FOR THE #27 REPORT (2026-08-01). Since that day the same
+        branch speaks up when the marker names a DIFFERENT vault, and a report that fires on
+        every ordinary re-run would report nothing at all. This case is what holds that line:
+        same vault, same file, no output.
+
+        Undo recipe: drop the `was != here` condition in command_main() and print whenever the
+        file is ours. Measured 2026-08-01 -- exactly this case fails, on a non-empty stdout, and
+        it is the only one. Drop the branch the other way, so it never prints, and exactly the
+        marker case below fails instead. One recipe per direction, one failure each, and the
+        exit code is 0 in all of them: only the text tells these runs apart.
+        """
         self.write()
         before = self.target.read_bytes()
         code, out, err = self.write()
@@ -209,16 +221,38 @@ class WriteCommandTest(unittest.TestCase):
 
     def test_our_own_file_is_recognised_by_its_marker_not_by_its_path(self):
         """A vault that moved is still our file. Re-checking the path inside would call it a
-        stranger and turn a working setup red for having been relocated."""
+        stranger and turn a working setup red for having been relocated.
+
+        WHAT CHANGED ON 2026-08-01 (issue #27), and what did not. The decision is untouched:
+        the file is kept, nothing is overwritten, the exit stays 0. Those are the assertions
+        this case has always existed for. What stood beside them was `out.strip() == ""`, and
+        that silence WAS the defect -- there is one commands folder per machine, so a second
+        vault never gets a second file and `/vaultkit` goes on synchronising the first one.
+        Measured on cold run 5, 2026-07-31: exit 0, no output, and the setup reported
+        `/vaultkit` as ready while the command pointed elsewhere.
+
+        So the assertion moved from emptiness to the two paths. A relocated vault lands in this
+        same branch and is told the same thing: the marker cannot tell "moved" from "second
+        vault" apart, the user can, and nothing is decided on the answer either way.
+
+        Undo recipe: drop the `was != here` branch in command_main(). Measured 2026-08-01 --
+        this case fails on the missing paths while the second-run case above stays green. That
+        is what tells the two apart: that one guards the silence, this one the report, and the
+        exit code is 0 in every one of these runs.
+        """
         self.write()
         text = self.target.read_text(encoding="utf-8")
         self.assertIn(vaultkit.MARKER_PREFIX, text)
-        moved = text.replace(self.vault.as_posix(), "/somewhere/else/Vault")
+        mine = self.vault.resolve().as_posix()
+        moved = text.replace(mine, "/somewhere/else/Vault")
+        self.assertNotEqual(moved, text, "the marker did not carry this vault's own path")
         self.target.write_text(moved, encoding="utf-8", newline="\n")
         code, out, err = self.write()
         self.assertEqual(code, 0, err)
-        self.assertEqual(out.strip(), "")
-        self.assertEqual(self.target.read_text(encoding="utf-8"), moved)
+        self.assertEqual(self.target.read_text(encoding="utf-8"), moved,
+                         "a file of ours was rewritten for pointing at another vault")
+        self.assertIn("/somewhere/else/Vault", out, "the vault it points at was not named")
+        self.assertIn(mine, out, "the vault this run is for was not named")
 
     def test_a_hand_edited_command_survives_the_next_run(self):
         """One that comes back unchanged proves nothing unless it went in changed."""

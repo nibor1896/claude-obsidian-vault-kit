@@ -131,9 +131,16 @@ document in order. It is a contract, not a suggestion.
 structured question UI, with options. Prose questions are not allowed here — not one, not two, not
 "quickly". If you catch yourself typing "1." and "2." into a message, stop and use the tool.
 
-**Batch each round into one call, as full as the tool allows.** There is no question count to stay
-under. The failure mode is not "too many questions in one dialog" — it is a question that ends up
-outside the dialog. Two cold runs died exactly there.
+**Batch each round into one call, as full as the tool allows.** The failure mode is not "too many
+questions in one dialog" — it is a question that ends up outside the dialog. Two cold runs died
+exactly there.
+
+**If your question tool caps a call, that cap is a round boundary — never a reason to drop into
+prose.** The tool this file was written against takes **four questions per call**, read off its own
+parameter schema on 2026-08-01. That is one machine and one tool version: it is not a cold-run
+finding, not a published limit, and yours may well differ. So fill the call; when the next question
+does not fit, restate in one line what you now know and open the next round. What must not happen
+is the remainder arriving as a numbered list in a chat message.
 
 After each round, restate in **one line** what you now know, then ask the next. That is what lets the
 user catch a wrong answer while it is still cheap to fix.
@@ -149,9 +156,9 @@ loud which questions you skipped and what you measured.
   uses Obsidian" from a present installation is how a setup ends up adapting a real vault nobody
   pointed you at.
 - **1.2 — migration, new production vault, or test vault.**
-- **1.3 — project names, and where their code lives.**
+- **1.3 — project names, where their code lives, and the GitHub handle.**
 - **1.4 — the vault path, the backup, git, whether a remote may be added, and the git identity:
-  the GitHub handle, `user.name` and `user.email`.**
+  `user.name` and `user.email`.**
 - **The GitHub handle — ask it, and never derive it.** It is the first half of
   `<handle>@users.noreply.github.com`, so a handle taken from anywhere else puts somebody else's
   address in every commit the user makes. **This file is an environment too**, and that is the part
@@ -221,6 +228,15 @@ What are we setting up?
   "everywhere" or "just there" — and get a yes. Silently applying it to one project leaves the vault
   inconsistent; silently applying it to all of them overrides a choice they may have made on purpose.
 
+**Name the folder they open, as a path, not as a description.** The vault is
+`<workdir>/<VaultName>/` — its own folder, one level below where you were started (1.4). So say it
+in these words: *open `<workdir>/<VaultName>` in Obsidian, not `<workdir>`.* The tree you just
+reported is the subfolder; the level above it is only where it happened to be created. Open the
+wrong one and nothing errors: the app shows a vault whose root holds a single folder, every path in
+this document is off by one level, and the template setting in SECTION 8 points at nothing. Neither
+cold run hit this, because the operator already knew which folder was which — that is exactly the
+knowledge a first-time user does not have.
+
 **Tell them what Obsidian will ask, before they start rearranging.** The moment they rename or move a
 folder, Obsidian pops up *"Update internal links? This affects N links in N files."* Say in advance:
 choose **"Don't update"**. The affected links live in generated index files, so letting Obsidian
@@ -239,6 +255,14 @@ elsewhere is untouched — but say so, or they will assume they broke something 
   folder name and appears in generated filenames — prefer no spaces, no `#`, `[`, `]`, `|`, `^`.)
 - **Where does the code live** for each project? Absolute paths. May I read those repos, or is any
   of them off limits?
+- **The GitHub handle.** Asked in *this* round, one round ahead of the two values built from it in
+  1.4 — and that is the whole reason it sits here rather than beside them. Nothing is written with
+  it; it is not a git setting. But `user.name` and `user.email` both offer defaults made out of it,
+  and a dialog cannot fill an option with an answer the same dialog is still collecting: every
+  question in a round is rendered before any of them is answered. It has exactly one source: this
+  answer. **Not the footer of this file, not your session context, not another repo on the
+  machine** — the never-skip list at the top of SECTION 1 says what deriving it cost on a cold run.
+  "No GitHub account" and "rather not say" are complete answers.
 
 **Do not ask whether they want a global bucket.** `00_Global/` is always created — it is where the
 tools go, and the scripts spell that path out. State it in the one-line summary after this round
@@ -249,7 +273,12 @@ overrules is worse than no question — it teaches the user that their answers d
 
 ### 1.4 Where the vault lives, and how it survives
 
-Five questions, one call:
+Ask these in one call. **No count is given here on purpose:** the list has grown and shrunk twice,
+and a number in this position was wrong both times — it counted the bullets below while several of
+them hold two questions each (git and the remote are two answers; `user.name` and `user.email` are
+two more). If the dialog will not take them all in one call, open a **second round** rather than
+putting the remainder in prose. A question that ends up outside the dialog is the failure mode this
+section opens with; a question in the next dialog is not one.
 
 - **The vault path.** Propose one and have it confirmed. **Its own folder, one level down** —
   `<workdir>/<VaultName>/`, never the folder you were started in, so the harness's own config
@@ -267,16 +296,12 @@ Five questions, one call:
   *states across all notes*. Neither replaces the other. "Yes to git" is not "yes to a remote" — a
   vault of project knowledge holds things the user would not publish, so the remote must be private,
   and that needs its own yes.
-- **The GitHub handle.** Ask it here, in the same call, and put it **before** the two values that
-  are built from it. Nothing is written with it — it is not a git setting — but both defaults below
-  come out of it, and it has exactly one source: this answer. **Not the footer of this file, not
-  your session context, not another repo on the machine** — the never-skip list at the top of
-  SECTION 1 says what deriving it cost on a cold run. "No GitHub account" and "rather not say" are
-  complete answers.
 - **`user.name` and `user.email`** — ask for both, in that order, set them repo-locally, never
   `--global` (SECTION 7). Do not invent them and do not copy them from another repo on the machine.
   Offer a sensible default as the first option so it is one click. **Both defaults are named, so
-  neither is left to judgement, and both are built from the handle answered above:**
+  neither is left to judgement, and both are built from the handle answered in 1.3 — one round
+  ago, which is the only place it can come from and still be there when these options are
+  rendered:**
   - `user.name` → **the handle**, as option 1: `[1] <handle>  [2] a different name`, with free text
     for anything else. The two values may legitimately differ — a full name against a handle — which
     is why this stays a question and never becomes an assumption. What it must not be is a second
@@ -1256,6 +1281,12 @@ resolves it (SECTION 5). Write it escaped, do not dodge the table.
   that folder by itself. Tell the user, once, in these words: *Settings → Core plugins → Templates →
   Template folder location* = `_templates`. After that, `Ctrl+P → Insert template` in a new note
   fills the frontmatter block, with the project name already correct.
+  **That value is relative to the vault root, which makes it the cheapest test of whether the right
+  folder is open.** If Obsidian was pointed at `<workdir>` instead of `<workdir>/<VaultName>`
+  (SECTION 1.2 says to name that path out loud), `_templates` resolves to nothing and the value
+  that would work is `<VaultName>/_templates`. Do not hand them the longer one — it papers over an
+  off-by-one-level vault that will bite again at every path in this file. Send them back to open
+  the vault itself.
   **Do not write `.obsidian/templates.json` for them — and not because it would fail.** It works,
   and it has now been measured three times against Obsidian **1.12.7**, most recently on
   2026-07-30 with a control probe: delete the file with Obsidian closed and the setting comes back
@@ -1282,7 +1313,7 @@ Everything a setup does proves the scripts run on clean input. That is the half 
 guard is only worth having if it goes **red on bad input**, and reasoning about the code is not
 evidence — so the kit's repository carries `acceptance.py`, which hands each guard one deliberately
 broken input and requires it to refuse. It ran before this release: **12/12 checks behaved as
-specified**, on Windows 11 with Python 3.13, under PowerShell 5.1 and Git Bash, ten passes each.
+specified**, on Windows 11 with Python 3.13, under PowerShell 5.1 and Git Bash, one pass each.
 
 **It is not in SECTION 10 and the user does not run it.** It builds and deletes throwaway vaults per
 fixture; nothing about a user's notes changes what it measures, so re-running it on their machine

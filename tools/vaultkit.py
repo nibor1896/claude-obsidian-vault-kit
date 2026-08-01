@@ -902,6 +902,31 @@ def written_by_us(path):
     return MARKER_PREFIX in head
 
 
+def marked_vault(path):
+    """The vault path a marker was written for, or None. The inverse of marker().
+
+    Separate from written_by_us() on purpose: whether the file is ours and which vault it serves
+    are two questions, and answering them in one function is what would turn a relocated vault
+    into a stranger. This one is only ever used to SAY something -- no branch decides whether to
+    write on it.
+
+    None is "no answer", never a guess. A file with no marker, one whose marker was hand-edited
+    into a shape this cannot read, and one that will not open all give None, and a caller holding
+    None stays quiet rather than naming a path it invented.
+    """
+    try:
+        head = path.read_text(encoding="utf-8-sig")[:2000]
+    except OSError:
+        return None
+    for line in head.splitlines():
+        line = line.strip()
+        if line.startswith(MARKER_PREFIX) and line.endswith("-->"):
+            inner = line[len(MARKER_PREFIX):-len("-->")].strip()
+            if inner:
+                return inner
+    return None
+
+
 def show(path, shell):
     """A path as the user's own shell writes it.
 
@@ -1006,11 +1031,6 @@ def command_text(vault_root, projects, shell):
     # `INDEX - *.md` WITHOUT a new note. Measured on the cold run of 2026-07-31: step 6 showed
     # three changed index files, correctly, and a reader holding only this command file would
     # have reported a defect that was not one.
-    #
-    # KNOWN GAP, deliberately left for its own round: check_generated_command() in build_kit.py
-    # renders against REPO/"not-a-real-vault", a path with no .git, so it only ever sees the
-    # else-branch below and cannot read this line at all. Closing it means rendering against a
-    # path WITH a .git, which is a guard rebuild, not a text fix.
     if (vault_root / ".git").is_dir():
         lines.append(f"- `git -C {root} status --porcelain`  — no `INDEX - *.md` may appear "
                      f"without a note having been added. `?? .obsidian/` and notes you wrote "
@@ -1061,7 +1081,28 @@ def command_main(argv: list[str] | None = None) -> int:
 
     if target.exists():
         if written_by_us(target):
-            # Ours from a previous run, possibly hand-edited since. Nothing to say.
+            # Ours from a previous run, possibly hand-edited since -- either way it is kept.
+            #
+            # THE ONE THING WORTH SAYING IS WHICH VAULT IT SERVES (2026-08-01, issue #27). There
+            # is a single commands folder per machine, so a second vault gets no second file:
+            # `/vaultkit` goes on synchronising the first one. Measured on cold run 5,
+            # 2026-07-31 -- exit 0, no output, and the setup reported /vaultkit as ready while
+            # the command pointed somewhere else entirely.
+            #
+            # Nothing about the decision changes: the file is not overwritten and the exit stays
+            # EXIT_OK, because setting up a second vault is not an error. Only the silence goes.
+            # A vault that merely MOVED lands here too and is told the same thing -- the marker
+            # cannot tell the two apart, and the user can.
+            was = marked_vault(target)
+            here = vault_root.as_posix()
+            if was and was != here:
+                print(f"{target} was written for a different vault — left untouched.\n"
+                      f"  it points at:    {was}\n"
+                      f"  this run is for: {here}\n"
+                      f"  So /{COMMAND_NAME} keeps synchronising the first one. If this vault is "
+                      f"the one you want it to serve, rename or remove that file and run this "
+                      f"again — there is only one commands folder, so the two cannot both hold "
+                      f"the name.")
             log_run(vault_root, "write_command", "ok", f"{target} already ours · nothing written")
             return EXIT_OK
         # Someone else's file under the name we wanted. Nothing is overwritten and nothing is

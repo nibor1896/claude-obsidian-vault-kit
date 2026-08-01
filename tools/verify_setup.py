@@ -11,7 +11,6 @@ files and checks the chain a user's setup performs. That is a question about thi
 before publishing, not something a vault re-answers.
 
     python verify_setup.py
-    python verify_setup.py --repeat 10
 
 Everything happens in a throwaway tree under the system temp directory. Exit 0 only when
 every step passed in every pass.

@@ -744,8 +744,20 @@ def check_generated_command():
     one that keeps *running* and checks nothing, so what this asks for is the function by name,
     and it fails saying so if the function is not where it looked.
 
-    Undo recipe: put `run_suites.py` back into command_text()'s step list. `--check` exits 1
-    with `the /vaultkit chain names run_suites.py, which is not delivered`.
+    BOTH BRANCHES, BECAUSE THE TEXT HAS TWO (2026-08-01, issue #28). command_text() ends on a
+    line that depends on whether the vault has a `.git`, and until today this rendered once
+    against `REPO/"not-a-real-vault"` -- a path with no repository, so only the else-branch was
+    ever read. The `must print nothing` defect lived in the other one for a full release: seven
+    build-time guards were green while a delivered file told the user to report a defect that was
+    not one, and a cold run found it, not this. Rendering against a path WITH a `.git` instead
+    would only move the blind spot: both branches carry text the user reads, so both are
+    rendered, and the message says which one a finding came from.
+
+    Undo recipes, one per branch -- a single one would pass again the moment the two drift:
+      * else-branch: put `run_suites.py` back into command_text()'s step list. `--check` exits 1
+        with `the /vaultkit chain names run_suites.py, which is not delivered`.
+      * git branch: name an undelivered tool in the `git -C … status` line. Same exit, same
+        sentence, and `Seen in the git rendering.` names the branch.
     """
     sys.path.insert(0, str(TOOLS))
     import vaultkit
@@ -757,26 +769,40 @@ def check_generated_command():
               file=sys.stderr)
         return 1
 
-    # A vault that does not exist and is never touched: command_text() only formats paths.
-    text = vaultkit.command_text(REPO / "not-a-real-vault", [], "posix")
     delivered = {name for name in delivered_files() if name.endswith(".py")}
     register = dispatch_register()
 
-    ghosts = sorted(set(COMMAND_RE.findall(text)) - delivered)
-    if ghosts:
-        print(f"{OUT.name}: the /vaultkit chain tells the user to run something undelivered.\n"
-              + "\n".join(f"  the /vaultkit chain names {name}, which is not delivered"
-                          for name in ghosts)
-              + "\n  That file is generated into the user's own commands folder at setup, so a "
-                "stale line there is one they type every time they sync.", file=sys.stderr)
-        return 1
-    invented = sorted(set(SUBCOMMAND_RE.findall(text)) - set(register))
-    if invented:
-        print(f"{OUT.name}: the /vaultkit chain names a subcommand that does not exist.\n"
-              + "\n".join(f"  vaultkit.py {sub}: no such subcommand" for sub in invented)
-              + f"\n  Known: {', '.join(sorted(register))}.", file=sys.stderr)
-        return 1
-    return 0
+    def faults(text, branch):
+        """The same two questions asked of one rendering. `branch` only names where it was seen."""
+        ghosts = sorted(set(COMMAND_RE.findall(text)) - delivered)
+        if ghosts:
+            print(f"{OUT.name}: the /vaultkit chain tells the user to run something undelivered.\n"
+                  + "\n".join(f"  the /vaultkit chain names {name}, which is not delivered"
+                              for name in ghosts)
+                  + f"\n  Seen in the {branch} rendering."
+                  + "\n  That file is generated into the user's own commands folder at setup, so a "
+                    "stale line there is one they type every time they sync.", file=sys.stderr)
+            return 1
+        invented = sorted(set(SUBCOMMAND_RE.findall(text)) - set(register))
+        if invented:
+            print(f"{OUT.name}: the /vaultkit chain names a subcommand that does not exist.\n"
+                  + "\n".join(f"  vaultkit.py {sub}: no such subcommand" for sub in invented)
+                  + f"\n  Seen in the {branch} rendering."
+                  + f"\n  Known: {', '.join(sorted(register))}.", file=sys.stderr)
+            return 1
+        return 0
+
+    # A real directory rather than a phantom path: the git branch needs a `.git` that
+    # `is_dir()` answers yes to, and the same tree answers no before it is created. Nothing is
+    # read out of it -- command_text() only formats paths.
+    with tempfile.TemporaryDirectory() as tmp:
+        vault = Path(tmp) / "Vault"
+        vault.mkdir()
+        found = faults(vaultkit.command_text(vault, [], "posix"), "no-git")
+        if found:
+            return found
+        (vault / ".git").mkdir()
+        return faults(vaultkit.command_text(vault, [], "posix"), "git")
 
 
 def all_guards():

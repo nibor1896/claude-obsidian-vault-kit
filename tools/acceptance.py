@@ -13,8 +13,7 @@ the specified behaviour it is read as well, never instead: fixtures 9 and 11 req
 name what it touched, and several red fixtures require a particular phrase or require silence.
 SECTION 9 of the contract lists the three kinds.
 
-    python acceptance.py            one pass
-    python acceptance.py --repeat 10
+    python acceptance.py
 
 Exit 0 only when every fixture behaved as specified in every pass.
 """

@@ -64,8 +64,8 @@ reproduced by cloning:
 
 ```
 python tools/run_suites.py
-python tools/acceptance.py --repeat 10
-python tools/verify_setup.py --repeat 10
+python tools/acceptance.py
+python tools/verify_setup.py
 ```
 
 **Those three are not in your vault, on purpose.** They test the tools; your tools do not change

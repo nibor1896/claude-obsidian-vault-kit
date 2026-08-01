@@ -10,6 +10,43 @@ then run `python upgrade.py <newer kit file>` to see what would change, and `--a
 
 ---
 
+## `c350ee4831db` — 2026-08-01
+
+**Three places that stayed silent, and a text that did not add up.** No new capability — four
+defects that a cold run had exposed and one number that described the old release.
+
+### What a user gets
+
+- **The setup now names the folder to open in Obsidian.** It says `<workdir>/<VaultName>`, not
+  `<workdir>`, at the point the tree is first opened — and again where the template setting is
+  explained, because `_templates` only resolves from the vault root and is therefore the cheapest
+  test of whether the right folder is open. Opening the wrong one raises no error; it shifts every
+  path in the contract by one level.
+- **`/vaultkit` says which vault it serves.** A command file already carrying the marker is still
+  left untouched and the exit code is still 0 — setting up a second vault is not an error. What
+  changed is the silence: it now prints the vault the file points at and the vault the run is for.
+  Measured on a cold run before the fix: exit 0, no output, and the setup reported `/vaultkit` as
+  ready while it kept synchronising a different vault.
+- **The GitHub handle is asked one round before the values built from it.** The contract used to
+  demand it in the same call as `user.name` and `user.email`, which a dialog cannot do — every
+  question in a round is rendered before any of them is answered, so option 1 could never carry the
+  handle. Measured after the fix, on a cold run: three rounds of four questions, the handle in
+  round one, `<handle>` as a clickable option 1 on both identity questions.
+
+### Fixed
+
+- **A build-time guard read half of what it checked.** `check_generated_command()` rendered the
+  `/vaultkit` chain once, against a path with no `.git`, so the branch that only exists in a vault
+  *with* a repository was never text anybody checked. That is exactly where a `must print nothing`
+  defect had lived for a full release, found by a cold run while seven guards stayed green. It now
+  renders both branches and names the branch a finding came from.
+- **The contract counted its own questions wrong.** Section 1.4 said "five questions" while holding
+  seven, then four bullets holding six. The count is gone: what stands there is the rule — one call,
+  and a second round rather than prose when the dialog will not take them all.
+- **`ten passes each` described a release that no longer exists.** The acceptance figure now says
+  `one pass each`, measured on 2026-08-01 under PowerShell 5.1 and Git Bash: 12/12 both times, with
+  11/11 suites and 15/15 setup steps beside it.
+
 ## `488e08d22ef7` — 2026-07-31
 
 **The delivery went from 22 files to 3.** The kit file lost a third of its size, and the daily sync
