@@ -10,11 +10,12 @@ then run `python upgrade.py <newer kit file>` to see what would change, and `--a
 
 ---
 
-## `cfa84869a236` — 2026-08-01
+## `9cad3ee80c8e` — 2026-08-01
 
-**Three places where the text was wrong about the machine it runs on.** No new capability: a rule
-that left a Linux session with no legal answer, a filesystem boundary the contract did not know
-exists, and an update message that tells a user to destroy a healthy folder.
+**Four places where the text was wrong about the machine it runs on.** No new capability: a rule that
+left a Linux session with no legal answer, a filesystem boundary the contract did not know exists, an
+update message that tells a user to destroy a healthy folder, and a delivered command the setup
+announces without saying when it works.
 
 ### What a user gets
 
@@ -39,6 +40,14 @@ exists, and an update message that tells a user to destroy a healthy folder.
   lines later, and the exception states the measured cause. A `/vaultkit` from before the rewrite
   gets its own section: no update rewrites that file, and the chain it holds still runs suites that
   are no longer part of the delivery.
+- **The setup says when `/vaultkit` starts working, and what a second vault gets.** Slash commands
+  are read at session start, so the file the setup just wrote is not in the session that wrote it —
+  type it straight away and the answer is `No matching commands` on a vault where nothing is wrong.
+  Hit on two cold runs, both times read as a failed setup. And there is one commands folder per
+  machine: a second vault finds the first one's file, leaves it alone — which is what protects a
+  `/vaultkit` you wrote yourself — and ends up without a command while the old one keeps working.
+  Measured across three consecutive setups, each blocked by its predecessor. Both facts are now
+  announced where the path is reported, in `README.md`, and in the how-it-works page.
 
 ### Fixed
 
@@ -51,6 +60,11 @@ exists, and an update message that tells a user to destroy a healthy folder.
 - **The `<workdir>` in the contract meant two things.** SECTION 1.2 spelled it "one level below where
   you were started" while 1.4 may settle somewhere else entirely. It is now defined as the parent 1.4
   settled on, which is what every other path in the document already assumed.
+- **The contract described one of its own outcomes from twelve hours earlier.** SECTION 8 lists three
+  outcomes of writing the command and called the second one *"prints nothing and exits 0"*. That had
+  stopped being true that same morning, when the fix for #27 taught the branch to name both vaults.
+  It is the outcome three cold runs went on to hit. Found by reading the text against the code it
+  describes — nothing else could have found it, since no run reads either.
 
 ## `c350ee4831db` — 2026-08-01
 
