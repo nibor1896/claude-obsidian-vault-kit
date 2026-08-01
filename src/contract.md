@@ -174,6 +174,12 @@ loud which questions you skipped and what you measured.
   about whether a vault exists, where it is, or whether the user wants you near it. Inferring "already
   uses Obsidian" from a present installation is how a setup ends up adapting a real vault nobody
   pointed you at.
+- **1.1 — where their Obsidian runs, when 1.5 measured a guest/host boundary.** It looks like an
+  environment question and is not one: the guest can measure that it is a guest, never what runs
+  outside it. Inferring "they will use the Obsidian in here" from a Linux desktop being installed is
+  the same mistake as inferring "already uses Obsidian" from an installation, one boundary further
+  out. This is the only entry in this list that does not always exist — and the measurement decides
+  whether it is asked, never what it answers.
 - **1.2 — migration, new production vault, or test vault.**
 - **1.3 — project names, where their code lives, and the GitHub handle.**
 - **1.4 — the vault path, the backup, git, whether a remote may be added, and the git identity:
@@ -221,6 +227,22 @@ than the one that matters here.
   already matches this kit, and name what conflicts. Their existing structure wins over this document
   unless they say otherwise — a folder they use daily is worth more than a clean scheme they have to
   relearn.
+- **Only when 1.5 measured a guest/host boundary: where does the Obsidian they use run?** This is not
+  the same question as "do you already use Obsidian", and it is the one question in SECTION 1 that
+  some machines do not have. It decides which filesystem the vault may live on, which is why it is
+  asked **here**, one round ahead of 1.4 — the same reason the GitHub handle sits in 1.3: a dialog
+  renders every option in a round before any answer in that round exists.
+
+  ```
+  This session runs inside WSL. Where does the Obsidian you will use run?
+    1  On Windows, outside this environment     the usual case
+    2  Inside this environment                  a Linux Obsidian, e.g. under WSLg
+    3  Not installed yet                        then where you install it decides
+  ```
+
+  If the round that carries 1.1 is already full, this question opens the next round rather than
+  dropping into prose — the round-boundary rule at the top of this section, unchanged. What must not
+  happen is that it is asked **after** 1.4: by then the path is already proposed.
 
 ### 1.2 What this setup is for
 
@@ -248,13 +270,21 @@ What are we setting up?
   inconsistent; silently applying it to all of them overrides a choice they may have made on purpose.
 
 **Name the folder they open, as a path, not as a description.** The vault is
-`<workdir>/<VaultName>/` — its own folder, one level below where you were started (1.4). So say it
-in these words: *open `<workdir>/<VaultName>` in Obsidian, not `<workdir>`.* The tree you just
+`<workdir>/<VaultName>/` — its own folder, one level below the parent 1.4 settled on, which is not
+always the folder you were started in. So say it in these words: *open `<workdir>/<VaultName>` in
+Obsidian, not `<workdir>`.* The tree you just
 reported is the subfolder; the level above it is only where it happened to be created. Open the
 wrong one and nothing errors: the app shows a vault whose root holds a single folder, every path in
 this document is off by one level, and the template setting in SECTION 8 points at nothing. Neither
 cold run hit this, because the operator already knew which folder was which — that is exactly the
 knowledge a first-time user does not have.
+
+**Across a guest/host boundary that path has two spellings, and only one of them works in the dialog
+the user is standing in.** You measured your side; the app is on the other. Name both and say which
+belongs where: the folder you built at `/mnt/c/Users/<name>/Documents/<VaultName>` is
+`C:\Users\<name>\Documents\<VaultName>` in their *Open folder as vault* dialog. A user handed only
+the first spelling pastes a path their file picker does not have, and reads that as the setup having
+built nothing.
 
 **Tell them what Obsidian will ask, before they start rearranging.** The moment they rename or move a
 folder, Obsidian pops up *"Update internal links? This affects N links in N files."* Say in advance:
@@ -299,15 +329,39 @@ two more). If the dialog will not take them all in one call, open a **second rou
 putting the remainder in prose. A question that ends up outside the dialog is the failure mode this
 section opens with; a question in the next dialog is not one.
 
-- **The vault path.** Propose one and have it confirmed. **Its own folder, one level down** —
-  `<workdir>/<VaultName>/`, never the folder you were started in, so the harness's own config
-  directory does not land in the vault's history (SECTION 7 states the rule and what it costs).
-  **And check what that folder is before proposing anything inside it.** If the folder you were
-  given is itself a configuration directory (`.claude`, `.config`, `.cursor`), or the user's home
-  directory, or any tree that already belongs to something else, then a subfolder of it is the wrong
-  answer too: say what you found, propose a location outside it — `~/Documents/<VaultName>` is the
-  usual one — and have *that* confirmed. Applying the rule blind is how a vault ends up in the
-  middle of somebody's settings, with a `git init` of its own.
+- **The vault path.** Propose one and have it confirmed. **The vault is its own folder** —
+  `<workdir>/<VaultName>/`, where `<workdir>` is whatever parent this question settles on. It is
+  **never that parent itself**, so the harness's own config directory stays outside the vault's
+  history (SECTION 7 says what that costs). **The folder you were started in is a candidate for
+  `<workdir>`, not the answer to it** — check what it is before you propose anything inside it:
+  - **A tree that already belongs to something else** — a configuration directory (`.claude`,
+    `.config`, `.cursor`), a checked-out repository, an existing vault. Here a subfolder is wrong
+    too, because the vault would sit inside somebody else's tree and take a `git init` of its own
+    into it. Say what you found and propose a parent outside that tree.
+  - **The home directory disqualifies itself and nothing below it.** `~` is not a parent — a vault
+    directly there has every dotfolder on the machine as a sibling — but `~/Documents/<VaultName>`
+    and `~/<VaultName>` are exactly what this rule points at, on every platform. Offer both as
+    options and let the user pick; do not list the home directory to find out which exists, that is
+    a read of their machine under rule 5 for an answer one click already gives you.
+    **Read the exclusion any wider and a Linux session has nowhere left to go.** Measured on a cold
+    run started in `/home/<user>`: the session excluded the whole home tree, correctly by the letter
+    of the sentence that used to stand here, and the only path it had left was the Windows mount. On
+    Windows the same sentence never fires, because a session rarely starts in the home directory —
+    which is why it survived this long.
+  - **A filesystem the client that has to open the vault cannot watch.** If 1.5 measured a boundary
+    and 1.1 answered that Obsidian runs on the host, then `<workdir>` is on the **host's**
+    filesystem, reached from here through the mount — under WSL that is `/mnt/<drive>/…` from this
+    side. A path inside the guest is the wrong answer **even though every check in this document
+    passes on it**, and that is what makes it expensive: the tree is built, the guards are green, the
+    commit exists, and the failure arrives at the first open. Measured on 2026-08-01: a vault built
+    from a WSL session at `/home/<user>/<VaultName>`, opened by the Windows Obsidian over
+    `\\wsl.localhost\…`, was refused with
+    `EISDIR: illegal operation on a directory, watch '\\wsl.localhost\…'` — the app's file watcher
+    does not work across that protocol. Nothing this setup writes can repair that from the vault's
+    side; the only fix is the other filesystem.
+    **What the mount costs on the guest side is not measured here**: file access across it is not
+    native and the two sides do not agree about file modes. Say that it is untested rather than
+    implying the choice is free.
 - **Backup location.** Recommend a cloud-synced folder (OneDrive, Dropbox, iCloud Drive, Syncthing).
   Ask which one they use — and if a cloud folder exists on the machine but is out of bounds, say so
   rather than proposing it.
@@ -341,6 +395,20 @@ section opens with; a question in the next dialog is not one.
   a document that writes `python` throughout, as this one does, is naming one of two possibilities,
   not stating a fact about the machine. Report the measured name in the same breath as the OS and
   the shell. If neither name answers, offer the install and wait.
+- **Whether this session sits inside a guest whose filesystem the user's desktop applications do not
+  share.** Read it, and say you read it: on Linux, `/proc/version` naming `microsoft` is WSL, and
+  `/proc/sys/fs/binfmt_misc/WSLInterop` says the same a second way. **WSL is the only case
+  measured** — a container or a virtual machine has the same shape and its own markers, and none of
+  them were tested here; if you recognise one, treat it the same way and say that you inferred
+  rather than measured.
+  What this establishes is only that **a boundary exists**. **Which side the user's Obsidian runs on
+  is not readable from in here** — a guest can measure that it is a guest and nothing at all about
+  the applications outside it — so that one is a question, and 1.1 asks it. **The measurement
+  decides whether the question exists, never what it answers.** No boundary, no question, no slot
+  spent.
+  **This one is measured before round one**, unlike the rest of 1.5: 1.1 needs it to know whether to
+  ask, and 1.4 needs 1.1's answer to know which filesystem the vault may live on. This bullet is
+  where it is written down, not where it happens.
 
 ## SECTION 2 — The doctrine (why the structure is shaped this way)
 
@@ -883,10 +951,11 @@ error message ever mentions. Tell the user this when you set up any schedule.
 Set up **both**, and tell the user why neither replaces the other: cloud sync knows file versions but
 has no notion of a coherent state across all notes; git knows states but lives on the same disk.
 
-**Put the vault in its own folder, not in the folder you were started in.** If the agent's own config
-directory (`.claude/`, `.cursor/`, whatever the harness uses) sits next to the notes, it lands in the
-vault's history. A subfolder — `<workdir>/<VaultName>/` — keeps the two apart with no ignore rules to
-maintain.
+**Where the vault sits was settled in 1.4, and this section does not restate the rule — it states
+what the rule protects.** If the agent's own config directory (`.claude/`, `.cursor/`, whatever the
+harness uses) sits next to the notes, it lands in the vault's history. A folder of its own keeps the
+two apart with no ignore rules to maintain. **Two copies of a placement rule drift**, and these two
+had already begun to: one of them named the home directory as a disqualifier and the other did not.
 
 **Nothing this setup writes lands in a `.claude/` folder inside the vault.** The `/vaultkit`
 command goes to the user's own `~/.claude/commands/`, outside the vault entirely. Such a folder may
@@ -1085,6 +1154,14 @@ removes nothing, says why in as many words, and records a manifest on its way ou
 it can remove what a newer kit drops. Say this to the user if their folder is in that state; a run
 that removed nothing without explaining itself looks exactly like a run with nothing to remove.
 
+**And say what that manifest does not contain.** It names what *this* kit delivered, so whatever an
+older kit left in that folder is named by nothing and is removed by no update, then or later —
+removal is the manifest minus the new blocks, never the folder minus the new blocks. Measured on
+2026-08-01 on a folder installed 2026-07-27: twenty `.py` files present, three of them the current
+kit's. If you are looking at such a folder, say that the leftovers are the user's to delete and that
+`kit-manifest.txt` is the list to delete against — removal takes back what this kit once delivered,
+**it is not a cleanup mechanism**.
+
 ### Write the `/vaultkit` command
 
 **After git, and before the verification run.** The order matters and it is not cosmetic: the
@@ -1141,6 +1218,13 @@ It writes `~/.claude/commands/vaultkit.md` — the user's own commands folder, w
 destination and takes no flag — with this vault's real paths already in it, and prints the path it
 wrote. **Show the user that line.**
 
+**And say when it starts working: the next session, not this one.** Slash commands are read at
+session start, so the file you just wrote is not in the list of the session that wrote it. Say it in
+the same breath as the path, because the alternative is the user typing `/vaultkit`, reading
+`No matching commands`, and concluding the setup failed at its last step. Measured twice on
+2026-08-01, on two different platforms, by the person who wrote the tool. **Until then the chain is
+not lost:** `05_workflows` carries it in prose, and that page works in any session and in a browser.
+
 **Announce it, do not ask.** The file lands outside the vault, which is why operating rule 5 names
 this one path as its single exception: say where it goes and what it is for, then run the command.
 A question with a "no" in it hands the user a vault whose maintenance command does not exist, and
@@ -1153,8 +1237,17 @@ sync command that demands a particular working directory is not one anybody uses
 absolute paths, so it needs no working directory at all.
 
 **Three outcomes, and only one of them is "done".** It prints a path and exits 0 — written. It
-prints nothing and exits 0 — the file was already there and this kit wrote it, so it was left
-alone, which is correct and is also *not* a fresh install. It prints a refusal and exits
+prints the two vault paths and exits 0 — the file was already there and this kit wrote it, so it was
+left alone. **That is correct, and it is also not a fresh install.** Since 2026-08-01 the run names
+the vault the file serves and the vault this run is for, because they can differ: there is one
+commands folder per machine, so a **second** vault gets no second file and `/vaultkit` goes on
+synchronising the first one. **This is the ordinary outcome of setting up a second vault, and the
+user has to be told what it means:** their existing `/vaultkit` keeps working for the vault it
+already had, this one has none, and the way to move it is to rename the old file and run the command
+again. Do not list `/vaultkit` as delivered for this vault. Measured on the cold runs of 2026-08-01:
+three consecutive setups, each blocked by its predecessor's file, each resolved by the operator
+knowing this — which is exactly the knowledge a first-time user does not have.
+It prints a refusal and exits
 **non-zero** — a command of that name exists that this kit did not write, most likely the user's
 own; nothing was written and nothing was overwritten. **In that third case `/vaultkit` does not
 exist for this vault. Say so plainly, tell them their own file keeps the name, and do not list it as
@@ -1262,6 +1355,10 @@ forgotten:**
   saying 39/39. Whether the indexes render, whether the graph is usable, whether the app resolves the
   wikilinks: unverified until the user opens it. Say this in exactly those terms — it is the single
   most misleading gap, because everything measurable already passed.
+  **If this setup ran inside a guest, that entry carries a second unknown and says so separately:**
+  everything you measured, you measured from this side of the boundary. Whether the client on the
+  other side can watch this folder at all is the failure 1.4 names, and it appears on the first open
+  or not at all.
 - **The duplicate-detection threshold is uncalibrated.** On a vault with a handful of notes the number
   it reports is arithmetic, not evidence. Name the threshold, say it has never been checked against
   real volume, and revisit it once the vault has one.
@@ -1332,7 +1429,9 @@ resolves it (SECTION 5). Write it escaped, do not dodge the table.
   said in these words:** *In Obsidian, with `<workdir>/<VaultName>` open as the vault — not
   `<workdir>` — set Settings → Core plugins → Templates → Template folder location to
   `_templates`; that path is read from the open vault's root, so it finds the templates from
-  `<workdir>/<VaultName>` and nothing whatsoever from `<workdir>`.* Then `Ctrl+P → Insert template`
+  `<workdir>/<VaultName>` and nothing whatsoever from `<workdir>`.* (Across a boundary, say that path
+  in the host's spelling — it is the only one their settings dialog will ever show them.) Then
+  `Ctrl+P → Insert template`
   in a new note fills the frontmatter block with the project name already correct — **and an empty
   list there is not a missing template, it is the wrong folder open.**
   **Do not repair that by lengthening the value.** `<VaultName>/_templates` makes the setting work

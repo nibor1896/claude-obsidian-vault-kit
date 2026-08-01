@@ -14,7 +14,14 @@ numbers yourself.
   resolution, duplicate detection, freshness of scheduled jobs, size for cost.
 - A note template per project, so the frontmatter header is filled in before you type anything.
 - A `/vaultkit` slash command in `~/.claude/commands/`, carrying your vault's real paths, that runs
-  the whole chain in the order that leaves nothing stale.
+  the whole chain in the order that leaves nothing stale. **Two things about that file are worth
+  knowing before you go looking for it.** It becomes available in the **next** session, not the one
+  that wrote it — slash commands are read at session start, so typing it straight after the setup
+  answers `No matching commands` on a vault where nothing is wrong. And there is **one commands
+  folder per machine**: set up a second vault and the file is left alone rather than overwritten,
+  which protects a `/vaultkit` you wrote yourself but also means your command still serves the first
+  vault. The run says so, naming both vaults. To move it, rename the old file and write the command
+  again; the chain also lives in prose in `05_workflows`, which needs no slash command at all.
 - A workflow document in your own words, so the next session reads it instead of re-deriving
   everything.
 

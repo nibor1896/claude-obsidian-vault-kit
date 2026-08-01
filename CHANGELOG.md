@@ -10,6 +10,48 @@ then run `python upgrade.py <newer kit file>` to see what would change, and `--a
 
 ---
 
+## `cfa84869a236` — 2026-08-01
+
+**Three places where the text was wrong about the machine it runs on.** No new capability: a rule
+that left a Linux session with no legal answer, a filesystem boundary the contract did not know
+exists, and an update message that tells a user to destroy a healthy folder.
+
+### What a user gets
+
+- **The vault-location rule has one statement, and it no longer rules out Linux.** SECTION 1.4 said
+  the home directory disqualifies "a subfolder of it too" and recommended `~/Documents/<VaultName>`
+  in the same sentence. On Windows a session rarely starts in the home directory and the
+  contradiction never fires; on Linux it is the ordinary case. Measured: a cold run started in
+  `/home/<user>` excluded the entire home tree — correctly, by the letter of that sentence — and had
+  nothing left but the Windows mount. The home directory now disqualifies itself and nothing below
+  it. SECTION 7 no longer carries a second copy of the rule that could drift from the first; it
+  carries the cost and points at 1.4.
+- **The setup asks where Obsidian runs — when, and only when, it has measured a boundary.** A setup
+  in WSL built a vault at `/home/<user>/<VaultName>`. The Windows Obsidian reached it over
+  `\\wsl.localhost\…` and refused to load it:
+  `Error: EISDIR: illegal operation on a directory, watch '\\wsl.localhost\Ubuntu\home\<user>\…\'`.
+  The app's file watcher does not work across that protocol. Whether a guest exists is measurable
+  (`/proc/version`); which side the user's client runs on is not measurable from inside the guest —
+  so it is a question, asked one round before the path it decides, and it does not exist on a machine
+  with no boundary.
+- **The update page says what a failed first update means, where the failure is read.** The advice
+  *restore it from git* now carries its own exception in the same paragraph instead of thirty-three
+  lines later, and the exception states the measured cause. A `/vaultkit` from before the rewrite
+  gets its own section: no update rewrites that file, and the chain it holds still runs suites that
+  are no longer part of the delivery.
+
+### Fixed
+
+- **The update page named the wrong cause, and promised a cleanup that cannot happen.** It said the
+  old checks went looking for files the new kit had deleted. Measured on 2026-08-01 against an
+  installation from 2026-07-27: without a manifest nothing was deleted, the old suites were present
+  and ran, and the one that failed was the suite covering `upgrade.py` — it asserts the wording the
+  previous release printed and got the new one. The page also said the update after the blind cycle
+  *can remove normally*; it cannot, and now says so, with the count.
+- **The `<workdir>` in the contract meant two things.** SECTION 1.2 spelled it "one level below where
+  you were started" while 1.4 may settle somewhere else entirely. It is now defined as the parent 1.4
+  settled on, which is what every other path in the document already assumed.
+
 ## `c350ee4831db` — 2026-08-01
 
 **Three places that stayed silent, and a text that did not add up.** No new capability — four
@@ -82,7 +124,11 @@ over code that had not changed since setup.
 - **`upgrade.py` can now remove files.** Update from an older kit and the 19 files that left the
   delivery are deleted — but only those, and only when `kit-manifest.txt` names them. A folder
   installed by an older kit has no manifest yet, so its **first** update reports what it would remove
-  and removes nothing; the run after that can act.
+  and removes nothing; the run after that can act. **What it cannot do is clean the folder** — the
+  manifest that blind run writes names only what the new kit delivered, so scripts from before it are
+  named by nothing and are never removed by any later update either. Measured 2026-08-01 on a folder
+  installed 2026-07-27: twenty `.py` files present, three of them the current kit's. Removal takes
+  back what *this* kit once delivered; it is not a cleanup mechanism.
 
 ### Fixed
 
@@ -94,9 +140,15 @@ over code that had not changed since setup.
 - **`upgrade.py` crashed on a mistyped path.** `FileNotFoundError` with a full traceback on the very
   first step of the update path. Now exit 2 and a sentence.
 - **`upgrade.py` overwrote itself mid-run.** The running process kept the old code, so its own
-  post-update check looked for files the new kit had just correctly deleted, and told the user to
-  "restore it from git" — on a healthy folder. The checks now run in a fresh process, and `--prove`
-  became a command of its own.
+  post-update check ran out of the previous release and told the user to "restore it from git" — on a
+  healthy folder. The checks now run in a fresh process, and `--prove` became a command of its own.
+  **Corrected 2026-08-01, measured:** the sentence here used to say the old check *looked for files
+  the new kit had just correctly deleted*. It did not. Without a manifest nothing was deleted at all;
+  the old suites were still on disk and ran. What failed was the suite covering `upgrade.py`, which
+  asserts the sentence the previous version printed and got the new, more precise one. And **this fix
+  cannot reach the run that installs it** — every folder older than this release carries the old
+  `upgrade.py`, so it is that copy doing the checking. The update page carries the full case under
+  *If your first update ends by telling you to restore from git*.
 - **The generated `/vaultkit` file said `must print nothing`** for the second-run check. The contract
   is more precise: `?? .obsidian/` and notes you wrote yourself may appear; drift is an `INDEX` file
   changing *without* a new note. Following the command file literally reported a defect that was not

@@ -60,7 +60,8 @@ that changes the tree silently is the failure the whole thing exists to prevent.
 ## Keeping it in sync
 
 The setup writes a `/vaultkit` slash command into `~/.claude/commands/`, with your vault's real
-paths already filled in. Run it in any Claude conversation:
+paths already filled in. Run it in any **new** Claude conversation — slash commands are read when a
+session starts, so the one that set your vault up does not have it yet:
 
 ```
 /vaultkit

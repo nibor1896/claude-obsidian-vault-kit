@@ -176,7 +176,11 @@ it. Nothing you can interrupt leaves a state the next run cannot get out of.
 Then it **compiles every script it just wrote and parses `jobs.json`**. If either fails it says so
 and exits non-zero: a tool folder that was updated but never re-checked is the state this kit exists
 to prevent. Restore from git if that happens — which is one of the reasons the vault is a git
-repository.
+repository. **One exception, and if your tool folder is older than 2026-07-31 it is the likely case:
+the first update of such a folder ends with a red verdict and this same advice, on a folder that is
+in perfect shape.** Read *If your first update ends by telling you to restore from git*, two sections
+down, before you restore anything. That advice is destructive and it is executable, and the state it
+describes is not the state you are in.
 
 It used to run the suites here instead, and it cannot: they are not in your folder. They live in the
 kit's repository and ran there, over the exact bytes the new kit file carries, before it was
@@ -208,25 +212,81 @@ after it leaves `git status` empty again, which is the property step 10 of the s
 for. Without this paragraph it reads exactly like the drift the whole kit is built to prevent, so:
 it is announced, it is one line per file, and it happens once.
 
-### If your update ended in `FAIL run_suites.py`
+### If your first update ends by telling you to restore from git
 
-`upgrade.py` rewrites itself, and the process doing that keeps the code it started with. So an
-update **from a kit older than the one that removed the suites** finishes by running the *old*
-checks, which go looking for `run_suites.py` and `acceptance.py` — the two files the new kit just
-correctly deleted. The run then prints `restore it from git`, which is exactly the wrong advice on
-a folder that is in perfect shape.
+**The folder is fine. Do not restore it.** This happens once, on the first update of a folder
+installed before 2026-07-31, and it is a property of who does the checking, not of what was written.
 
-This happens once, on that one crossing, and never again: the updater now runs its post-write
-checks in a fresh process so the new code does the checking. If you saw it, run the `--prove` line
-above — that is the same check, from the code you now have.
+`upgrade.py` replaces itself during an update, but the process that is running is the one that
+started — so the checks at the end of that run come out of the **old** code, the code that was on
+disk when you pressed enter. One of those old checks tests `upgrade.py` itself. It runs the file
+that is now on disk — the new one, just written and read back correctly — and compares its output
+against **the sentence the previous version used to print**. The wording changed, on purpose, to say
+more; the old check does not know that. It reports a failure over a difference in text.
+
+Measured on 2026-08-01 against an installation from 2026-07-27: the update wrote its three files,
+read every one of them back, and then its own verification named one failing suite out of eight and
+printed *the updated folder does not pass its own checks — restore it from git*. The suite it named
+was the one covering `upgrade.py`. Running the update a second time — now with the new code doing
+the checking — reports every script already current and the manifest recorded.
+
+The repair for this shipped on 2026-07-31: post-write checks now run in a fresh process, so the new
+code does the checking. **It cannot help the run that installs it.** Every folder older than that
+release still carries the old `upgrade.py`, and that is the copy running while it is replaced. So
+the message is expected exactly once, on that one crossing, and never again.
+
+The same statement, out of the code you now have:
+
+```
+python <VaultRoot>/00_Global/06_tools/upgrade.py --prove
+```
 
 ### If your folder was installed before manifests existed
 
 It has no `kit-manifest.txt`, so nothing on your machine knows which files that older kit brought.
 The updater will not guess — guessing means treating every script in the folder as the kit's, and
 that deletes tools you wrote. So the **first** `--apply` on such a folder removes nothing, says so
-in as many words, and writes a manifest on its way out. The update after it can remove normally.
-Exactly one cycle is blind, and it tells you it is.
+in as many words, and writes a manifest on its way out.
+
+**A folder from before 2026-07-31 meets this and the section above in the same run**, and the two
+read as one event: the update removes nothing, and then the old checks call the result broken.
+Neither is a defect, and restoring fixes neither.
+
+**What that manifest contains is what the new kit delivered, and only that** — and this page used to
+promise the opposite. It said the update after the blind one *can remove normally*. It cannot.
+Removal only ever touches names a manifest carries, and the manifest just written carries the three
+current scripts, so every file the older kit left behind stays namelessly on disk through this update
+and every future one. Measured on 2026-08-01: twenty `.py` files in the folder, three of them the
+current kit's.
+
+Those leftovers are quiet rather than harmless. Nothing in your daily chain calls them, and the
+guards are reached through `vaultkit.py` — but `--prove` compiles the whole folder, so they appear in
+its work, and one of them is a previous `upgrade.py`-era script you can mistake for a current one.
+**Clean them once, by hand, and let the manifest be the list:** anything in the folder that
+`kit-manifest.txt` does not name and that you did not write yourself came from the older kit. Then
+run `--prove` again.
+
+### If your `/vaultkit` predates 2026-07-31, replace it after updating
+
+No update rewrites that file. It was written once, at setup, and it holds the chain as it looked
+then — for a folder from before the rewrite that chain still runs the suites, and the suites are
+among the leftovers described above. They are still on disk, so they still run, and one of them
+covers a tool the update replaced. The result is a maintenance command that reports a failure on a
+healthy vault, every time you use it.
+
+`vaultkit.py command` will not simply overwrite it. A command file written before markers existed
+carries no marker, so the tool reads it as somebody else's file, refuses, and says so — that refusal
+is deliberate and it is the same one that protects a `/vaultkit` you wrote yourself. Rename the old
+file, then write the current chain:
+
+```
+python <VaultRoot>/00_Global/06_tools/vaultkit.py command --vault <VaultRoot> --shell posix --python python3
+```
+
+Use `--shell powershell --python python` on Windows. **Derived, not measured:** the old command file
+from that era no longer exists on any machine here, so this is read off the kit that wrote it — its
+chain names the suite runner explicitly — rather than observed. What is measured is the refusal: a
+markerless file of that name is left alone.
 
 ### Four things it now tells you that it used to swallow
 
